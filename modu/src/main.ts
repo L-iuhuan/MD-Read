@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { renderDocument } from "./render/pipeline";
+import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
 import "./app.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
@@ -48,6 +49,7 @@ async function openPath(path: string): Promise<void> {
     doc.hidden = false;
     $("empty-hint").hidden = true;
     mountOutline(result.outline);
+    enhanceView(doc);
     $("doc-title").textContent = path.split(/[\\/]/).pop() ?? path;
     $("st-encoding").textContent = file.encoding;
     $<HTMLElement>("content").scrollTop = 0;
@@ -111,6 +113,7 @@ function setupToggles(): void {
     const next = root.dataset.theme === "dark" ? "light" : "dark";
     root.dataset.theme = next;
     localStorage.setItem("modu-theme", next);
+    refreshMermaidTheme(next);
   });
   $("btn-face").addEventListener("click", () => {
     const root = document.documentElement;
@@ -121,6 +124,7 @@ function setupToggles(): void {
       root.dataset.face = "serif";
       localStorage.setItem("modu-face", "serif");
     }
+    refitView($<HTMLElement>("doc"));
   });
 }
 

@@ -2,7 +2,8 @@
    墨读 MoDu · typography/cjk.css —— 正文内容排版层
    唯一移植源：docs/demo/排版demo.html §1/§7（排版 demo 冻结版），
    另按规格 §4 D2 补入表格打印友好规则（thead 表头跨页 + tr 行级分页）。
-   作用域：.mdc（阅读态内容容器；DOM 结构以 demo 为准：.mdc > article.doc > 块级内容）。
+   作用域：.mdc（阅读态内容容器）。DOM 契约（批2 修正）：管线输出为
+   .mdc 的直接子元素（flat，无 article.doc 包裹层）；Mermaid 为 div.mermaid。
    暗色适配：整套经 tokens.css 阶数变量切换（html[data-theme="dark"] 覆盖），
    本文件不含任何暗色专规则——这是 demo 的设计，不是遗漏。
    demo 专属、不移植：三栏对照布局（.stage/.col/.col__*）、工具条（.bar/.seg/.tgl/
@@ -64,7 +65,7 @@
    处理原则：宁可右边缘不齐（ragged），也不撑字距。触发条件由渲染层 JS 逐段实测决定
    （在块元素上落 data-justify="off"），这里只提供兜底样式。
    -------------------------------------------------------------------------- */
-.mdc .doc > [data-justify="off"] { text-align: start; }
+.mdc [data-justify="off"] { text-align: start; }
 
 /* 实测模式：渲染层测量期间把候选块的对齐临时统一为 start。
    justify 不改变断行位置，所以 start 下的行宽就是该行的自然宽度，
@@ -73,7 +74,7 @@
 [data-justify-measure] :is(p, li, blockquote) { text-align: start; }
 
 /* 限宽 46em 居中（用 --measure 而非直接 46em，见 tokens.css 注释）*/
-.mdc .doc > * {
+.mdc > * {
   max-inline-size: var(--measure);
   margin-inline: auto;
 }
@@ -209,21 +210,20 @@
    transform 上，并在容器上落 data-math-scale 属性）；此处只负责禁用溢出路径
    与固定 transform-origin（缩放围绕上边中点，外层高度才压得准）。
    ========================================================================== */
-.mdc .math-block {
+.mdc .katex-display {
   margin-block: 1.3em;
   text-align: center;
   overflow: visible;   /* 取消横向滚动条路径 */
 }
-.mdc .math-block .katex-display { margin: 0; }
-.mdc .math-block .katex { transform-origin: center top; }
+.mdc .katex-display > .katex { transform-origin: center top; }
 .mdc .katex { font-size: 1.04em; }
 
 /* ==========================================================================
    6. Mermaid 图（§2.1 F2 懒加载；主题变量见 tokens.css --mmd-*，由渲染层注入）
    ========================================================================== */
-.mdc .diagram { margin-block: 0 1.2em; text-align: center; }
-.mdc pre.mermaid {
-  margin: 0;
+/* 管线实际输出 div.mermaid（fence 特判），源码态显示为浅色代码块 */
+.mdc .mermaid {
+  margin-block: 0 1.2em;
   padding: var(--size-3);
   background: var(--bg-app);
   border: 1px solid var(--border);
@@ -231,11 +231,21 @@
   font-size: .8em;
   color: var(--text-muted);
   text-align: start;
-  overflow-x: auto;
+  overflow-x: auto;   /* 仅源码态文本可滚；渲染态见下 */
 }
-.mdc pre.mermaid[data-rendered="1"] { color: inherit; font-size: 1em; }
-.mdc pre.mermaid svg { max-inline-size: 100%; block-size: auto; }
-.mdc .diagram figcaption { font-size: .8125em; color: var(--text-muted); margin-block-start: var(--size-2); }
+.mdc .mermaid[data-rendered="1"] { color: inherit; font-size: 1em; overflow-x: visible; }
+.mdc .mermaid svg { max-inline-size: 100%; block-size: auto; }
+/* 渲染失败态：虚线框 + attr() 显示 mermaid.ts 落的中文错误信息 */
+.mdc .mermaid[data-mmd-error] {
+  border-style: dashed;
+}
+.mdc .mermaid[data-mmd-error]::before {
+  content: attr(data-mmd-error);
+  display: block;
+  margin-block-end: var(--size-2);
+  color: var(--text-muted);
+  font-weight: 600;
+}
 
 /* --- 引用块 --- */
 .mdc blockquote {

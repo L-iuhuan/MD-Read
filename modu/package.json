@@ -21,7 +21,8 @@
     "markdown-it-anchor": "10.0.0",
     "markdown-it-cjk-friendly": "3.0.0",
     "markdown-it-emoji": "3.1.0",
-    "markdown-it-footnote": "4.0.0"
+    "markdown-it-footnote": "4.0.0",
+    "mermaid": "11.17.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
