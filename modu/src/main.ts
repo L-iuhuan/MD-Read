@@ -1,24 +1,20 @@
 /**
- * 墨读 M1 应用壳：打开文件 → 渲染管线 → 正文 + 大纲。
- * 排版规则在 typography/，渲染在 render/，此处只做接线。
+ * 墨读 M2 应用壳：多标签 + 最近文件 + 文档内查找 + 大纲滚动跟随。
+ * 排版在 typography/，渲染在 render/，标签/最近在 app/，查找在 ui/——此处只做接线。
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { renderDocument } from "./render/pipeline";
+import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
+import { createTabManager, type TabManager } from "./app/tabs";
+import { pushRecent, setupRecentMenu } from "./app/recent";
+import { setupFindbar, type Findbar } from "./ui/findbar";
 import "./app.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
 import "katex/dist/katex.min.css";
-
-interface OutlineItem {
-  level: number;
-  text: string;
-  id: string;
-  line: number;
-}
 
 interface LoadedFile {
   text: string;
@@ -40,27 +36,14 @@ function showError(message: string): void {
   $("empty-hint").hidden = true;
 }
 
-async function openPath(path: string): Promise<void> {
-  try {
-    const file = await invoke<LoadedFile>("read_file", { path });
-    const result = renderDocument(file.text, { pangu: true });
-    const doc = $<HTMLElement>("doc");
-    doc.innerHTML = result.html;
-    doc.hidden = false;
-    $("empty-hint").hidden = true;
-    mountOutline(result.outline);
-    enhanceView(doc);
-    $("doc-title").textContent = path.split(/[\\/]/).pop() ?? path;
-    $("st-encoding").textContent = file.encoding;
-    $<HTMLElement>("content").scrollTop = 0;
-  } catch (error) {
-    showError(`打开失败：${String(error)}`);
-  }
-}
+/* ---- 大纲 ---- */
+
+const outlineLinks = new Map<string, HTMLAnchorElement>();
 
 function mountOutline(items: OutlineItem[]): void {
   const list = $<HTMLElement>("outline-list");
   list.textContent = "";
+  outlineLinks.clear();
   for (const item of items) {
     const link = document.createElement("a");
     link.textContent = item.text;
@@ -70,11 +53,117 @@ function mountOutline(items: OutlineItem[]): void {
       event.preventDefault();
       document.getElementById(item.id)?.scrollIntoView();
     });
+    outlineLinks.set(item.id, link);
     list.appendChild(link);
   }
 }
 
-async function onOpenClick(): Promise<void> {
+/* ---- 大纲滚动跟随（F4）：IO 圈定可见标题，滚动时取离视口顶最近者高亮 ---- */
+
+let followObserver: IntersectionObserver | null = null;
+const visibleHeadings = new Set<Element>();
+let followPending = false;
+
+function observeHeadings(): void {
+  followObserver?.disconnect();
+  visibleHeadings.clear();
+  followObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          visibleHeadings.add(entry.target);
+        } else {
+          visibleHeadings.delete(entry.target);
+        }
+      }
+      updateActiveHeading();
+    },
+    { root: $("content") }
+  );
+  for (const heading of $("doc").querySelectorAll("h1,h2,h3,h4,h5,h6")) {
+    followObserver.observe(heading);
+  }
+}
+
+function updateActiveHeading(): void {
+  let best: Element | null = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const heading of visibleHeadings) {
+    const dist = Math.abs(heading.getBoundingClientRect().top);
+    if (dist < bestDist) {
+      best = heading;
+      bestDist = dist;
+    }
+  }
+  if (best !== null && best.id !== "") {
+    for (const [key, link] of outlineLinks) {
+      link.classList.toggle("active", key === best.id);
+    }
+  }
+}
+
+function scheduleFollow(): void {
+  if (followPending) {
+    return;
+  }
+  followPending = true;
+  requestAnimationFrame(() => {
+    followPending = false;
+    updateActiveHeading();
+  });
+}
+
+/* ---- 标签接线（四个入口最终都汇到 openPath → tabs.openTab） ---- */
+
+function resetToWelcome(): void {
+  const doc = $<HTMLElement>("doc");
+  doc.textContent = "";
+  doc.hidden = true;
+  $("empty-hint").hidden = false;
+  mountOutline([]);
+  followObserver?.disconnect();
+  visibleHeadings.clear();
+  $("doc-title").textContent = "未打开文件";
+  $("st-encoding").textContent = "—";
+  $("st-progress").textContent = "0%";
+  $("content").scrollTop = 0;
+}
+
+function createTabs(findbar: Findbar): TabManager {
+  return createTabManager($<HTMLElement>("tabbar"), {
+    render: (source) => renderDocument(source, { pangu: true }),
+    mountDoc: ({ tab, html, outline }) => {
+      const doc = $<HTMLElement>("doc");
+      doc.innerHTML = html;
+      doc.hidden = false;
+      $("empty-hint").hidden = true;
+      mountOutline(outline);
+      observeHeadings(); // F4：正文已换，重挂一批观察对象
+      enhanceView(doc);
+      findbar.close(); // 正文已换，旧命中作废，避免残留陈旧 mark
+      $("doc-title").textContent = tab.title;
+      $("st-encoding").textContent = tab.encoding;
+    },
+    getScroll: () => $("content").scrollTop,
+    setScroll: (top) => {
+      $("content").scrollTop = top;
+    },
+    onEmpty: resetToWelcome,
+    confirmClose: (tab) => window.confirm(`「${tab.title}」有未保存的修改，确定要关闭吗？`),
+  });
+}
+
+async function openPath(tabs: TabManager, path: string): Promise<void> {
+  try {
+    const file = await invoke<LoadedFile>("read_file", { path });
+    tabs.openTab(path, file);
+    pushRecent(path);
+  } catch (error) {
+    showError(`打开失败：${String(error)}`);
+  }
+}
+
+async function onOpenClick(tabs: TabManager): Promise<void> {
   const picked = await openFileDialog({
     title: "打开 Markdown 文件",
     multiple: false,
@@ -82,16 +171,16 @@ async function onOpenClick(): Promise<void> {
     filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
   });
   if (typeof picked === "string") {
-    await openPath(picked);
+    await openPath(tabs, picked);
   }
 }
 
-function setupDragDrop(): void {
+function setupDragDrop(tabs: TabManager): void {
   void getCurrentWebview().onDragDropEvent((event) => {
     if (event.payload.type === "drop") {
       const path = event.payload.paths[0];
       if (path !== undefined && path.toLowerCase().endsWith(".md")) {
-        void openPath(path);
+        void openPath(tabs, path);
       }
     }
   });
@@ -136,25 +225,30 @@ function setupProgress(): void {
     const max = content.scrollHeight - content.clientHeight;
     const percent = max > 0 ? Math.round((content.scrollTop / max) * 100) : 0;
     $("st-progress").textContent = `${percent}%`;
+    scheduleFollow(); // F4：滚动时重算最近标题
   });
 }
 
 async function boot(): Promise<void> {
   applyPrefs();
-  $("btn-open").addEventListener("click", () => void onOpenClick());
+  const findbar = setupFindbar(() => document.getElementById("doc"));
+  const tabs = createTabs(findbar);
+  $("btn-open").addEventListener("click", () => void onOpenClick(tabs));
+  $("btn-newtab").addEventListener("click", () => void onOpenClick(tabs)); // 标签栏「+」= 打开…
+  setupRecentMenu((path) => void openPath(tabs, path));
   setupToggles();
-  setupDragDrop();
+  setupDragDrop(tabs);
   setupProgress();
-  await listen<string>("open-file", (event) => void openPath(event.payload));
+  await listen<string>("open-file", (event) => void openPath(tabs, event.payload));
   await listen<string[]>("second-instance", (event) => {
     const mdArg = event.payload.find((arg) => arg.toLowerCase().endsWith(".md"));
     if (mdArg !== undefined) {
-      void openPath(mdArg);
+      void openPath(tabs, mdArg); // F12：二次打开 → 已有窗口新标签
     }
   });
   const pending = await invoke<string | null>("take_pending_file");
   if (pending !== null) {
-    await openPath(pending);
+    await openPath(tabs, pending);
   }
 }
 

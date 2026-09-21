@@ -11,11 +11,26 @@
       <header class="topbar">
         <button id="btn-open" type="button" title="打开 Markdown 文件">打开…</button>
         <span id="doc-title" class="doc-title" title="当前文件">未打开文件</span>
+        <div id="recent-wrap" class="recent-wrap">
+          <button id="btn-recent" type="button" title="最近打开的文件">最近</button>
+          <div id="recent-menu" class="recent-menu" hidden></div>
+        </div>
         <span class="topbar-spacer"></span>
         <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
         <button id="btn-face" type="button" title="切换正文衬线/无衬线">衬</button>
         <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>⇩ PDF</button>
       </header>
+      <div id="tabbar" class="tabbar" hidden>
+        <div id="tab-list" class="tab-list"></div>
+        <button id="btn-newtab" type="button" title="打开文件（新标签）">+</button>
+      </div>
+      <div id="findbar" class="findbar" hidden>
+        <input id="find-input" type="text" placeholder="查找…" aria-label="查找内容" />
+        <span id="find-count" class="find-count">0/0</span>
+        <button id="find-prev" type="button" title="上一个（Shift+Enter）">↑</button>
+        <button id="find-next" type="button" title="下一个（Enter）">↓</button>
+        <button id="find-close" type="button" title="关闭（Esc）">✕</button>
+      </div>
       <div class="body-row">
         <aside id="outline" class="outline" aria-label="文档大纲">
           <div class="outline-title">大纲</div>
