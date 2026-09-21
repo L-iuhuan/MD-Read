@@ -2,8 +2,9 @@
  * 渲染管线总装（Lane A 唯一入口，main.ts 只认这里的 renderDocument）。
  *
  * 顺序写死（v1.3 定序约束，不得调整）：
- *   md.render → DOMPurify → DOMParser → KaTeX auto-render → pangu(默认开)
- *   → tok-break → outline 提取 → body.innerHTML
+ *   mathprotect.extract → md.render → mathprotect.restore → DOMPurify
+ *   → DOMParser → KaTeX auto-render → pangu(默认开) → tok-break
+ *   → outline 提取 → body.innerHTML
  *
  * 为什么是这个顺序：
  * - cjk-gap / tok-break 的空 span 必须在 sanitize 之后插入，消毒配置无需
@@ -15,6 +16,7 @@
 import { md } from './markdown'
 import { sanitizeHtml } from './sanitize'
 import { renderMath } from './math'
+import { extractMath, restoreMath } from './mathprotect'
 import { applyPangu } from './pangu'
 import { wrapLongTokens } from './tokbreak'
 
@@ -54,7 +56,12 @@ function extractOutline(root: Element): OutlineItem[] {
 
 /** 渲染一篇 Markdown 源文：返回安全 HTML 与大纲 */
 export function renderDocument(src: string, opts?: RenderOptions): RenderResult {
-  const raw = md.render(src)
+  // M1-E2 数学保护（顺序写死，不得调整）：extract 必须在 md.render 之前
+  // （否则 \( 被 markdown-it 反斜杠转义吃掉）；restore 必须在 render 之后、
+  // sanitize 之前——占位符是纯字母数字，还原文本已做 HTML 实体转义，
+  // 两者都 sanitize 安全，不给 DOMPurify 开口子。
+  const guards = extractMath(src)
+  const raw = restoreMath(md.render(guards.text), guards)
   const clean = sanitizeHtml(raw)
   const doc = new DOMParser().parseFromString(clean, 'text/html')
   renderMath(doc)

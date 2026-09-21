@@ -73,7 +73,7 @@ const EMOJI_DEFS: Readonly<Record<string, string>> = {
   // 工作与生活
   coffee: '☕', cake: '🍰', calendar: '📅', memo: '📝', book: '📖', email: '📧',
   phone: '📱', computer: '💻', lock: '🔒', key: '🔑',
-  chart_with_upwards_trend: '📈', chart_with_downwards_trend: '📉',
+  chart_with_upwards_trend: '📈', chart_with_downwards_trend: '📉', dart: '🎯',
   money_with_wings: '💸', dollar: '💵', yen: '💴',
 }
 

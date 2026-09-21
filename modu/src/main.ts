@@ -102,8 +102,10 @@ function applyPrefs(): void {
   if (theme === "dark" || theme === "light") {
     document.documentElement.dataset.theme = theme;
   }
-  if (localStorage.getItem("modu-face") === "serif") {
-    document.documentElement.dataset.face = "serif";
+  // 衬线属性按 cjk.css 契约落在 .mdc 自身（.mdc[data-face="serif"]），不在 <html>
+  const docEl = document.getElementById("doc");
+  if (docEl !== null && localStorage.getItem("modu-face") === "serif") {
+    docEl.dataset.face = "serif";
   }
 }
 
@@ -116,15 +118,15 @@ function setupToggles(): void {
     refreshMermaidTheme(next);
   });
   $("btn-face").addEventListener("click", () => {
-    const root = document.documentElement;
-    if (root.dataset.face === "serif") {
-      delete root.dataset.face;
+    const doc = $<HTMLElement>("doc");
+    if (doc.dataset.face === "serif") {
+      delete doc.dataset.face;
       localStorage.setItem("modu-face", "sans");
     } else {
-      root.dataset.face = "serif";
+      doc.dataset.face = "serif";
       localStorage.setItem("modu-face", "serif");
     }
-    refitView($<HTMLElement>("doc"));
+    refitView(doc);
   });
 }
 

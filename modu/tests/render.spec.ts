@@ -1,6 +1,7 @@
 /**
  * 渲染管线断言（Lane A 验收语料：tests/corpus/语料.md）。
- * 断言组①-⑦ 与任务书逐条对应，金额红线为硬判据。
+ * 断言组①-⑧ 与任务书逐条对应，金额红线为硬判据；
+ * ⑧ 为 M1-E2 回归（mathprotect + emoji 扩词）。
  */
 import { describe, expect, it } from 'vitest'
 import { renderDocument } from '../src/render/pipeline'
@@ -55,8 +56,8 @@ describe('① 金额红线（D2）', () => {
 describe('② 数学分隔符（D2：仅 $$ / \\( \\) / \\[ \\]）', () => {
   it('$$…$$ → .katex-display；\\(…\\) → .katex', () => {
     expect(doc.querySelectorAll('.katex-display').length).toBe(1)
-    // 2 个行内 + 块级内部的 1 个 .katex
-    expect(doc.querySelectorAll('.katex').length).toBe(3)
+    // 3 个行内（x_i、C_t、混排锚点 P）+ 块级内部的 1 个 .katex
+    expect(doc.querySelectorAll('.katex').length).toBe(4)
   })
 
   it('裸 $x$ 保持纯文本', () => {
@@ -161,5 +162,31 @@ describe('⑦ GFM 结构件', () => {
     expect(plain.length).toBe(1)
     expect(plain[0].querySelectorAll('[class^="hljs-"]').length).toBe(0)
     expect(doc.querySelector('div.mermaid')?.textContent).toContain('graph TD')
+  })
+})
+
+describe('⑧ M1-E2 回归（mathprotect + emoji 扩词）', () => {
+  it('单反斜杠 \\(x_i\\) 渲染为 .katex（真实语法回归，双反斜杠旧写法已废）', () => {
+    const katexText = [...doc.querySelectorAll('.katex')].map((e) => e.textContent ?? '').join('')
+    expect(katexText).toContain('x_i')
+    expect(katexText).toContain('C_t')
+    // 若保护失效，markdown-it 会把 \( 转义吃掉，正文露出 (x_i)
+    expect(doc.body.textContent).not.toContain('(x_i)')
+  })
+
+  it('混排行：\\(P\\) 渲染、$1,000 仍纯文本（金额不误伤）', () => {
+    expect(doc.body.textContent).toContain('权利金 $1,000')
+    const katexText = [...doc.querySelectorAll('.katex')].map((e) => e.textContent ?? '').join('')
+    expect(katexText.includes('$1,000')).toBe(false)
+  })
+
+  it(':dart: → 🎯（短码表扩词）', () => {
+    const dart = parse(renderDocument('目标 :dart: 达成').html)
+    expect(dart.body.textContent).toContain('🎯')
+  })
+
+  it('MoDuMathGuard 占位符零残留（还原完整性，pangu 开/关双路径）', () => {
+    expect(html).not.toContain('MoDuMathGuard')
+    expect(renderDocument(src, { pangu: false }).html).not.toContain('MoDuMathGuard')
   })
 })
