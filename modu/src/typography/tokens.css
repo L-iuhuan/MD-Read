@@ -1,0 +1,161 @@
+/* ==========================================================================
+   墨读 MoDu · typography/tokens.css —— 设计 token 层
+   唯一移植源：docs/demo/排版demo.html §0（三轮迭代评审后冻结，规格 v1.3 §3.3）。
+   纪律（§3.3 强制）：
+   - 色值只从 Radix Colors v3 阶数取，每个色值行尾注明体系 + 阶数；
+   - 亮暗双套成对设计、同步验收；正文对比度 ≥4.5:1（实测值随行标注）；
+   - 结构刻度取 Open Props 最小实用集（用户拍板，不建完整 token 体系）；
+   - UI 只认「语义映射层」，换色体系时只改那一层。
+   语义变量对照（任务书称呼 → 本文件）：--bg → --bg-app / --surface → --bg-surface /
+   --text-2 → --text-muted / --accent → --accent-* 族 / --code-bg → --bg-code /
+   --table-header → 表头底色（demo 中 thead th 直接引用 --bg-code，未单设变量）。
+   demo 专属、不移植：--paper-fixed（① 栏固定亮色纸面）、--font-chrome-mono 与
+   Proof Mono @font-face（demo 工具条专用字体）、--stage-h（三栏舞台高度）。
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* --- Radix slate（中性阶，UI 唯一中性色系）--- */
+  --slate-1: #fcfcfd;   /* slate.1  应用底 */
+  --slate-2: #f9f9fb;   /* slate.2  次级底 / 斑马纹 */
+  --slate-3: #f0f0f3;   /* slate.3  代码底 / 表头底 */
+  --slate-4: #e8e8ec;   /* slate.4  悬停底 */
+  --slate-5: #e0e1e6;   /* slate.5  按压底 */
+  --slate-6: #d9d9e0;   /* slate.6  常规边框 */
+  --slate-7: #cdced6;   /* slate.7  分割线 */
+  --slate-8: #b9bbc6;   /* slate.8  强边框 */
+  --slate-9: #8b8d98;   /* slate.9  装饰实心（引用条）*/
+  --slate-10: #80838d;  /* slate.10 装饰实心悬停 */
+  --slate-11: #60646c;  /* slate.11 低对比文字（对 slate.1 = 5.79:1 ✔）*/
+  --slate-12: #1c2024;  /* slate.12 高对比文字（对 slate.1 = 15.98:1 ✔）*/
+
+  /* --- Radix blue（全站唯一强调色，§3.3 单体系不混搭）--- */
+  --blue-3: #e6f4fe;    /* blue.3  选中底 */
+  --blue-5: #c2e5ff;    /* blue.5  选中底悬停 */
+  --blue-7: #8ec8f6;    /* blue.7  选中边框 */
+  --blue-9: #0090ff;    /* blue.9  实心聚焦环（对 slate.1 = 3.0:1，UI 组件够 3:1）*/
+  --blue-11: #0d74ce;   /* blue.11 链接/强调字（对 slate.1 = 4.65:1 ✔）*/
+  --blue-12: #113264;   /* blue.12 强调字悬停 */
+
+  /* --- Radix 语义色（§3.3 红错绿过黄警蓝信）--- */
+  --green-3: #e6f6eb;   /* green.3  通过底 */
+  --green-11: #218358;  /* green.11 通过标记（对 green.3 = 4.21:1，仅用于 ≥16px 徽标）*/
+  --green-12: #193b2d;  /* green.12 通过正文（对 green.3 = 11.00:1 ✔）*/
+  --amber-3: #fff7c2;   /* amber.3  警告底 */
+  --amber-12: #4f3422;  /* amber.12 警告正文（对 amber.3 = 10.47:1 ✔）*/
+  --red-3: #feebec;     /* red.3    错误底 */
+  --red-11: #ce2c31;    /* red.11   错误正文（对 red.3 = 4.54:1 ✔）*/
+
+  /* --- 语义映射（UI 只认这层，换体系时改这里）--- */
+  --bg-app: var(--slate-2);
+  --bg-surface: var(--slate-1);
+  --bg-subtle: var(--slate-3);
+  --bg-hover: var(--slate-4);
+  --bg-zebra: var(--slate-2);
+  --bg-code: var(--slate-3);
+  --bg-quote: var(--slate-2);
+  --border: var(--slate-6);
+  --border-strong: var(--slate-8);
+  --rule: var(--slate-7);
+  --text: var(--slate-12);
+  --text-muted: var(--slate-11);
+  --quote-bar: var(--slate-9);
+  --accent-solid: var(--blue-9);
+  --accent-text: var(--blue-11);
+  --accent-text-hover: var(--blue-12);
+  --accent-tint: var(--blue-3);
+  --accent-tint-hover: var(--blue-5);
+  --accent-tint-border: var(--blue-7);
+  --focus-ring: var(--blue-9);
+  --ok-text: var(--green-12);
+  --ok-bg: var(--green-3);
+  --warn-text: var(--amber-12);
+  --warn-bg: var(--amber-3);
+  --danger-text: var(--red-11);
+  --danger-bg: var(--red-3);
+
+  /* --- Mermaid 主题变量（§4 D5 refreshMermaidTheme 思路，取值同样来自 Radix 阶数，
+         由渲染层 JS 读取后注入 Mermaid initialize）--- */
+  --mmd-bg: #fcfcfd;            /* slate.1 */
+  --mmd-primary: #f0f0f3;       /* slate.3 */
+  --mmd-primary-text: #1c2024;  /* slate.12 */
+  --mmd-primary-border: #8b8d98;/* slate.9 */
+  --mmd-line: #80838d;          /* slate.10 */
+  --mmd-secondary: #e6f4fe;     /* blue.3 */
+
+  /* --- 结构刻度：Open Props 最小实用集（§3.3 用户拍板，约十几个值）---
+     间距 7 档 / 圆角 3 档 / 时长 2 档（≤250ms 硬约束，§3.2），取值=Open Props 原值 */
+  --size-1: .25rem;   /* Open Props size-1 */
+  --size-2: .5rem;    /* Open Props size-2 */
+  --size-3: .75rem;   /* Open Props size-3 */
+  --size-4: 1rem;     /* Open Props size-4 */
+  --size-5: 1.5rem;   /* Open Props size-5 */
+  --size-6: 2rem;     /* Open Props size-6 */
+  --size-7: 3rem;     /* Open Props size-7 */
+  --radius-1: 2px;    /* Open Props radius-1 */
+  --radius-2: 5px;    /* Open Props radius-2 */
+  --radius-3: 9px;    /* Open Props radius-3 */
+  --duration-1: .1s;  /* Open Props duration-1（≤250ms 硬约束）*/
+  --duration-2: .2s;  /* Open Props duration-2 */
+  --ease-1: cubic-bezier(.25, 0, .5, 1); /* Open Props ease-1 */
+  --shadow-2: 0 3px 5px -2px hsl(220 43% 11% / 10%), 0 2px 4px -2px hsl(220 43% 11% / 8%);
+  /* 阴影结构抄 Open Props shadow-2，颜色改用中性墨色（暗色下另行降低不透明度）*/
+
+  /* --- 排版刻度（§2.1 F3 / §4 D3）---
+     字号刻度说明：正文基准 --fs-body 一档 + 标题/表格/脚注等按 em 相对缩放
+     （见 cjk.css），应用层字号增减只改 --fs-body 一处即可全局生效。*/
+  --fs-body: 16px;                       /* 正文基准字号，应用字号设置增减的唯一作用点 */
+  --measure: calc(46 * var(--fs-body));  /* §4 D3 正文限宽 46em。用 calc 而非直接写 46em：
+                                            变量替换后 em 按「使用元素」的字号解析，
+                                            若写 46em，h2 的栏宽会比正文宽，栏位对不齐 */
+  --measure-wide: calc(60 * var(--fs-body)); /* 宽表带出，避免 7 列财务表腰斩（设计决策）*/
+  --line-body: 1.8;                      /* §4 D3 行高 1.8 */
+  --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
+               "Source Han Sans SC", "Noto Sans SC", system-ui, sans-serif; /* §4 D3 默认无衬线 */
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", 宋体, SimSun,
+                Georgia, "Times New Roman", serif;                         /* §4 D3 衬线栈 */
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+}
+
+/* 暗色阶：Radix Colors v3 dark —— 成对设计，与亮色同步验收（§3.3）。
+   只覆盖阶数变量与阴影；语义映射/结构刻度/排版刻度经 var() 自动跟随。 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --slate-1: #111113;   /* slate.dark.1 */
+  --slate-2: #18191b;   /* slate.dark.2 */
+  --slate-3: #212225;   /* slate.dark.3 */
+  --slate-4: #272a2d;   /* slate.dark.4 */
+  --slate-5: #2e3135;   /* slate.dark.5 */
+  --slate-6: #363a3f;   /* slate.dark.6 */
+  --slate-7: #43484e;   /* slate.dark.7 */
+  --slate-8: #5a6169;   /* slate.dark.8 */
+  --slate-9: #696e77;   /* slate.dark.9 */
+  --slate-10: #777b84;  /* slate.dark.10 */
+  --slate-11: #b0b4ba;  /* slate.dark.11（对 slate.1 = 9.06:1 ✔）*/
+  --slate-12: #edeef0;  /* slate.dark.12（对 slate.1 = 16.25:1 ✔）*/
+
+  --blue-3: #0d2847;    /* blue.dark.3 */
+  --blue-5: #004074;    /* blue.dark.5 */
+  --blue-7: #205d9e;    /* blue.dark.7 */
+  --blue-9: #0090ff;    /* blue.dark.9 */
+  --blue-11: #70b8ff;   /* blue.dark.11（对 slate.1 = 8.97:1 ✔）*/
+  --blue-12: #c2e6ff;   /* blue.dark.12 */
+
+  --green-3: #132d21;   /* green.dark.3 */
+  --green-11: #3dd68c;  /* green.dark.11 */
+  --green-12: #b1f1cb;  /* green.dark.12（对 green.3 = 11.45:1 ✔）*/
+  --amber-3: #302008;   /* amber.dark.3 */
+  --amber-12: #ffe7b3;  /* amber.dark.12（对 amber.3 = 12.98:1 ✔）*/
+  --red-3: #3b1219;     /* red.dark.3 */
+  --red-11: #ff9592;    /* red.dark.11（对 red.3 = 7.75:1 ✔）*/
+
+  --mmd-bg: #111113;            /* slate.dark.1 */
+  --mmd-primary: #212225;       /* slate.dark.3 */
+  --mmd-primary-text: #edeef0;  /* slate.dark.12 */
+  --mmd-primary-border: #696e77;/* slate.dark.9 */
+  --mmd-line: #777b84;          /* slate.dark.10 */
+  --mmd-secondary: #0d2847;     /* blue.dark.3 */
+  --shadow-2: 0 3px 5px -2px hsl(0 0% 0% / 45%), 0 2px 4px -2px hsl(0 0% 0% / 35%);
+}

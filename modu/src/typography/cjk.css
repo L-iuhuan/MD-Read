@@ -1,0 +1,297 @@
+/* ==========================================================================
+   墨读 MoDu · typography/cjk.css —— 正文内容排版层
+   唯一移植源：docs/demo/排版demo.html §1/§7（排版 demo 冻结版），
+   另按规格 §4 D2 补入表格打印友好规则（thead 表头跨页 + tr 行级分页）。
+   作用域：.mdc（阅读态内容容器；DOM 结构以 demo 为准：.mdc > article.doc > 块级内容）。
+   暗色适配：整套经 tokens.css 阶数变量切换（html[data-theme="dark"] 覆盖），
+   本文件不含任何暗色专规则——这是 demo 的设计，不是遗漏。
+   demo 专属、不移植：三栏对照布局（.stage/.col/.col__*）、工具条（.bar/.seg/.tgl/
+   .icon-btn/.ghost-btn/.fs-val）、自检面板（.evidence/.ev-*）、CDN 降级横幅
+   （.banner/.fallback-note）、间隙标记显形（[data-gap-marker]，评审辅助）、
+   对照栏固定亮色纸面（.col__paper--ua）。
+   工程适配（相对 demo 的两处必要改动）：
+   1. .code-lang 字体 demo 用工具条专用 --font-chrome-mono，此处改用 --font-mono；
+   2. focus-visible 与动效降级规则收敛到 .mdc 作用域内，避免跨车道污染应用 UI 层。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. pangu 的非破坏实现（§4 D3）
+   空 span 撑宽，DOM 文本节点零改写；复制出的文本逐字节保真。
+   字面空格字符绝不插入。
+   -------------------------------------------------------------------------- */
+.cjk-gap {
+  display: inline-block;
+  width: .125em;        /* 1/8 em，pangu 官方推荐量级 */
+  height: 1em;          /* 固定高度，避免空元素影响行盒高度 */
+  vertical-align: -.08em;
+}
+
+/* --------------------------------------------------------------------------
+   长技术串智能断行 —— M1 工程规则（渲染管线后处理）
+   `transform_request_id_20260921` 这类 ≥16 字符的技术串没有语义断点，浏览器把它当
+   「不可拆单词」：当前行放不下就整串下移，把上一行空出一大块，两端对齐再去撑那行字距
+   （实测汉字步进 16.02px → 26.30~36.59px）。渲染后把这类串包一层 .tok-break，允许在
+   任意字符处断行，上一行自然被填满 —— 字距撑开与右侧空白同时消失。
+   只作用这一个类，正文绝不做全局 break-all（全局会把 $1,000 拆成 $1,0|00）。
+   安全边界：金额最长连续 [A-Za-z0-9] 段只有 3 字符（1、000），不会被正则命中。
+   -------------------------------------------------------------------------- */
+.tok-break { word-break: break-all; }
+
+/* ==========================================================================
+   2. 正文排版基础（§2.1 F3 / §4 D3）
+   ========================================================================== */
+.mdc {
+  font-family: var(--font-sans);       /* §4 D3 默认无衬线（雅黑栈）*/
+  font-size: var(--fs-body);           /* 字号设置增减的唯一作用点 */
+  line-height: var(--line-body);       /* §4 D3 行高 1.8 */
+  color: var(--text);
+  text-align: justify;                 /* §4 D3 两端对齐 */
+  text-spacing-trim: space-first;      /* §4 D3 标点挤压（Chrome 123+）
+                                          text-autospace 分支按 D3 不写：
+                                          Chrome ≤153 CSS.supports 全红，不留死代码 */
+  overflow-wrap: anywhere;             /* §4 D3 兜长串（如 transform_request_id_20260921）*/
+  font-variant-numeric: tabular-nums;  /* 财务场景：数字等宽对齐 */
+  text-underline-offset: .2em;
+  /* hanging-punctuation 在 Chrome 未实现，故不写 —— 与 D3「不留死代码」同一纪律 */
+}
+.mdc[data-face="serif"] { font-family: var(--font-serif); }  /* §4 D3 衬线可选（Noto Serif SC/宋体栈）*/
+
+/* --------------------------------------------------------------------------
+   中文两端对齐的「撑开守卫」（demo 修订一，用户否决轮定稿）
+   实测事实（Chrome 138）：Blink 对 CJK 做 justify 时加宽的是每个字的**步进宽度**，
+   而不是在字之间留出可测的空隙。含超长不可断串的段落，前一行自然宽度远小于栏宽，
+   多出来的空间被均摊到每个汉字上（步进 16.02px → 26.30~36.59px，+64%~+129%）。
+   处理原则：宁可右边缘不齐（ragged），也不撑字距。触发条件由渲染层 JS 逐段实测决定
+   （在块元素上落 data-justify="off"），这里只提供兜底样式。
+   -------------------------------------------------------------------------- */
+.mdc .doc > [data-justify="off"] { text-align: start; }
+
+/* 实测模式：渲染层测量期间把候选块的对齐临时统一为 start。
+   justify 不改变断行位置，所以 start 下的行宽就是该行的自然宽度，
+   只需每块一次 Range 测量，无需逐字量宽（成本 O(块数) 而非 O(字数)）。
+   一次性整体切换，只触发一次重排。*/
+[data-justify-measure] :is(p, li, blockquote) { text-align: start; }
+
+/* 限宽 46em 居中（用 --measure 而非直接 46em，见 tokens.css 注释）*/
+.mdc .doc > * {
+  max-inline-size: var(--measure);
+  margin-inline: auto;
+}
+
+/* ==========================================================================
+   3. 标题层级：靠字号/重量/间距拉开，不靠边框堆砌（§3.1）
+   ========================================================================== */
+.mdc h1, .mdc h2, .mdc h3, .mdc h4, .mdc h5, .mdc h6 {
+  text-align: start;
+  overflow-wrap: anywhere;
+  margin-block: 0 var(--size-3);
+  line-height: 1.45;
+}
+.mdc h1 { font-size: 1.85em; font-weight: 700; letter-spacing: -.01em; }
+.mdc h2 { font-size: 1.4em; font-weight: 700; letter-spacing: -.005em; margin-block-start: 1.9em; }
+.mdc h3 { font-size: 1.15em; font-weight: 600; margin-block-start: 1.7em; }
+.mdc h4 {
+  font-size: .95em; font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: .03em;
+  margin-block-start: 1.6em;
+}
+.mdc h1 + *, .mdc h2 + *, .mdc h3 + *, .mdc h4 + * { margin-block-start: 0; }
+
+/* --- 正文 --- */
+.mdc p { margin-block: 0 1.05em; }
+.mdc p:last-child { margin-block-end: 0; }
+.mdc strong { font-weight: 700; }
+.mdc .doc-meta { font-size: .8125em; color: var(--text-muted); line-height: 1.7; text-align: start; }
+.mdc hr { border: 0; border-top: 1px solid var(--rule); margin-block: var(--size-4) var(--size-5); }
+
+/* --- 链接 --- */
+.mdc a {
+  color: var(--accent-text);
+  text-decoration-line: underline;
+  text-decoration-thickness: .055em;
+  text-underline-offset: .18em;
+  transition: color var(--duration-1) var(--ease-1);
+}
+.mdc a:hover { color: var(--accent-text-hover); text-decoration-thickness: .11em; }
+
+/* --- 行内代码 --- */
+.mdc :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: .85em;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  padding: .1em .35em;
+  overflow-wrap: anywhere;
+}
+
+/* --- 代码块（含语言标签，§2.1 F2）；横向滚动允许 --- */
+.mdc .code-block {
+  margin-block: 0 1.2em;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  overflow: hidden;
+}
+.mdc .code-lang {
+  display: block;
+  font-family: var(--font-mono);   /* demo 用工具条专用等宽体，工程改用 --font-mono */
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 5px var(--size-3);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg-surface) 45%, transparent);
+}
+.mdc pre {
+  margin: 0;
+  padding: var(--size-3) var(--size-4);
+  overflow-x: auto;       /* 横向滚动允许：代码不做折行破坏 */
+  font-family: var(--font-mono);
+  font-size: .82em;
+  line-height: 1.7;
+  text-align: start;      /* 代码不参与两端对齐 */
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* ==========================================================================
+   4. 表格（7 列财务明细场景，§3.3；打印友好规则来自规格 §4 D2）
+   ========================================================================== */
+.mdc .table-wrap {
+  margin-block: 0 1.2em;
+  max-inline-size: var(--measure-wide);   /* 宽表带出，避免 7 列财务表腰斩 */
+  margin-inline: auto;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+.mdc table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: .8125em;
+  line-height: 1.65;
+  font-variant-numeric: tabular-nums;
+}
+.mdc caption {
+  text-align: start;
+  color: var(--text-muted);
+  font-size: .95em;
+  padding: var(--size-2) var(--size-3);
+  border-bottom: 1px solid var(--border);
+}
+.mdc th, .mdc td {
+  padding: 6px var(--size-3);
+  border-bottom: 1px solid var(--border);
+  text-align: start;   /* 表格不参与两端对齐，避免数字列被拉伸 */
+  white-space: nowrap;
+}
+/* 打印友好（§4 D2：行级分页 + 表头跨页重复；剔整表 avoid）——
+   屏显无害（break-* 只影响分页碎片化），导出 PDF 时生效 */
+.mdc thead { display: table-header-group; }
+.mdc tr { break-inside: avoid; }
+.mdc thead th { background: var(--bg-code); font-weight: 600; color: var(--text); }
+.mdc th.num, .mdc td.num { text-align: end; font-family: var(--font-mono); }
+.mdc tbody tr:nth-child(even) { background: var(--bg-zebra); }
+.mdc tbody tr:last-child td { border-bottom: 0; }
+.mdc tbody tr:hover { background: var(--bg-hover); }
+.mdc .doc-note { font-size: .8125em; color: var(--text-muted); }
+
+/* ==========================================================================
+   5. 块级公式（§4 D2：块级 $$…$$，行内 \(…\)，禁裸 $…$）
+   自动缩放适配 —— M1 工程规则（demo 修订三，规格 v1.2）：
+   KaTeX 的 .katex-html 是 nowrap 的，宽公式原本靠 overflow-x: auto 出横向滚动条，
+   而滚动条默认没人拖 → 公式被裁一截还容易被误读。改为等比缩放适配：
+   只有自然宽度超出容器才缩，不超宽一律 1:1；移除横向滚动条路径。
+   **JS 缩放由渲染层负责**（fitMathBlocks 量算后把比例写在 .katex 的内联
+   transform 上，并在容器上落 data-math-scale 属性）；此处只负责禁用溢出路径
+   与固定 transform-origin（缩放围绕上边中点，外层高度才压得准）。
+   ========================================================================== */
+.mdc .math-block {
+  margin-block: 1.3em;
+  text-align: center;
+  overflow: visible;   /* 取消横向滚动条路径 */
+}
+.mdc .math-block .katex-display { margin: 0; }
+.mdc .math-block .katex { transform-origin: center top; }
+.mdc .katex { font-size: 1.04em; }
+
+/* ==========================================================================
+   6. Mermaid 图（§2.1 F2 懒加载；主题变量见 tokens.css --mmd-*，由渲染层注入）
+   ========================================================================== */
+.mdc .diagram { margin-block: 0 1.2em; text-align: center; }
+.mdc pre.mermaid {
+  margin: 0;
+  padding: var(--size-3);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  font-size: .8em;
+  color: var(--text-muted);
+  text-align: start;
+  overflow-x: auto;
+}
+.mdc pre.mermaid[data-rendered="1"] { color: inherit; font-size: 1em; }
+.mdc pre.mermaid svg { max-inline-size: 100%; block-size: auto; }
+.mdc .diagram figcaption { font-size: .8125em; color: var(--text-muted); margin-block-start: var(--size-2); }
+
+/* --- 引用块 --- */
+.mdc blockquote {
+  margin-block: 0 1.2em;
+  padding: var(--size-3) var(--size-4) var(--size-3) var(--size-5);
+  background: var(--bg-quote);
+  border-inline-start: 3px solid var(--quote-bar);
+  border-radius: 0 var(--radius-2) var(--radius-2) 0;
+}
+.mdc blockquote > p:last-child { margin-block-end: 0; }
+.mdc blockquote cite {
+  display: block;
+  margin-block-start: var(--size-2);
+  font-size: .8125em;
+  font-style: normal;
+  color: var(--text-muted);
+}
+
+/* --- 列表 / 任务列表 --- */
+.mdc ul, .mdc ol { margin-block: 0 1.05em; padding-inline-start: 1.5em; }
+.mdc li { margin-block-end: .35em; }
+.mdc ul.task-list { list-style: none; padding-inline-start: .1em; }
+.mdc ul.task-list li { display: flex; align-items: flex-start; gap: var(--size-2); text-align: start; }
+.mdc input[type="checkbox"] {
+  flex: none;
+  accent-color: var(--accent-solid);  /* 主题化勾选框 */
+  inline-size: 1em; block-size: 1em;
+  margin-block-start: .55em;
+}
+.mdc .task-list label { cursor: pointer; }
+
+/* --- 脚注（§2.1 F2 markdown-it-footnote）--- */
+.mdc .fn-ref a { font-size: .72em; vertical-align: .35em; text-decoration: none; padding-inline: .1em; }
+.mdc .footnotes {
+  margin-block-start: var(--size-5);
+  padding-block-start: var(--size-3);
+  border-top: 1px solid var(--rule);
+  font-size: .8125em;
+  color: var(--text-muted);
+}
+.mdc .footnotes ol { padding-inline-start: 1.4em; }
+.mdc .footnotes li { margin-block-end: var(--size-2); }
+.mdc .footnotes a { color: var(--text-muted); }
+
+/* ==========================================================================
+   7. 无障碍（§3.2 focus-visible 焦点态保留 / 动效降级）
+   两条均收敛在 .mdc 作用域内；应用 UI 层的焦点态由对应车道自理。
+   ========================================================================== */
+.mdc :where(a, button, input, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);   /* §3.2 focus-visible 焦点态保留 */
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mdc *, .mdc *::before, .mdc *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+  }
+}

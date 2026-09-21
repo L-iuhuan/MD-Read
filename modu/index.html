@@ -1,28 +1,36 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>墨读 M0 Spike</title>
+    <title>墨读 MoDu</title>
     <script type="module" src="/src/main.ts" defer></script>
-    <style>
-      body { font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif; margin: 0; }
-      main { max-width: 46em; margin: 2rem auto; padding: 0 1rem; }
-      #spike-log { background: #f6f8fa; padding: 12px; border-radius: 6px; white-space: pre-wrap; font-size: 13px; }
-      .amount { color: #1f6feb; }
-    </style>
   </head>
   <body>
-    <main>
-      <h1>墨读 M0 打印 Spike</h1>
-      <p>
-        用于 PDF 输出验证的正文：本期预算 <span class="amount">$1,000</span>，对比上期
-        <span class="amount">$2,000</span>，降幅 50%。中文字体与排版在打印路径同样生效，
-        本段文字用于验证 PrintToPdf 的正文渲染与分页行为。
-      </p>
-      <pre>const x = 42; // 代码块样例</pre>
-      <h2>spike 输出</h2>
-      <pre id="spike-log"></pre>
-    </main>
+    <div id="app">
+      <header class="topbar">
+        <button id="btn-open" type="button" title="打开 Markdown 文件">打开…</button>
+        <span id="doc-title" class="doc-title" title="当前文件">未打开文件</span>
+        <span class="topbar-spacer"></span>
+        <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
+        <button id="btn-face" type="button" title="切换正文衬线/无衬线">衬</button>
+        <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>⇩ PDF</button>
+      </header>
+      <div class="body-row">
+        <aside id="outline" class="outline" aria-label="文档大纲">
+          <div class="outline-title">大纲</div>
+          <nav id="outline-list" class="outline-list"></nav>
+        </aside>
+        <main id="content" class="content">
+          <div id="empty-hint" class="empty-hint">拖入 .md 文件，或点「打开…」</div>
+          <article id="doc" class="mdc" hidden></article>
+        </main>
+      </div>
+      <footer class="statusbar">
+        <span id="st-encoding">—</span>
+        <span class="statusbar-spacer"></span>
+        <span id="st-progress">0%</span>
+      </footer>
+    </div>
   </body>
 </html>
