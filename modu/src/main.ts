@@ -1,6 +1,7 @@
 /**
  * 墨读 M2 应用壳：多标签 + 最近文件 + 文档内查找 + 大纲滚动跟随。
  * M3-A 增编辑态（F7）：CM6 会话在 editor/，此处只做接线（Ctrl+E/S/F、✎ 按钮）。
+ * M4 增导出 PDF（⇩ 按钮）：等待渲染完备 → 存路径 → PrintToPdf 直出，逻辑在 render/print-ready 与 Rust print.rs。
  * 排版在 typography/，渲染在 render/，标签/最近在 app/，查找在 ui/——此处只做接线。
  */
 import { invoke } from "@tauri-apps/api/core";
@@ -10,6 +11,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
+import { awaitPrintReady } from "./render/print-ready";
 import { createTabManager, type MountContext, type TabManager } from "./app/tabs";
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { openEachMd } from "./app/drop";
@@ -19,6 +21,7 @@ import { createEditSession, type EditSession } from "./editor/editor";
 import "./app.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
+import "./typography/print.css";
 import "katex/dist/katex.min.css";
 
 interface LoadedFile {
@@ -32,6 +35,8 @@ interface LoadedFile {
 /** 会话先于 tabs 建好，但 showError/resetToWelcome 由 tabs 回调触发——模块级引用 */
 let editorSession: EditSession | null = null;
 let activeTabs: TabManager | null = null;
+/** ⇩PDF 按钮（HTML 初始 disabled，由 JS 在有文档时启用——不动 HTML 的约定） */
+let exportButton: HTMLButtonElement | null = null;
 
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -144,6 +149,9 @@ function resetToWelcome(): void {
   if (editBtn !== null) {
     editBtn.disabled = true; // 无文档不可编辑
   }
+  if (exportButton !== null) {
+    exportButton.disabled = true; // 无文档不可导出
+  }
   $("content").scrollTop = 0;
 }
 
@@ -183,6 +191,63 @@ async function onOpenClick(tabs: TabManager): Promise<void> {
   });
   if (typeof picked === "string") {
     await openPath(tabs, picked);
+  }
+}
+
+/* ---- 导出 PDF（M4）：等待渲染完备 → 存路径 → PrintToPdf 直出 ---- */
+
+let exportFlashTimer = 0;
+
+/** 状态栏闪显（复用 #st-saved 位，与「已保存」同一渠道） */
+function flashStatus(message: string): void {
+  const el = $<HTMLElement>("st-saved");
+  el.textContent = message;
+  el.hidden = false;
+  window.clearTimeout(exportFlashTimer);
+  exportFlashTimer = window.setTimeout(() => {
+    el.hidden = true;
+  }, 2500);
+}
+
+/** 默认存档名：当前文件名去 .md/.markdown 扩展 + .pdf */
+function defaultPdfName(path: string): string {
+  const name = path.split(/[\\/]/).pop() ?? "";
+  const stem = name.replace(/\.(md|markdown)$/i, "");
+  return `${stem === "" ? "文档" : stem}.pdf`;
+}
+
+async function onExportClick(tabs: TabManager): Promise<void> {
+  const tab = tabs.activeTab();
+  if (tab === null) {
+    return; // 无文档：按钮本应禁用，双保险
+  }
+  if (editorSession?.isEditing() === true) {
+    editorSession.toRead(); // beta 席 D2 条款：编辑态导出先切回阅读态（含重渲正文）
+  }
+  const doc = document.getElementById("doc");
+  if (doc === null) {
+    return;
+  }
+  const ready = await awaitPrintReady(doc);
+  if (ready.timedOut) {
+    flashStatus("部分图表未渲染完成，将按当前版式导出");
+  }
+  let picked: string | null;
+  try {
+    picked = await invoke<string | null>("pick_save_path", {
+      defaultName: defaultPdfName(tab.path),
+    });
+  } catch (error) {
+    flashStatus(`导出失败：${String(error)}`);
+    return;
+  }
+  if (picked === null || picked === "") {
+    return; // 用户取消：静默结束
+  }
+  try {
+    flashStatus(await invoke<string>("export_pdf", { path: picked }));
+  } catch (error) {
+    flashStatus(`导出失败：${String(error)}`);
   }
 }
 
@@ -270,6 +335,9 @@ async function boot(): Promise<void> {
     $("doc-title").textContent = ctx.tab.title;
     $("st-encoding").textContent = ctx.tab.encoding;
     $<HTMLButtonElement>("btn-edit").disabled = false;
+    if (exportButton !== null) {
+      exportButton.disabled = false; // 有文档即可导出
+    }
   }
 
   // M3-A 编辑会话（Ctrl+E/S/F 捕获路由、✎ 同 Ctrl+E）：先建会话再建标签（getTab 经 activeTabs 回指）
@@ -291,6 +359,8 @@ async function boot(): Promise<void> {
   $("btn-edit").addEventListener("click", () => editorSession?.toggle());
   $("btn-open").addEventListener("click", () => void onOpenClick(tabs));
   $("btn-newtab").addEventListener("click", () => void onOpenClick(tabs)); // 标签栏「+」= 打开…
+  exportButton = document.getElementById("btn-export") as HTMLButtonElement | null;
+  exportButton?.addEventListener("click", () => void onExportClick(tabs));
   setupRecentMenu((path) => void openPath(tabs, path));
   setupToggles();
   setupDragDrop(tabs);

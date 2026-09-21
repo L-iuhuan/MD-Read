@@ -20,7 +20,9 @@ pub fn run() {
             fs::save_file,
             take_pending_file,
             print::spike_log,
-            print::spike_print_pdf
+            print::spike_print_pdf,
+            print::export_pdf,
+            print::pick_save_path
         ])
         .setup(|app| {
             let pending = md_arg();

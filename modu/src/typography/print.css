@@ -1,0 +1,87 @@
+/**
+ * print.css —— 唯一打印覆盖层（宪法：打印样式只允许存在于本文件，新增打印样式只许写这里，
+ * 防 Print Studio 时代多份打印样式漂移重演）。M4·导出 PDF：WebView2 PrintToPdf 走
+ * Chromium 打印管线，本文件即 PDF 版式契约（物理侧配套见 src-tauri/src/print.rs）。
+ *
+ * 红线（Print Studio 尸检，违者返工）：
+ * - 禁 @page margin-box（@bottom-center / counter(page)）——Chromium 从未实现；
+ * - 禁光栅化路径（jsPDF/html2canvas）——公式变糊根因；
+ * - 页边距只由 @page 管，body / #doc 一律不写页边距——
+ *   「@page{margin:0}+body padding」会让分页处裁内容（毒资产，判死不搬）。
+ */
+
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm;
+  }
+
+  /* 颜色保真（D5 ①）：背景/边框/行内 code 与链接的着色原样进 PDF。
+     物理侧配套：PrintSettings ShouldPrintBackgrounds=true */
+  *,
+  *::before,
+  *::after {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* 盒装饰克隆（D5 ②）：pre/引用块/表格/行内 code 被分页切开时，
+     两段都保留完整的边框、背景与圆角 */
+  pre,
+  blockquote,
+  table,
+  figure,
+  code {
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  /* 块级防腰斩（D5 ③）。注意：table 故意不进这张清单——长表必须允许跨页，
+     由下方行级规则（tr 防断 + thead 跨页重复）接管，整表 avoid 是被禁的毒规则 */
+  pre,
+  figure,
+  blockquote,
+  img,
+  .mermaid,
+  .katex-display {
+    break-inside: avoid;
+  }
+
+  /* 表格行级分页（D2 ③）：行不腰斩、表头跨页重复 */
+  tr {
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+
+  /* KaTeX 鬼影根治（D2 ④）：MathML 不可见层在 PDF 里被复制/检索出重复文字 */
+  .katex-mathml {
+    display: none;
+  }
+
+  /* 壳层退场：只印正文 */
+  #titlebar,
+  .topbar,
+  .statusbar,
+  #outline,
+  #findbar,
+  #editor-pane {
+    display: none !important;
+  }
+
+  /* 正文全幅流入分页流：滚动容器放开、栅格退位、#doc 限宽清零。
+     页边距已由 @page 管理——此处再写任何页边距都是毒资产 */
+  .body-row {
+    display: block;
+  }
+  #content {
+    overflow: visible;
+    block-size: auto;
+  }
+  #doc {
+    max-inline-size: none;
+    margin: 0;
+    padding: 0;
+  }
+}
