@@ -48,17 +48,19 @@
   --red-11: #ce2c31;    /* red.11   错误正文（对 red.3 = 4.54:1 ✔）*/
 
   /* --- 语义映射（UI 只认这层，换体系时改这里）---
-     波4「去灰」重调：阅读纸面提到阶数 1（亮色下最白 / 暗色下最深），壳层框退到阶数 2，
-     纸面与框的落差因此「看得见」——之前纸面=2、壳层=1，整屏挤在 1~2 阶里，
-     视觉上就是一整块灰。基础阶数变量一个未改，只改这一层。
-     Radix 语义对照：1=App background（纸面）、2=Subtle background（壳层/侧栏）、
-     3=UI element background（输入框/代码等元件）。 */
-  --bg-app: var(--slate-1);      /* 阅读纸面（波4：由 slate.2 提白/加深到 slate.1）*/
-  --bg-chrome: var(--slate-2);   /* 壳层框：标题栏/顶栏/标签栏/大纲/状态栏（波4 新增）*/
-  --bg-surface: var(--slate-1);  /* 浮层卡片面：查找条/最近下拉/Aa 面板（波4：由 slate.1 与纸面同阶）*/
+     波5「整页纸」重调：阅读纸面钉在 1 阶（亮色下最白），壳层与内容画布一起退到 3 阶 ——
+     纸面与画布的落差（按 WCAG 公式计算 1.11:1）才是「白纸落在灰桌面上」这个分层的全部来源。
+     波4 的壳层 2 阶对 1 阶纸面只有 1.003:1，肉眼等于同色，故看不出纸面。
+     基础阶数变量一个未改，只改这一层。
+     Radix 语义对照：1=App background（纸面）、2=Subtle background、
+     3=UI element background（壳层/画布/代码等元件底）。 */
+  --bg-app: var(--slate-1);      /* 阅读纸面（亮色下最白的一档）*/
+  --bg-chrome: var(--slate-3);   /* 壳层与画布：标题栏/顶栏/标签行/大纲/状态栏 + 内容滚动区底（波5：2 → 3）*/
+  --bg-surface: var(--slate-1);  /* 浮层卡片面：查找条/最近下拉/Aa 面板（= 纸面阶，浮层永远是最亮一档）*/
   --bg-subtle: var(--slate-3);
   --bg-hover: var(--slate-4);
-  --bg-zebra: var(--slate-2);    /* 表斑马纹：纸面提到 1 阶后终于与纸面拉开一阶（此前与纸面同色，等于没生效）*/
+  --bg-zebra: var(--slate-2);    /* 表斑马纹：亮色下对纸面只有 1.003:1（肉眼不可辨，故条纹不是亮色的分层手段，
+                                    保留原阶；提到 3 阶会与表头同色，反而分不清表头）*/
   --bg-code: var(--slate-3);
   --bg-quote: var(--slate-3);
   --border: var(--slate-6);
@@ -81,6 +83,11 @@
   --warn-bg: var(--amber-3);
   --danger-text: var(--red-11);
   --danger-bg: var(--red-3);
+  /* 大纲活动态专用（波5 新增）：亮色 = 纸面白底 + blue.9 色条（1.11:1 / 3.18:1），
+     暗色在暗色块里换成「比纸面亮一档的底 + blue.11 浅色条」（1.22:1 / 6.86:1）——
+     用户反馈「深色大纲高亮看不出」，两处都得提亮才读得出。 */
+  --outline-active-bg: var(--slate-1);
+  --outline-active-bar: var(--blue-9);
 
   /* --- Mermaid 主题变量（§4 D5 refreshMermaidTheme 思路，取值同样来自 Radix 阶数，
          由渲染层 JS 读取后注入 Mermaid initialize）--- */
@@ -118,7 +125,12 @@
   --measure: calc(46 * var(--fs-body));  /* §4 D3 正文限宽 46em。用 calc 而非直接写 46em：
                                             变量替换后 em 按「使用元素」的字号解析，
                                             若写 46em，h2 的栏宽会比正文宽，栏位对不齐 */
-  --measure-wide: calc(60 * var(--fs-body)); /* 宽表带出，避免 7 列财务表腰斩（设计决策）*/
+  --measure-wide: calc(60 * var(--fs-body)); /* 宽表带出，避免 7 列财务表腰斩（设计决策）
+                                             ⚠ 波5 复核：渲染管线直出裸 table，不生成 .table-wrap，
+                                             而 `.mdc > *` 已把每个直接子元素限在 --measure，
+                                             故本值实际作用不到表格（现状如此，非波5 引入）；
+                                             整页纸路线下纸宽 = --measure + 2×--pad-page，
+                                             真要宽表得先有 wrap 容器。*/
   --line-body: 1.8;                      /* §4 D3 行高 1.8 */
   --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
                "Source Han Sans SC", "Noto Sans SC", system-ui, sans-serif; /* §4 D3 默认无衬线 */
@@ -134,20 +146,22 @@
      是壳层控件尺寸，按最小实用集只留三档；颜色一律复用既有阶数与语义映射，
      **不新增任何色值**。
      ========================================================================== */
-  --fs-chrome: 12px;      /* 按钮 / 标签 / 查找条输入 */
-  --fs-chrome-sm: 11px;   /* 状态栏 / 大纲条目 / 元信息 */
+  --fs-chrome: 13px;      /* 按钮 / 标签 / 查找条输入 / 大纲条目（波5：12 → 13，按钮文字要读得清）*/
+  --fs-chrome-sm: 11px;   /* 状态栏 / 分组标签 / 元信息 */
   --bg-active: var(--slate-5);  /* 按压底（slate.5，语义层补口，值来自既有阶数）*/
-  --h-titlebar: 32px;     /* 自定义标题栏高度（波4：由 app.css 局部变量归位到此）*/
-  --h-topbar: 40px;       /* 顶栏高度（波4：38 → 40，给 28px 按钮留出呼吸）*/
-  --h-tabbar: 32px;       /* 标签栏高度（波4：34 → 32，密度收紧）*/
-  --h-status: 22px;       /* 状态栏高度（波4：24 → 22，密度收紧）*/
+  --h-titlebar: 36px;     /* 标题栏高度（波5：32 → 36，标签行并入后要容纳 28px 标签）*/
+  --h-topbar: 40px;       /* 顶栏高度 */
+  --h-status: 22px;       /* 状态栏高度 */
   --w-outline: 216px;     /* 大纲栏宽度 */
-  --w-winbtn: 46px;       /* 窗口控制钮宽度（标题栏居中补偿要用，见 app.css §1）*/
+  --w-winbtn: 46px;       /* 窗口控制钮宽度（close 在此之上 +8px 热区，见 app.css §1）*/
   --z-float: 20;          /* 浮层层级（查找条 / 最近下拉 / Aa 面板；互不重叠，共用一档）*/
+  --pad-page: clamp(var(--size-5), 4vw, var(--size-7));
+                          /* 纸面左右内边距（波5 新增）：纸宽 = --measure + 2×本值，
+                             随窗口缩到 24px 仍留得住纸边；与 --measure 一起决定纸宽 */
 }
 
 /* 暗色阶：Radix Colors v3 dark —— 成对设计，与亮色同步验收（§3.3）。
-   只覆盖阶数变量与阴影；语义映射/结构刻度/排版刻度经 var() 自动跟随。 */
+   覆盖范围 = 阶数变量 + 阴影 + 一段表面类语义（见文件末的说明）。 */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
@@ -179,7 +193,7 @@
   --red-3: #3b1219;     /* red.dark.3 */
   --red-11: #ff9592;    /* red.dark.11（对 red.3 = 7.75:1 ✔）*/
 
-  --mmd-bg: #111113;            /* slate.dark.1 */
+  --mmd-bg: #212225;            /* slate.dark.3（波5：由 1 阶提到 3 阶，跟新纸面对齐）*/
   --mmd-primary: #212225;       /* slate.dark.3 */
   --mmd-primary-text: #edeef0;  /* slate.dark.12 */
   --mmd-primary-border: #696e77;/* slate.dark.9 */
@@ -188,4 +202,23 @@
   --shadow-1: 0 1px 2px -1px hsl(0 0% 0% / 34%), 0 1px 1px -1px hsl(0 0% 0% / 22%);
   --shadow-2: 0 3px 5px -2px hsl(0 0% 0% / 45%), 0 2px 4px -2px hsl(0 0% 0% / 35%);
   /* 暗色不是把亮色取反：暗色阴影靠黑度而非亮度表达层级，故只在 alpha 上重调 */
+
+  /* --- 暗色表面语义覆盖（波5 新增，本段是全文件唯一一处暗色专有映射）---
+     为什么需要它：亮色的分层方向是「纸面 1 阶 → 越往元件越深」；暗色里纸面落在 3 阶、
+     「离开纸面」= 越亮，方向相反，`var(--slate-N)` 的自动跟随刚好会跟反（例如
+     --bg-subtle=3 会与纸面同色、--bg-surface=1 会沉到壳层底下）。
+     故表面类语义在此重定一次；文字 / 强调 / 结构刻度仍自动跟随，不重复。
+     用户反馈「黑有点太黑了」→ 纸面 1 → 3 阶（#111113 → #212225），
+     正文对纸面 13.70:1、muted 7.64:1（按 WCAG 公式计算），壳层留在 2 阶当「桌面」。 */
+  --bg-app: var(--slate-3);        /* 纸面：正文 13.70:1 ✔ */
+  --bg-chrome: var(--slate-2);     /* 壳层与画布：比纸面暗一档（1.11:1，纸边看得见）*/
+  --bg-surface: var(--slate-3);    /* 浮层：比壳层亮一档（暗色下浮层靠「更亮 + 阴影」浮起）*/
+  --bg-subtle: var(--slate-4);     /* 行内代码 / 表头 / 公式降级底 */
+  --bg-hover: var(--slate-4);
+  --bg-active: var(--slate-5);
+  --bg-zebra: var(--slate-4);      /* 斑马纹：比纸面亮一档（1.10:1），与代码块同向 */
+  --bg-code: var(--slate-4);       /* 代码块底：暗色下比纸面亮一档（正文 12.43:1 ✔）*/
+  --bg-quote: var(--slate-4);      /* 引用块底（正文对混色后底 11.19:1 ✔）*/
+  --outline-active-bg: var(--slate-4);    /* 大纲活动行：纸面再亮一档（1.22:1）*/
+  --outline-active-bar: var(--blue-11);   /* 色条换浅蓝（blue.9 在暗底上只有 4.42:1，blue.11 是 6.86:1）*/
 }

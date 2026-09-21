@@ -10,6 +10,8 @@
  *   kai/hei 在 typography 冻结期落内联 font-family，不开新 CSS 钩子；
  *   旧键 modu-face=serif 作存量迁移回退，写入新键后退役。
  * ③ 主题亮暗切换入面板（原 ◐ 按钮保留，两者同源 modu-theme）。
+ * ④（波5）syncSettingsPanel：面板外（◐ 按钮）改状态后刷新面板回显，
+ *   面板每次打开时也自调——修「面板开着时点 ◐，下拉回显陈旧」。
  *
  * DOM 结构与 id 就位、样式最简（app.css），波4 美化；禁 any、函数 ≤50 行。
  */
@@ -119,6 +121,33 @@ function setTheme(theme: "light" | "dark"): void {
   hooks.onThemeChange(theme);
 }
 
+/** 当前实际字号：优先读 --fs-body（唯一作用点），未设时回退持久化值 */
+function currentFs(): number {
+  const raw = document.documentElement.style.getPropertyValue("--fs-body");
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? clampFs(n) : readFsPref();
+}
+
+/**
+ * 刷新面板回显（主题/字号/字体族）以反映当前实际状态。
+ * 壳层在 ◐ 按钮改主题后调用；面板每次打开时也自调（防陈旧）。
+ * 元素缺席时静默跳过——同步回显属锦上添花，不配炸按钮回调。
+ */
+export function syncSettingsPanel(): void {
+  const theme = document.getElementById("set-theme") as HTMLSelectElement | null;
+  if (theme !== null) {
+    theme.value = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  }
+  const fsVal = document.getElementById("set-fs-val");
+  if (fsVal !== null) {
+    fsVal.textContent = String(currentFs());
+  }
+  const font = document.getElementById("set-font") as HTMLSelectElement | null;
+  if (font !== null) {
+    font.value = readFontPref();
+  }
+}
+
 function wireFontSize(): void {
   writeFs(readFsPref()); // 启动恢复 + 回显
   req<HTMLButtonElement>("set-fs-dec").addEventListener("click", () => writeFs(readFsPref() - 1));
@@ -142,11 +171,12 @@ function wireThemeSelect(): void {
   });
 }
 
-/** Aa 按钮切换面板显隐 */
+/** Aa 按钮切换面板显隐；打开时刷新回显（面板外改过的状态不带到面板里） */
 function wireToggle(): void {
   const panel = req<HTMLElement>("settings-panel");
   req<HTMLButtonElement>("btn-settings").addEventListener("click", () => {
     panel.hidden = !panel.hidden;
+    if (!panel.hidden) syncSettingsPanel();
   });
 }
 

@@ -5,7 +5,7 @@
  * kai/hei 内联栈），modu-font 持久化并迁移旧 modu-face；③主题亮暗入面板。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { setupSettings, setFontPref, clampFs, readFontPref } from "../src/ui/settings";
+import { setupSettings, setFontPref, syncSettingsPanel, clampFs, readFontPref } from "../src/ui/settings";
 
 function mountPanel(): void {
   document.body.innerHTML = `
@@ -153,6 +153,27 @@ describe("主题入面板", () => {
   it("启动同步当前主题（data-theme=dark → 下拉回显深色）", () => {
     document.documentElement.dataset.theme = "dark";
     setup();
+    expect((document.getElementById("set-theme") as HTMLSelectElement).value).toBe("dark");
+  });
+});
+
+describe("回显同步（波5：◐ 按钮与面板不同步修复）", () => {
+  it("外部改 data-theme 后 syncSettingsPanel：主题下拉回显与 data-theme 一致", () => {
+    setup();
+    // 模拟面板开着时点 ◐：html 直改主题，面板下拉仍是旧值（陈旧）
+    document.documentElement.dataset.theme = "dark";
+    const select = document.getElementById("set-theme") as HTMLSelectElement;
+    expect(select.value).toBe("light"); // 未 sync 前确为陈旧
+    syncSettingsPanel();
+    const actual = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    expect(select.value).toBe(actual);
+    expect(select.value).toBe("dark");
+  });
+
+  it("面板打开时自调 sync：外部改主题后再点 Aa，回显不陈旧", () => {
+    setup();
+    document.documentElement.dataset.theme = "dark"; // 外部（◐）已切深色
+    document.getElementById("btn-settings")?.click(); // 打开面板 → 触发自调
     expect((document.getElementById("set-theme") as HTMLSelectElement).value).toBe("dark");
   });
 });

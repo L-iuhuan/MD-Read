@@ -8,14 +8,39 @@
   </head>
   <body>
     <div id="app">
-      <!-- 自定义标题栏（M2 波3 反馈⑤：无边框轻盈感，tauri decorations:false） -->
+      <!-- 自定义标题栏（M2 波3 反馈⑤：无边框轻盈感，tauri decorations:false）
+           波5 反馈③：标签行并入本行，浏览器式排布 —— [标签起始居左][弹性留白][墨读][三窗钮]；
+           拖拽区语义保留：标签行（含标签之间的空隙）、弹性留白与「墨读」都可拖。
+           ⚠ 拖拽区只写在 .titlebar-drag / #tabbar / #tab-list 上，不写 #titlebar：
+             双击最大化由 main.ts 绑在 .titlebar-drag 上，若父层再声明一次会双触发。 -->
       <header id="titlebar" class="titlebar" aria-label="窗口标题栏">
+        <div id="tabbar" class="tabbar" data-tauri-drag-region hidden>
+          <div id="tab-list" class="tab-list" role="tablist" data-tauri-drag-region></div>
+          <button id="btn-newtab" type="button" title="打开文件（新标签）">+</button>
+        </div>
         <div class="titlebar-drag" data-tauri-drag-region>
           <span class="titlebar-title" data-tauri-drag-region>墨读</span>
         </div>
-        <button id="win-min" type="button" title="最小化" aria-label="最小化">─</button>
-        <button id="win-max" type="button" title="最大化 / 还原（双击标题栏同效）" aria-label="最大化或还原">▢</button>
-        <button id="win-close" type="button" title="关闭" aria-label="关闭窗口">✕</button>
+        <!-- 窗口三钮：内联 SVG —— 统一 16×16 视觉盒，盒内自绘 10px 线条（1px 发丝、居中），
+             三枚同色同尺寸，只有 close 的热区更宽（54px，图标仍居中）。颜色走 currentColor。 -->
+        <button id="win-min" type="button" title="最小化" aria-label="最小化">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+               fill="none" stroke="currentColor" stroke-width="1" shape-rendering="crispEdges">
+            <path d="M3 8.5h10" />
+          </svg>
+        </button>
+        <button id="win-max" type="button" title="最大化 / 还原（双击标题栏同效）" aria-label="最大化或还原">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+               fill="none" stroke="currentColor" stroke-width="1" shape-rendering="crispEdges">
+            <rect x="3.5" y="3.5" width="9" height="9" />
+          </svg>
+        </button>
+        <button id="win-close" type="button" title="关闭" aria-label="关闭窗口">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+               fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round">
+            <path d="M3.5 3.5 12.5 12.5M12.5 3.5 3.5 12.5" />
+          </svg>
+        </button>
       </header>
       <header class="topbar">
         <button id="btn-open" type="button" title="打开 Markdown 文件">打开…</button>
@@ -27,7 +52,7 @@
         <span class="topbar-spacer"></span>
         <div class="settings-wrap">
           <button id="btn-settings" type="button" title="字体与外观设置" aria-label="打开字体与外观设置面板">Aa</button>
-          <!-- 「Aa」设置面板（M2 波3 反馈⑥：字号/字体/主题），样式最简，波4 美化 -->
+          <!-- 「Aa」设置面板（M2 波3 反馈⑥：字号/字体/主题；波4 起为卡片化浮层） -->
           <div id="settings-panel" class="settings-panel" hidden aria-label="字体与外观设置">
             <div class="settings-row">
               <span class="settings-label" id="set-fs-label">字号</span>
@@ -59,10 +84,6 @@
         <button id="btn-face" type="button" title="切换正文衬线/无衬线">衬</button>
         <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>⇩ PDF</button>
       </header>
-      <div id="tabbar" class="tabbar" hidden>
-        <div id="tab-list" class="tab-list" role="tablist"></div>
-        <button id="btn-newtab" type="button" title="打开文件（新标签）">+</button>
-      </div>
       <div id="findbar" class="findbar" hidden>
         <input id="find-input" type="text" placeholder="查找…" aria-label="查找内容" />
         <span id="find-count" class="find-count">0/0</span>

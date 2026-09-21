@@ -31,7 +31,7 @@ describe("M2 波3 CSS 修复锚点（波4 归位后）", () => {
   });
 
   it("反馈⑤：标题栏刻度在 tokens，查找条定位计入标题栏高度（防回归重叠）", () => {
-    expect(tokens).toMatch(/--h-titlebar:\s*32px/);
+    expect(tokens).toMatch(/--h-titlebar:\s*36px/);
     const offsets = app.match(/\.findbar\s*\{[^}]*inset-block-start:[^}]*/g) ?? [];
     const withTitlebar = offsets.filter((rule) => rule.includes("--h-titlebar"));
     expect(withTitlebar.length).toBeGreaterThanOrEqual(1);

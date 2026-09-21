@@ -13,7 +13,7 @@ import { createTabManager, type TabManager } from "./app/tabs";
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { openEachMd } from "./app/drop";
 import { setupFindbar, type Findbar } from "./ui/findbar";
-import { setFontPref, setupSettings } from "./ui/settings";
+import { setFontPref, setupSettings, syncSettingsPanel } from "./ui/settings";
 import "./app.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
@@ -133,7 +133,9 @@ function resetToWelcome(): void {
 }
 
 function createTabs(findbar: Findbar): TabManager {
-  return createTabManager($<HTMLElement>("tabbar"), {
+  // designer 并行重构标题栏，#tabbar 可能移位或暂缺：缺席时挂到离屏容器保 boot 不炸
+  const bar = document.getElementById("tabbar") ?? document.createElement("nav");
+  return createTabManager(bar as HTMLElement, {
     render: (source) => renderDocument(source, { pangu: true }),
     mountDoc: ({ tab, html, outline }) => {
       const doc = $<HTMLElement>("doc");
@@ -215,9 +217,10 @@ function setupToggles(): void {
     root.dataset.theme = next;
     localStorage.setItem("modu-theme", next);
     refreshMermaidTheme(next);
+    syncSettingsPanel(); // 面板可能开着：◐ 改主题后回显即时跟上（波5 反馈）
   });
-  // 「衬」按钮与 Aa 面板同源 modu-font（设置面板取代其职能，按钮并存，布局波4 定）
-  $("btn-face").addEventListener("click", () => {
+  // 「衬」按钮与 Aa 面板同源 modu-font；designer 重构可能删此节点——缺席则跳过注册，不抛错
+  document.getElementById("btn-face")?.addEventListener("click", () => {
     const doc = $<HTMLElement>("doc");
     setFontPref(doc.dataset.face === "serif" ? "sans" : "serif");
   });

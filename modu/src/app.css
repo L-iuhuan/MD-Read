@@ -1,9 +1,9 @@
 /* ==========================================================================
    墨读 MoDu · src/app.css —— 应用壳（chrome）层
    --------------------------------------------------------------------------
-   只做壳：标题栏 / 顶栏 / 标签栏 / 查找条 / 大纲 / 最近下拉 / Aa 设置面板 /
-   正文容器 / 状态栏。正文排版一律在 typography/cjk.css，色值一律取
-   typography/tokens.css 的语义层。本文件**不出现任何字面色值**。
+   只做壳：标题栏（含标签行）/ 顶栏 / 查找条 / 大纲 / 最近下拉 / Aa 设置面板 /
+   正文容器（画布 + 纸面）/ 状态栏。正文排版一律在 typography/cjk.css，
+   色值一律取 typography/tokens.css 的语义层。本文件**不出现任何字面色值**。
    四条纪律（规格 §3.3 + 设计协议五铁律）：
    1. 色值只用既有 Radix 阶数/语义映射；
    2. 装饰最小化：层次靠字号、间距、颜色深度，不靠边框堆砌、不靠渐变，
@@ -11,23 +11,20 @@
    3. 动效 ≤250ms（全部走 --duration-1/.1s、--duration-2/.2s），
       focus-visible 全控件可见，prefers-reduced-motion 降级；
    4. 深色是一等公民：亮暗只由 tokens.css 的阶数变量切换，
-      本文件不含暗色专规则（唯一的暗色差异在 tokens 层的阴影 alpha）。
+      本文件不含暗色专规则（唯一的暗色差异在 tokens 层的阴影 alpha 与表面语义）。
 
-   波4 变更纪要（用户六条反馈 + 三条通检）：
-   · 「最近」移到左侧（纯 order 重排，DOM 不动）；「衬」按钮 display:none，
-     字体职责已并入 Aa 面板；
-   · 去灰：tokens 层把纸面提到阶数 1、壳层退到阶数 2，纸面与框的落差看得见；
-     分隔线换 --border-chrome（轻一阶），浮层阴影降一档（--shadow-1）；
-   · 按钮热区 26→28px、横向内边距 8→12px、组间距 4→8px；
-   · 大纲蓝条与文字之间补间距（text-indent，理由见 §5）、活动态加强；
-   · 无边框标题栏：窗口三钮标准样式（关闭钮更宽 + 悬停 error 族）、
-     标题按窗口居中的补偿算法、与顶栏同面融为一体；
-   · Aa 面板卡片化 + 入口动效；查找条/浮层 z 序复核（顶栏 z 高于浮层，
-     下拉与面板才不会被查找条压住）。
-   · 上一版末尾那三个「待归位」遗留节（旧编号 9/10/11）已全部清空并归位：
-     math-fallback 与表格末行线/表后段距 → cjk.css 对应节；--h-titlebar → tokens.css；
-     查找条定位不再靠后节覆盖前节，改为本节内单处书写。
-     本文件因此只描述当前状态，不含任何待办标记。
+   波5 变更纪要（用户复验七条 + 全套复核）：
+   · 标题栏三钮改内联 SVG（10px 线条、16×16 视觉盒、统一 --text-muted），
+     close 54px 热区保留、图标居中；hover 底与 ✕ 红族不变；
+   · 标签行并入标题栏（浏览器式）：[标签起始居左][弹性留白][墨读][三窗钮]，
+     取消独立标签行，--h-titlebar 32 → 36px；
+   · 顶栏按钮默认态由「全透明」改为「纸面阶填充 + 1px --border-chrome 发丝线」，
+     字号随 --fs-chrome 12 → 13px；
+   · Typora 式纸面：内容滚动区 = --bg-chrome（画布灰），#doc = 整页纸
+     （--bg-app、定宽居中、撑满视高，无圆角/无阴影/无边框，只靠底色分层 1.11:1）；
+   · 深色整体提亮（纸面 1 → 3 阶、壳层 2 阶），大纲活动态走专用 token；
+   · 公式降级（.math-fallback）去块状底：行内走衬线，块级回到 --measure 限宽。
+   本文件因此只描述当前状态，不含任何待办标记。
    ========================================================================== */
 
 /* [hidden] 兜底：下面会给 #tabbar / #findbar / #recent-menu / #settings-panel /
@@ -43,7 +40,7 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--bg-app);   /* 阅读纸面（亮色下最白 / 暗色下最深）*/
+  background: var(--bg-chrome);   /* 壳层灰＝「桌面」；白纸由 #doc 自带（见 §8）*/
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--fs-chrome);
@@ -58,8 +55,11 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 }
 
 /* ==========================================================================
-   1. 自定义标题栏（decorations:false）—— 标准窗口控件 + 与顶栏融为一体
-   与顶栏同底色、且不再画分隔线：两层合读为「一块壳」，只在标签栏下沿留一条线。
+   1. 自定义标题栏（decorations:false）—— 标签行 + 拖拽区 + 窗口三钮，同一条 36px 行
+   浏览器式排布：[#tabbar 起始居左][弹性留白 + 墨读（拖拽区）][三窗钮]。
+   标题从「按窗口居中」改为「靠右水印」的理由：标签左置后左侧已被标签占据，
+   标题再居中会与活动标签在窄窗下抢同一条中轴；贴着窗口钮放，拖拽区（.titlebar-drag
+   = 弹性留白本身）反而拿到整条栏里最大的一块热区，双击最大化也更好点。
    ========================================================================== */
 .titlebar {
   display: flex;
@@ -67,19 +67,46 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
   flex: none;
   height: var(--h-titlebar);
   background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-chrome);   /* 标签行与工具行的分界 */
   user-select: none;
 }
+/* 窗口三钮：内联 SVG（10px 线条 / 16×16 视觉盒），三枚同色同尺寸，只有 close 热区更宽。
+   SVG 用 currentColor，hover/按压换色即整枚图标换色，不必写两套图形。 */
+.titlebar button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: var(--w-winbtn);
+  font: inherit;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.titlebar button svg { display: block; }
+.titlebar button:hover { background: var(--bg-hover); color: var(--text); }
+.titlebar button:active { background: var(--bg-active); }
+/* close 热区 +8px（Windows 习惯：关闭总是最宽的一枚），图标仍居中 —— 靠 grid 居中，
+   不补内边距，故三枚图标的视觉重心各自落在自己的按钮里。 */
+#win-close { inline-size: calc(var(--w-winbtn) + 8px); }
+/* 关闭钮用语义红（Windows 习惯），不新增色值；按压态用实心反白，反馈明确 */
+#win-close:hover { background: var(--danger-bg); color: var(--danger-text); }
+#win-close:active { background: var(--danger-text); color: var(--bg-app); }
+
+/* --- 弹性留白 = 拖拽区：标题贴右，余下整块可拖（data-tauri-drag-region 在 HTML 上）---
+   flex:1 1 auto 让它独吞剩余空间；flex-basis 走内容（auto）而非 0，是为了在标签很多时
+   让「标签先缩、标题后缩」（收缩量按 base×shrink 分配，标签 base 大者先让位）。 */
 .titlebar-drag {
   flex: 1 1 auto;
-  min-inline-size: 0;
+  min-inline-size: 4rem;     /* 标题永不消失的底线（再窄就轮到标签行横向滚动）*/
   display: flex;
   align-items: center;
-  justify-content: center;
-  /* 标题按「窗口」居中的补偿：拖拽区右侧被 3 个按钮占掉（关闭钮多 8px），
-     左侧补等量内边距，内容盒中点才落回窗口中心。
-     ⚠ 与 --w-winbtn 耦合：改按钮宽必须同改这里。 */
-  padding-inline-start: calc(3 * var(--w-winbtn) + 8px);
-  padding-inline-end: 0;
+  justify-content: flex-end;
+  padding-inline: var(--size-3) var(--size-4);   /* 左接标签、右接窗口钮 */
+  overflow: hidden;
 }
 .titlebar-title {
   font-size: var(--fs-chrome-sm);
@@ -89,30 +116,12 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.titlebar button {
-  flex: none;
-  inline-size: var(--w-winbtn);
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  transition: background-color var(--duration-1) var(--ease-1),
-              color var(--duration-1) var(--ease-1);
-}
-.titlebar button:hover { background: var(--bg-hover); color: var(--text); }
-.titlebar button:active { background: var(--bg-active); }
-#win-close { inline-size: calc(var(--w-winbtn) + 8px); }   /* 关闭热区略大 */
-/* 关闭钮用语义红（Windows 习惯），不新增色值；按压态用实心反白，反馈明确 */
-#win-close:hover { background: var(--danger-bg); color: var(--danger-text); }
-#win-close:active { background: var(--danger-text); color: var(--bg-app); }
 
 /* ==========================================================================
    2. 顶栏 —— 左组（打开…｜最近）+ 中段标题（居中弱化）+ 右组（Aa｜◐｜⇩PDF）
    DOM 顺序是 打开…/标题/最近/…，这里用 order 把「最近」提到标题左侧（反馈①），
    一个元素的顺序都不动。所有子项显式给 order，否则默认 0 会排到 order:1 前面。
+   波5：顶栏下移一行（标签行已并入标题栏），位置不变的是它「左组—中标题—右组」的骨架。
    ========================================================================== */
 .topbar {
   display: flex;
@@ -138,32 +147,48 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
    把「打开…/最近」一起顶到右边去——视觉复核抓到的坑）*/
 .topbar-spacer { order: 3; flex: 1; }
 /* 波4（反馈⑧）：「衬」按钮隐藏——字体职责已并入 Aa 面板，顶栏去冗余。
-   id 保留在 DOM 里（main.ts 仍接线），只从布局与可聚焦序列里移除。*/
+   ⚠ 波5 复核：main.ts 侧已在这轮并行改动里换成 `getElementById("btn-face")?.` 可选链，
+   删元素不会再炸 boot；但本任务书把「现有 id 一个不能少」列为硬约束（接线契约），
+   故仍保留 DOM 常驻 + display:none：不在布局、不在可聚焦序列，接线也照旧成立。
+   要彻底删，需 HTML 与 main.ts 两处同批（同步删），别单留一边。*/
 .topbar > #btn-face { display: none; }
 
 .topbar button {
   flex: none;
-  height: 28px;                  /* 波4：26 → 28px，点击热区达线 */
-  padding: 0 var(--size-3);      /* 波4：横向 8 → 12px，呼吸感 */
+  height: 28px;                  /* 点击热区 */
+  padding: 0 var(--size-3);
   font: inherit;
+  font-size: var(--fs-chrome);   /* 13px：壳层文字的可读下限 */
   color: var(--text-muted);
-  background: transparent;
-  border: 0;                     /* 去边框化：靠 hover 底色表态 */
+  /* 波5：默认态从「全透明」改为「纸面阶填充 + 发丝线」——用户复验「按钮看不出」。
+     为什么不只用填充：填充对 --bg-chrome 只有 1.11:1（亮暗同值，按 WCAG 公式计算），
+     单看色差在暗色下仍偏弱；也不只用描边：描边亮色 1.15:1 / 暗色 1.35:1 对 1px 线够，
+     但按钮是「面」不是「线」。两者叠加都不抢眼（无阴影、无强调色、1px），
+     是「轻」的上限内最不容易看丢的组合。 */
+  background: var(--bg-surface);
+  border: 1px solid var(--border-chrome);
   border-radius: var(--radius-2);
   cursor: pointer;
   transition: background-color var(--duration-1) var(--ease-1),
+              border-color var(--duration-1) var(--ease-1),
               color var(--duration-1) var(--ease-1);
 }
-.topbar button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.topbar button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
 .topbar button:active:not(:disabled) { background: var(--bg-active); }
 /* 禁用态：压暗 + 不回显 hover（M4 前 PDF 导出恒禁用）*/
-.topbar button:disabled { opacity: .4; cursor: default; }
+.topbar button:disabled { opacity: .45; cursor: default; }
 
 /* 标题：按「窗口」精确居中并弱化。
    为什么不留在流内居中：flex:1 的中间盒两端受左右两组宽度差影响，实测 1264px 窗口下
-   文本中心落在 608 而窗口中心是 632——偏左 24px，与正上方标题栏里居中的「墨读」
-   一眼能看出没对齐。故改为绝对定位（脱离流）让左右各留等量护栏，文字盒中点即窗口中点；
-   空出来的横向空间交给 .topbar-spacer 撑开，把右侧按钮组顶到最右。
+   文本中心落在 608 而窗口中心是 632——偏左 24px，一眼能看出没对齐。故改为绝对定位
+   （脱离流）让左右各留等量护栏，文字盒中点即窗口中点；空出来的横向空间交给
+   .topbar-spacer 撑开，把右侧按钮组顶到最右。
+   波5：标题栏里的「墨读」已改为贴右水印（不再居中），两层不再有对齐关系，
+   本层独立按窗口居中，无需跟着调。
    按钮在 DOM 顺序上晚于标题，绘制与命中都在上层，所以标题不会挡住点击。 */
 .doc-title {
   position: absolute;
@@ -182,46 +207,44 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
    标题脱离流后，左右两组全靠它分开。*/
 
 /* 开关状态回显（主题态挂在 <html data-theme> 上，既有契约直接读）。
-   Aa 面板打开时按钮同样点灯：这是状态回显，不是装饰。
+   Aa 面板打开时按钮同样点灯：这是状态回显，不是装饰。填充与描边一起换，
+   否则白底按钮配蓝底会露出原先的灰发丝线。
    文字用 blue.12 于 blue.3：亮 11.26:1 / 暗 11.37:1（实测）。 */
 html[data-theme="dark"] #btn-theme,
 html:has(#settings-panel:not([hidden])) #btn-settings {
   background: var(--accent-tint);
+  border-color: var(--accent-tint-border);
   color: var(--accent-text-hover);
 }
 
 /* ==========================================================================
-   3. 标签栏 —— 贴顶栏下沿；活动标签与纸面同底色（连通感）+ 2px accent 底边指示线
-   波4：栏高 34 → 32px（密度收紧），分隔线换轻一阶的 --border-chrome。
+   3. 标签行 —— 已并入标题栏（波5），这里只管标签条自身的形态与滚动
+   标签是标题栏里的一枚枚胶囊：默认透明、hover 起底、活动 = 纸面色（与正文同色 →
+   暗色下也一眼看出「这就是正在读的那份」）。波4 的 2px accent 底边指示线随独立
+   标签行一起取消：那条线原本压在栏的分割线上、靠「与纸面接缝重合」表意，
+   并入标题栏后下面接着的是顶栏而不是纸面，线就失去所指；活动态改由填充承担。
+   滚动条隐藏（--h-titlebar 36px 里塞 6px 滚动条会啃掉标签高度）：Chrome 对
+   overflow-x:auto + overflow-y:hidden 的容器支持纵向滚轮横滚，滚动路径仍在。
    ========================================================================== */
 .tabbar {
   display: flex;
-  align-items: stretch;
-  flex: none;
+  align-items: center;
+  flex: 0 1 auto;            /* 空间不够时让位给右侧（标签先缩，见 §1 说明）*/
+  min-inline-size: 0;
   gap: var(--size-1);
-  height: var(--h-tabbar);
-  padding: 0 var(--size-2);
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--border-chrome);
+  padding-inline: var(--size-2);
 }
 .tab-list {
   display: flex;
-  align-items: flex-end;        /* 标签贴栏底，与正文区接缝对齐 */
+  align-items: center;
   gap: 2px;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-inline-size: 0;
-  overflow-x: auto;             /* 标签溢出横向滚动 */
+  overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;        /* 细滚动条（Firefox / 规范路径）*/
-  scrollbar-color: var(--slate-7) transparent;
+  scrollbar-width: none;
 }
-.tab-list::-webkit-scrollbar { height: 6px; }
-.tab-list::-webkit-scrollbar-track { background: transparent; }
-.tab-list::-webkit-scrollbar-thumb {
-  background: var(--slate-7);
-  border-radius: 3px;
-}
-.tab-list::-webkit-scrollbar-thumb:hover { background: var(--slate-8); }
+.tab-list::-webkit-scrollbar { display: none; }
 
 .tab {
   display: flex;
@@ -233,27 +256,16 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   padding: 0 var(--size-1) 0 var(--size-2);
   color: var(--text-muted);
   background: transparent;
-  border-radius: var(--radius-2) var(--radius-2) 0 0;
+  border-radius: var(--radius-2);
   cursor: pointer;
   user-select: none;
-  position: relative;
   transition: background-color var(--duration-1) var(--ease-1),
               color var(--duration-1) var(--ease-1);
 }
 .tab:hover { background: var(--bg-hover); color: var(--text); }
-.tab.active {
-  background: var(--bg-app);    /* 同纸面底色 → 视觉上连成一片 */
-  color: var(--text);
-}
-.tab.active::before {           /* 2px accent 底边线：压在栏的分割线上，重合即「指示」*/
-  content: "";
-  position: absolute;
-  inset-block-end: 0;
-  inset-inline: 0;
-  height: 2px;
-  background: var(--accent-solid);
-}
+.tab.active { background: var(--bg-surface); color: var(--text); }
 .tab-title {
+  min-inline-size: 0;        /* flex 项默认 min-width:auto 会挡住省略号（长文件名会顶破标签）*/
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -268,10 +280,10 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   flex: none;
   display: grid;
   place-items: center;
-  /* 波4：18 → 24px。上限受标签行高约束——28px 的按钮塞不进 28px 的行还留呼吸，
-     故标签内的小按钮取 24px（顶栏/查找条/面板按钮均 ≥28px）。 */
-  inline-size: 24px;
-  block-size: 24px;
+  /* 波5：24 → 22px（标签缩到 28px 以适配 36px 标题栏，内嵌按钮同比收一档，
+     四周仍留 3px 呼吸）；label 里的 ✕ 由 tabs.ts 直出文本节点，不改成 SVG。 */
+  inline-size: 22px;
+  block-size: 22px;
   font: inherit;
   font-size: 10px;
   line-height: 1;
@@ -287,15 +299,15 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
 }
 .tab:hover .tab-close, .tab.active .tab-close, .tab-close:focus-visible { opacity: 1; }
 .tab-close:hover { background: var(--bg-active); color: var(--text); }
-/* 说明：.tab 是 div，键盘不可聚焦（需 TS 侧加 tabindex/role，属波1 接线范畴）。
-   :focus-visible 规则先就位，接线补上即生效。 */
+/* 键盘可达性：tabs.ts 已给 .tab 落 role="tab" / tabindex / Enter·Space 激活，
+   故这条 :focus-visible 是生效路径（不再只是「先就位」）。 */
 .tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
 #btn-newtab {
   flex: none;
   align-self: center;
-  inline-size: 28px;
-  block-size: 28px;
+  inline-size: 26px;
+  block-size: 26px;
   font: inherit;
   font-size: 15px;
   line-height: 1;
@@ -316,7 +328,8 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
    命中分色只用 accent 族两阶：find-hit = blue.3，find-current = blue.7。
    两种底色都不含 padding/border/字重变化 —— mark 只包字符不增删一字，
    加内边距会让正文在搜索期间重排（M1 复制保真红线）。
-   定位单处书写（含标题栏高度），不再靠后面的节覆盖本节。
+   定位单处书写（含标题栏高度）。波5：标签行并入标题栏后不再多占一行，
+   原先那条 `body:has(.tabbar:not([hidden]))` 的下移规则随之删除。
    ========================================================================== */
 .findbar {
   position: absolute;
@@ -330,11 +343,7 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
-  box-shadow: var(--shadow-1);   /* 波4：阴影降一档 */
-}
-/* 有标签栏时整体下移一条标签栏的高度 */
-body:has(.tabbar:not([hidden])) .findbar {
-  inset-block-start: calc(var(--h-titlebar) + var(--h-topbar) + var(--h-tabbar) + var(--size-2));
+  box-shadow: var(--shadow-1);   /* 浮层一档阴影 */
 }
 
 #find-input {
@@ -397,10 +406,11 @@ body:has(.tabbar:not([hidden])) .findbar {
    蓝条与文字的间距只能用 text-indent 补（左内边距已被内联值占用）——这是
    波4 反馈④「小蓝条与文字间距」的正解；text-indent 只影响首行，而条目恒为
    nowrap 单行，等价于给蓝条后补一段留白。
-   活动态（波4 加强）：3px 色条 + 纸面色底（灰侧栏上是一块明显的白/最深）+ 字重 600
-   + 正文色 —— 一眼定位。备选方向（未采用，留档）：把蓝条与底色整体换成更浅的
-   blue.3/blue.5 淡蓝，走「轻标记」路线；放弃原因：淡蓝底在亮色下与 --bg-hover
-   几乎同明度，hover 与 active 会分不开，反而更难定位。
+   活动态（波5 换专用 token）：3px 色条 + 纸面色底 + 字重 600 + 正文色。
+   亮色沿用「白底 + blue.9 色条」（底 1.11:1 / 条 3.18:1）；暗色换成
+   「纸面再亮一档的底 + blue.11 浅蓝条」（底 1.22:1 / 条 6.86:1）——
+    用户复验「深色大纲高亮看不出」，暗色下 blue.9 在 4 阶底上只有 4.42:1，
+    且底色与侧栏只差一阶，两处都提亮后才读得出（对比数字按 WCAG 公式计算，色值无混色）。
    ========================================================================== */
 .outline {
   inline-size: var(--w-outline);
@@ -442,8 +452,8 @@ body:has(.tabbar:not([hidden])) .findbar {
   border-inline-start-color: var(--accent-tint-border);
 }
 .outline-list a.active {
-  border-inline-start-color: var(--accent-solid);
-  background: var(--bg-app);
+  border-inline-start-color: var(--outline-active-bar);
+  background: var(--outline-active-bg);
   color: var(--text);
   font-weight: 600;
 }
@@ -597,7 +607,18 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
    纯 CSS 无法定制展开列表的选项行——要完全自定义需换自绘 listbox（属 TS 改动，越界）。*/
 
 /* ==========================================================================
-   8. 正文容器与欢迎页
+   8. 正文容器 —— 画布（壳层灰）+ 整页纸（波5「Typora 式」）
+   路线选择（二选一里的「整页纸」）：不做卡片。卡片路线要加圆角 + 一圈描边 + 一档
+   阴影，正文区本来就有代码块/引用块/表格三类块状底，再套一层卡片等于给「纸」又加了
+   一层「框」，与「减少正文内块状底色干扰」的目标相抵。整页纸只靠一层底色差分层：
+   画布 --bg-chrome 与纸面 --bg-app 的落差亮 1.11:1 / 暗 1.11:1（按 WCAG 公式计算）——
+   大色块的边界比 1px 线更早被看见，且滚动时没有「卡片在动」的干扰感。
+   代价与对策：卡片路线能靠 max-width 直接定「纸」宽，整页纸要把纸宽算出来 ——
+   纸宽 = --measure + 2×--pad-page，正文（--measure）居中落在纸面内，与 cjk.css
+   的 `.mdc > *` 限宽规则同源，两边不会打架；min-block-size: 100% 让短文档也铺满
+   视高，纸边不出现「纸的下沿」。
+   ⚠ M4 打印：print.css 需给 #doc 补 background: none（纸面底色不该进 PDF，
+     正文白底由打印机默认承担）。
    ========================================================================== */
 .body-row { display: flex; flex: 1; min-height: 0; }
 
@@ -606,14 +627,20 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;   /* 阅读到边界不把滚动链传给外层 */
+  background: var(--bg-chrome);   /* 画布：白纸落在灰桌面上 */
 }
-/* 排版正文容器（.mdc 的限宽/行高等规则在 cjk.css）*/
+/* 排版正文容器（.mdc 的限宽/行高等规则在 cjk.css）
+   padding-bottom 25vh：底部留白，最后一段也能停在舒服的视位 */
 #doc {
   margin: 0 auto;
-  padding: var(--size-6) var(--size-4) 25vh;   /* 底部留白：最后一段也能停在舒服的视位 */
+  max-inline-size: calc(var(--measure) + 2 * var(--pad-page));
+  min-block-size: 100%;
+  padding: var(--size-7) var(--pad-page) 25vh;
+  background: var(--bg-app);
 }
 
-/* 欢迎页：居中引导，首访不喧宾夺主 —— 一枚发丝线词标 + 一行提示。
+/* 欢迎页（首访空态）：居中引导，不喧宾夺主 —— 一枚发丝线词标 + 一行提示。
+   空态没有纸面（#doc 仍 hidden），所以这里直接坐在画布灰上，不用白底。
    标记选型取舍：先用过「56px 方框内放大号墨字」的做法，放弃——墨是 15 画字，
    放大到 26px 当装饰标记时笔画密度过高（且合成加粗会糊），在小尺寸/低 DPI 下不可读；
    改用产品名词标（15px/600 发丝线胶囊）：信息更明确，也不虚构一套图标语言。*/
@@ -642,7 +669,7 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
 
 /* ==========================================================================
    9. 状态栏 —— 低调一行；编码与进度用等宽体弱化，读数不跳字
-   波4：高度 24 → 22px（密度收紧），分隔线换轻一阶。
+   高度 22px，分隔线用 --border-chrome（与顶栏同为壳层分界）。
    ========================================================================== */
 .statusbar {
   display: flex;
