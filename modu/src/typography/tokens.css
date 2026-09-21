@@ -47,15 +47,22 @@
   --red-3: #feebec;     /* red.3    错误底 */
   --red-11: #ce2c31;    /* red.11   错误正文（对 red.3 = 4.54:1 ✔）*/
 
-  /* --- 语义映射（UI 只认这层，换体系时改这里）--- */
-  --bg-app: var(--slate-2);
-  --bg-surface: var(--slate-1);
+  /* --- 语义映射（UI 只认这层，换体系时改这里）---
+     波4「去灰」重调：阅读纸面提到阶数 1（亮色下最白 / 暗色下最深），壳层框退到阶数 2，
+     纸面与框的落差因此「看得见」——之前纸面=2、壳层=1，整屏挤在 1~2 阶里，
+     视觉上就是一整块灰。基础阶数变量一个未改，只改这一层。
+     Radix 语义对照：1=App background（纸面）、2=Subtle background（壳层/侧栏）、
+     3=UI element background（输入框/代码等元件）。 */
+  --bg-app: var(--slate-1);      /* 阅读纸面（波4：由 slate.2 提白/加深到 slate.1）*/
+  --bg-chrome: var(--slate-2);   /* 壳层框：标题栏/顶栏/标签栏/大纲/状态栏（波4 新增）*/
+  --bg-surface: var(--slate-1);  /* 浮层卡片面：查找条/最近下拉/Aa 面板（波4：由 slate.1 与纸面同阶）*/
   --bg-subtle: var(--slate-3);
   --bg-hover: var(--slate-4);
-  --bg-zebra: var(--slate-2);
+  --bg-zebra: var(--slate-2);    /* 表斑马纹：纸面提到 1 阶后终于与纸面拉开一阶（此前与纸面同色，等于没生效）*/
   --bg-code: var(--slate-3);
   --bg-quote: var(--slate-3);
   --border: var(--slate-6);
+  --border-chrome: var(--slate-5);  /* 壳层分隔线（波4 新增：比 --border 轻一阶，去灰）*/
   --border-strong: var(--slate-8);
   --rule: var(--slate-7);
   --text: var(--slate-12);
@@ -99,8 +106,10 @@
   --duration-1: .1s;  /* Open Props duration-1（≤250ms 硬约束）*/
   --duration-2: .2s;  /* Open Props duration-2 */
   --ease-1: cubic-bezier(.25, 0, .5, 1); /* Open Props ease-1 */
+  --shadow-1: 0 1px 2px -1px hsl(220 43% 11% / 8%), 0 1px 1px -1px hsl(220 43% 11% / 5%);
   --shadow-2: 0 3px 5px -2px hsl(220 43% 11% / 10%), 0 2px 4px -2px hsl(220 43% 11% / 8%);
-  /* 阴影结构抄 Open Props shadow-2，颜色改用中性墨色（暗色下另行降低不透明度）*/
+  /* 阴影结构抄 Open Props shadow-1/2，颜色改用中性墨色（暗色下另行降低不透明度）。
+     波4：浮层降一档用 --shadow-1（原来一律 shadow-2 偏重）。*/
 
   /* --- 排版刻度（§2.1 F3 / §4 D3）---
      字号刻度说明：正文基准 --fs-body 一档 + 标题/表格/脚注等按 em 相对缩放
@@ -128,11 +137,13 @@
   --fs-chrome: 12px;      /* 按钮 / 标签 / 查找条输入 */
   --fs-chrome-sm: 11px;   /* 状态栏 / 大纲条目 / 元信息 */
   --bg-active: var(--slate-5);  /* 按压底（slate.5，语义层补口，值来自既有阶数）*/
-  --h-topbar: 38px;       /* 顶栏高度 */
-  --h-tabbar: 34px;       /* 标签栏高度 */
-  --h-status: 24px;       /* 状态栏高度 */
+  --h-titlebar: 32px;     /* 自定义标题栏高度（波4：由 app.css 局部变量归位到此）*/
+  --h-topbar: 40px;       /* 顶栏高度（波4：38 → 40，给 28px 按钮留出呼吸）*/
+  --h-tabbar: 32px;       /* 标签栏高度（波4：34 → 32，密度收紧）*/
+  --h-status: 22px;       /* 状态栏高度（波4：24 → 22，密度收紧）*/
   --w-outline: 216px;     /* 大纲栏宽度 */
-  --z-float: 20;          /* 浮层层级（查找条 / 最近下拉；两者不重叠，共用一档）*/
+  --w-winbtn: 46px;       /* 窗口控制钮宽度（标题栏居中补偿要用，见 app.css §1）*/
+  --z-float: 20;          /* 浮层层级（查找条 / 最近下拉 / Aa 面板；互不重叠，共用一档）*/
 }
 
 /* 暗色阶：Radix Colors v3 dark —— 成对设计，与亮色同步验收（§3.3）。
@@ -174,5 +185,7 @@
   --mmd-primary-border: #696e77;/* slate.dark.9 */
   --mmd-line: #777b84;          /* slate.dark.10 */
   --mmd-secondary: #0d2847;     /* blue.dark.3 */
+  --shadow-1: 0 1px 2px -1px hsl(0 0% 0% / 34%), 0 1px 1px -1px hsl(0 0% 0% / 22%);
   --shadow-2: 0 3px 5px -2px hsl(0 0% 0% / 45%), 0 2px 4px -2px hsl(0 0% 0% / 35%);
+  /* 暗色不是把亮色取反：暗色阴影靠黑度而非亮度表达层级，故只在 alpha 上重调 */
 }

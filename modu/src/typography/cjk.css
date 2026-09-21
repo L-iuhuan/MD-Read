@@ -175,6 +175,11 @@
   font-size: .8125em;
   line-height: 1.65;
   font-variant-numeric: tabular-nums;
+  /* 表后段距（波4 归位，原 app.css §9 临时规则）：渲染管线直出裸 table，
+     不生成 .table-wrap 容器（markdown-it 行为），所以 .table-wrap 上的
+     margin-block: 0 1.2em 全部落空；而 .mdc p 只给 margin-block-end，
+     表与后续段落间距为 0。按 .table-wrap 同值补在 table 自身。 */
+  margin-block: 0 1.2em;
 }
 .mdc caption {
   text-align: start;
@@ -196,8 +201,11 @@
 .mdc thead th { background: var(--bg-code); font-weight: 600; color: var(--text); }
 .mdc th.num, .mdc td.num { text-align: end; font-family: var(--font-mono); }
 .mdc tbody tr:nth-child(even) { background: var(--bg-zebra); }
-.mdc tbody tr:last-child td { border-bottom: 0; }
 .mdc tbody tr:hover { background: var(--bg-hover); }
+/* 末行下边线保留（波4 归位，原 app.css §9 临时规则的反向修法）。
+   此前这里写的是 `border-bottom: 0`，指望 .table-wrap 的外框补位——
+   但渲染管线不生成 .table-wrap，框不存在 → 末行下边线彻底消失（用户反馈③）。
+   按「补生成 wrap 容器」之外的另一个选项处理：直接留着末行线，规则删除。 */
 .mdc .doc-note { font-size: .8125em; color: var(--text-muted); }
 
 /* ==========================================================================
@@ -217,6 +225,20 @@
 }
 .mdc .katex-display > .katex { transform-origin: center top; }
 .mdc .katex { font-size: 1.04em; }
+
+/* 中文伪公式降级（波4 归位，原 app.css §9 临时规则）。
+   KaTeX 对 CJK 走 strict 警告 + cjk_fallback 数学排版，中文被数学间距拉扯到不可读
+   （用户观感即「渲染失败」）。render/math.ts 在渲染前把含 CJK 的公式剥掉定界符、
+   包成 .math-fallback：行内弱化、块级（--display）居中。
+   块级用 span + display:block —— $$ 公式躺在 <p> 里，用 div 会在 innerHTML
+   重解析时把段落劈开。 */
+.math-fallback {
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-1);
+  padding: 0 .3em;
+}
+.math-fallback--display { display: block; margin-block: 1.2em; text-align: center; }
 
 /* ==========================================================================
    6. Mermaid 图（§2.1 F2 懒加载；主题变量见 tokens.css --mmd-*，由渲染层注入）
@@ -249,7 +271,9 @@
 
 /* --- 引用块（M2 波2：编辑感个性化）---
    选型 A（本处实现）：把中性条换成 3px accent 细条，底色在 --bg-quote 上向强调色
-   冷调微偏 6%，让引用块从页面底（--bg-app = slate.2）里轻轻浮出来，又不至于变成色块。
+   冷调微偏 6%，让引用块从阅读纸面（波4 起 --bg-app = slate.1，亮色下最白）里浮出来，
+   又不至于变成色块。波4 纸面提白后，引用块与纸面的落差由一阶变两阶，边界更清楚
+   （不必再动规则）。
    条色直接用语义层 --accent-solid（blue.9，亮暗同值）：与聚焦环/勾选框/标签指示线
    同源，守住「单色基底 + 唯一强调色」纪律，不新开色相。
    备选 B（未实现，留档）：保留中性条但加粗到 4px、底色压到 slate.2 同族，走「杂志抽引」
