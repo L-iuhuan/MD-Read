@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>墨读 M0 Spike</title>
+    <script type="module" src="/src/main.ts" defer></script>
+    <style>
+      body { font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif; margin: 0; }
+      main { max-width: 46em; margin: 2rem auto; padding: 0 1rem; }
+      #spike-log { background: #f6f8fa; padding: 12px; border-radius: 6px; white-space: pre-wrap; font-size: 13px; }
+      .amount { color: #1f6feb; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>墨读 M0 打印 Spike</h1>
+      <p>
+        用于 PDF 输出验证的正文：本期预算 <span class="amount">$1,000</span>，对比上期
+        <span class="amount">$2,000</span>，降幅 50%。中文字体与排版在打印路径同样生效，
+        本段文字用于验证 PrintToPdf 的正文渲染与分页行为。
+      </p>
+      <pre>const x = 42; // 代码块样例</pre>
+      <h2>spike 输出</h2>
+      <pre id="spike-log"></pre>
+    </main>
+  </body>
+</html>
