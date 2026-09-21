@@ -33,7 +33,7 @@
       {
         "name": "Markdown Document",
         "ext": ["md", "markdown", "mdx"],
-        "description": "Markdown 文档（墨读）",
+        "description": "Markdown document (MoDu)",
         "role": "Viewer"
       }
     ],
