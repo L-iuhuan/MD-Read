@@ -473,3 +473,138 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
     animation-duration: .01ms !important;
   }
 }
+
+/* ==========================================================================
+   9. M2 波3 用户反馈修复（波4 归位 typography 层 / 美化后删除本节）
+   ========================================================================== */
+
+/* 反馈②：中文伪公式降级。KaTeX 对 CJK 走 strict 警告 + cjk_fallback 数学排版，
+   中文被数学间距拉扯不可读（用户观感即「渲染失败」）。render/math.ts 在渲染前
+   把含 CJK 的公式剥定界符包成 .math-fallback——行内弱化、块级（--display）
+   居中。块级用 span+display:block：$$ 公式躺在 <p> 里，div 会在 innerHTML
+   重解析时劈开段落。样式最简（≤10 行），波4 美化。 */
+.math-fallback {
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-1);
+  padding: 0 .3em;
+}
+.math-fallback--display { display: block; margin-block: 1.2em; text-align: center; }
+
+/* 反馈③：表格末行下边线。根因：cjk.css 的 `.mdc tbody tr:last-child td { border-bottom: 0 }`
+   抹掉末行线后，原本指望 .table-wrap 外框补位——但渲染管线从不生成 .table-wrap
+   容器（markdown-it 直出裸 table），框不存在 → 末行下边线彻底消失。
+   此处恢复末行线；多一层 table 元素选择器在特异性上压过 cjk.css 的规则。
+   波4 归位：要么在 typography 层改回，要么补生成 wrap 容器后删本条。 */
+.mdc table tbody tr:last-child td { border-bottom: 1px solid var(--border); }
+
+/* 反馈④：表后段距丢失。根因同上：`.mdc .table-wrap { margin-block: 0 1.2em }`
+   因容器缺失全段落空，裸 table 无任何 margin，而后续 p 的 margin-block-start
+   是 0（`.mdc p { margin-block: 0 1.05em }` 只给 bottom）→ 表与后续段落间距为 0，
+   视觉上「没有了段后间距」。按 .table-wrap 同值补在 table 自身。 */
+.mdc table { margin-block: 0 1.2em; }
+
+/* ==========================================================================
+   10. 自定义标题栏（反馈⑤：decorations:false 后的窗口控制，样式最简，波4 美化）
+   ========================================================================== */
+:root { --h-titlebar: 32px; } /* 壳层局部刻度（tokens 冻结期暂放此处，波4 归位） */
+.titlebar {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  height: var(--h-titlebar);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.titlebar-drag {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  padding-inline-start: var(--size-3);
+}
+.titlebar-title {
+  font-size: var(--fs-chrome-sm);
+  letter-spacing: .12em;
+  color: var(--text-muted);
+}
+.titlebar button {
+  flex: none;
+  inline-size: 42px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.titlebar button:hover { background: var(--bg-hover); color: var(--text); }
+.titlebar button:active { background: var(--bg-active); }
+/* 关闭钮悬停用既有语义红（Windows 习惯），不新增色值 */
+#win-close:hover { background: var(--danger-bg); color: var(--danger-text); }
+
+/* 标题栏加入后，查找条（视口定位）整体下移一条标题栏高度——
+   覆盖 §3 的两条定位：基础态与带标签栏态（同选择器靠后取胜）。 */
+.findbar { inset-block-start: calc(var(--h-titlebar) + var(--h-topbar) + var(--size-2)); }
+body:has(.tabbar:not([hidden])) .findbar {
+  inset-block-start: calc(var(--h-titlebar) + var(--h-topbar) + var(--h-tabbar) + var(--size-2));
+}
+
+/* ==========================================================================
+   11. 「Aa」设置面板（反馈⑥：字号/字体/主题，样式最简，波4 美化）
+   ========================================================================== */
+.settings-wrap { position: relative; flex: none; }
+.settings-panel {
+  position: absolute;
+  z-index: var(--z-float);
+  inset-block-start: calc(100% + var(--size-1));
+  inset-inline-end: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  min-inline-size: 232px;
+  padding: var(--size-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-2);
+}
+.settings-label { color: var(--text-muted); font-size: var(--fs-chrome); }
+.settings-fs { display: flex; align-items: center; gap: var(--size-1); }
+.settings-fs span {
+  min-inline-size: 2em;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.settings-fs button {
+  inline-size: 24px;
+  block-size: 24px;
+  font: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.settings-fs button:hover { background: var(--bg-hover); color: var(--text); }
+.settings-panel select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  padding: 2px var(--size-1);
+}

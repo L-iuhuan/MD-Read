@@ -5,12 +5,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
 import { createTabManager, type TabManager } from "./app/tabs";
 import { pushRecent, setupRecentMenu } from "./app/recent";
+import { openEachMd } from "./app/drop";
 import { setupFindbar, type Findbar } from "./ui/findbar";
+import { setFontPref, setupSettings } from "./ui/settings";
 import "./app.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
@@ -178,11 +181,22 @@ async function onOpenClick(tabs: TabManager): Promise<void> {
 function setupDragDrop(tabs: TabManager): void {
   void getCurrentWebview().onDragDropEvent((event) => {
     if (event.payload.type === "drop") {
-      const path = event.payload.paths[0];
-      if (path !== undefined && path.toLowerCase().endsWith(".md")) {
-        void openPath(tabs, path);
-      }
+      // 多文件拖放（M2 波3 反馈①）：全部 .md 逐个开标签，串行保证最后一个激活
+      void openEachMd(event.payload.paths, (path) => openPath(tabs, path));
     }
+  });
+}
+
+/* ---- 无边框窗口标题栏（M2 波3 反馈⑤）---- */
+
+function setupWindowControls(): void {
+  const win = getCurrentWindow();
+  $("win-min").addEventListener("click", () => void win.minimize());
+  $("win-max").addEventListener("click", () => void win.toggleMaximize());
+  $("win-close").addEventListener("click", () => void win.close());
+  // 双击拖拽区 = 最大化/还原（Windows 标题栏惯例；原生按钮均带 title/aria，可 Tab 聚焦）
+  document.querySelector<HTMLElement>(".titlebar-drag")?.addEventListener("dblclick", () => {
+    void win.toggleMaximize();
   });
 }
 
@@ -191,11 +205,7 @@ function applyPrefs(): void {
   if (theme === "dark" || theme === "light") {
     document.documentElement.dataset.theme = theme;
   }
-  // 衬线属性按 cjk.css 契约落在 .mdc 自身（.mdc[data-face="serif"]），不在 <html>
-  const docEl = document.getElementById("doc");
-  if (docEl !== null && localStorage.getItem("modu-face") === "serif") {
-    docEl.dataset.face = "serif";
-  }
+  // 字号/字体恢复移入 setupSettings（modu-fs / modu-font，含旧 modu-face 迁移）
 }
 
 function setupToggles(): void {
@@ -206,16 +216,10 @@ function setupToggles(): void {
     localStorage.setItem("modu-theme", next);
     refreshMermaidTheme(next);
   });
+  // 「衬」按钮与 Aa 面板同源 modu-font（设置面板取代其职能，按钮并存，布局波4 定）
   $("btn-face").addEventListener("click", () => {
     const doc = $<HTMLElement>("doc");
-    if (doc.dataset.face === "serif") {
-      delete doc.dataset.face;
-      localStorage.setItem("modu-face", "sans");
-    } else {
-      doc.dataset.face = "serif";
-      localStorage.setItem("modu-face", "serif");
-    }
-    refitView(doc);
+    setFontPref(doc.dataset.face === "serif" ? "sans" : "serif");
   });
 }
 
@@ -231,6 +235,18 @@ function setupProgress(): void {
 
 async function boot(): Promise<void> {
   applyPrefs();
+  setupWindowControls(); // 无边框标题栏三钮（反馈⑤）
+  // 「Aa」设置面板（反馈⑥）：恢复字号/字体 + 面板接线；钩子接排版重算与 Mermaid 刷新
+  setupSettings({
+    getDoc: () => document.getElementById("doc"),
+    onFontChange: () => {
+      const doc = document.getElementById("doc");
+      if (doc !== null) {
+        refitView(doc); // 字体度量变了：断行守卫与公式缩放重算
+      }
+    },
+    onThemeChange: (theme) => refreshMermaidTheme(theme),
+  });
   const findbar = setupFindbar(() => document.getElementById("doc"));
   const tabs = createTabs(findbar);
   $("btn-open").addEventListener("click", () => void onOpenClick(tabs));
@@ -241,10 +257,8 @@ async function boot(): Promise<void> {
   setupProgress();
   await listen<string>("open-file", (event) => void openPath(tabs, event.payload));
   await listen<string[]>("second-instance", (event) => {
-    const mdArg = event.payload.find((arg) => arg.toLowerCase().endsWith(".md"));
-    if (mdArg !== undefined) {
-      void openPath(tabs, mdArg); // F12：二次打开 → 已有窗口新标签
-    }
+    // 多文件二次实例参数与拖放同路径（M2 波3 反馈①）：全部 .md 逐个开标签
+    void openEachMd(event.payload, (path) => openPath(tabs, path));
   });
   const pending = await invoke<string | null>("take_pending_file");
   if (pending !== null) {

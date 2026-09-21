@@ -8,6 +8,15 @@
   </head>
   <body>
     <div id="app">
+      <!-- 自定义标题栏（M2 波3 反馈⑤：无边框轻盈感，tauri decorations:false） -->
+      <header id="titlebar" class="titlebar" aria-label="窗口标题栏">
+        <div class="titlebar-drag" data-tauri-drag-region>
+          <span class="titlebar-title" data-tauri-drag-region>墨读</span>
+        </div>
+        <button id="win-min" type="button" title="最小化" aria-label="最小化">─</button>
+        <button id="win-max" type="button" title="最大化 / 还原（双击标题栏同效）" aria-label="最大化或还原">▢</button>
+        <button id="win-close" type="button" title="关闭" aria-label="关闭窗口">✕</button>
+      </header>
       <header class="topbar">
         <button id="btn-open" type="button" title="打开 Markdown 文件">打开…</button>
         <span id="doc-title" class="doc-title" title="当前文件">未打开文件</span>
@@ -16,6 +25,36 @@
           <div id="recent-menu" class="recent-menu" hidden></div>
         </div>
         <span class="topbar-spacer"></span>
+        <div class="settings-wrap">
+          <button id="btn-settings" type="button" title="字体与外观设置" aria-label="打开字体与外观设置面板">Aa</button>
+          <!-- 「Aa」设置面板（M2 波3 反馈⑥：字号/字体/主题），样式最简，波4 美化 -->
+          <div id="settings-panel" class="settings-panel" hidden aria-label="字体与外观设置">
+            <div class="settings-row">
+              <span class="settings-label" id="set-fs-label">字号</span>
+              <div class="settings-fs" role="group" aria-labelledby="set-fs-label">
+                <button id="set-fs-dec" type="button" title="减小字号" aria-label="减小字号">−</button>
+                <span id="set-fs-val">16</span>
+                <button id="set-fs-inc" type="button" title="增大字号" aria-label="增大字号">＋</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="set-font">字体</label>
+              <select id="set-font" title="正文字体" aria-label="正文字体">
+                <option value="sans">微软雅黑</option>
+                <option value="serif">宋体（衬线）</option>
+                <option value="kai">楷体</option>
+                <option value="hei">黑体</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="set-theme">主题</label>
+              <select id="set-theme" title="界面主题" aria-label="界面主题">
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+              </select>
+            </div>
+          </div>
+        </div>
         <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
         <button id="btn-face" type="button" title="切换正文衬线/无衬线">衬</button>
         <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>⇩ PDF</button>
