@@ -3,9 +3,10 @@
  * 非活动标签只留 source 文本；切换时经 deps.render 重渲并恢复 scroll。
  * main.ts 通过 mountDoc 回调接管 #doc/大纲/状态栏的接线，本模块不碰渲染管线。
  */
+import type { SavedEditorState } from "../editor/editor";
 import type { OutlineItem } from "../render/pipeline";
 
-/** 标签状态。dirty 恒为 false 直到 M3 编辑器，但字段与圆点渲染已就绪 */
+/** 标签状态。dirty/bom/crlf 由 M3 编辑器接线启用；editor 为编辑器态存档 */
 export interface Tab {
   path: string;
   title: string;
@@ -13,11 +14,20 @@ export interface Tab {
   source: string;
   scroll: number;
   dirty: boolean;
+  /** 原文件有无 BOM（save_file 第四参回传，D7 保真） */
+  bom: boolean;
+  /** 行尾以 CRLF 为主（编辑器 lineSeparator 依据） */
+  crlf: boolean;
+  /** 每标签编辑器态（EditorState+滚动）；null = 未进过编辑态 */
+  editor: SavedEditorState | null;
 }
 
 export interface TabFile {
   text: string;
   encoding: string;
+  /** Rust 车道新增字段，未合入时缺省——按 === true 判定容忍 */
+  bom?: boolean;
+  crlf?: boolean;
 }
 
 export interface MountContext {
@@ -36,6 +46,10 @@ export interface TabManagerDeps {
   onEmpty(): void;
   /** dirty 标签关闭前确认，返回 false 放弃关闭 */
   confirmClose(tab: Tab): boolean;
+  /** 切走标签前保存编辑器态（null = 编辑器不属当前标签，保留旧档） */
+  saveEditorState?(): SavedEditorState | null;
+  /** 激活标签后同步编辑器（恢复存量态或装载源文） */
+  loadEditorState?(saved: SavedEditorState | null): void;
 }
 
 export interface TabManager {
@@ -116,6 +130,10 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     const current = activePath === null ? null : find(activePath);
     if (current !== null && current !== target) {
       current.scroll = deps.getScroll(); // 离开前把阅读位置存回标签（懒挂载）
+      const saved = deps.saveEditorState?.();
+      if (saved !== null && saved !== undefined) {
+        current.editor = saved; // 编辑器态同样随标签走（跨标签保撤销）
+      }
     }
     activePath = path;
     renderBar();
@@ -125,6 +143,7 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(() => deps.setScroll(target.scroll)); // 懒内容撑高后再钉一次
     }
+    deps.loadEditorState?.(target.editor);
   }
 
   function openTab(path: string, file: TabFile): void {
@@ -137,11 +156,17 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
         source: file.text,
         scroll: 0,
         dirty: false,
+        bom: file.bom === true, // 字段可空容忍：Rust 车道未合入时缺省为 false
+        crlf: file.crlf === true,
+        editor: null,
       });
     } else {
       existing.source = file.text; // 同路径重开 = 刷新内容并回到顶部（M1 语义）
       existing.encoding = file.encoding;
       existing.scroll = 0;
+      existing.bom = file.bom === true;
+      existing.crlf = file.crlf === true;
+      existing.editor = null; // 内容已刷新，旧编辑器态作废
     }
     activateTab(path);
   }

@@ -82,6 +82,7 @@
         </div>
         <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
         <button id="btn-face" type="button" title="切换正文衬线/无衬线">衬</button>
+        <button id="btn-edit" type="button" title="编辑 / 阅读（Ctrl+E）" aria-label="切换编辑与阅读模式" disabled>✎ 编辑</button>
         <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>⇩ PDF</button>
       </header>
       <div id="findbar" class="findbar" hidden>
@@ -99,10 +100,13 @@
         <main id="content" class="content">
           <div id="empty-hint" class="empty-hint">拖入 .md 文件，或点「打开…」</div>
           <article id="doc" class="mdc" hidden></article>
+          <!-- M3 编辑态（F7）：CM6 常驻容器，与 #doc 互斥显隐；高度由 editor.ts 内联撑满 -->
+          <div id="editor-pane" class="editor-pane" hidden aria-label="源码编辑区"></div>
         </main>
       </div>
       <footer class="statusbar">
         <span id="st-encoding">—</span>
+        <span id="st-saved" hidden aria-live="polite"></span>
         <span class="statusbar-spacer"></span>
         <span id="st-progress">0%</span>
       </footer>

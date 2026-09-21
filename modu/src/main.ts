@@ -1,5 +1,6 @@
 /**
  * 墨读 M2 应用壳：多标签 + 最近文件 + 文档内查找 + 大纲滚动跟随。
+ * M3-A 增编辑态（F7）：CM6 会话在 editor/，此处只做接线（Ctrl+E/S/F、✎ 按钮）。
  * 排版在 typography/，渲染在 render/，标签/最近在 app/，查找在 ui/——此处只做接线。
  */
 import { invoke } from "@tauri-apps/api/core";
@@ -9,11 +10,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
-import { createTabManager, type TabManager } from "./app/tabs";
+import { createTabManager, type MountContext, type TabManager } from "./app/tabs";
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { openEachMd } from "./app/drop";
-import { setupFindbar, type Findbar } from "./ui/findbar";
+import { setupFindbar } from "./ui/findbar";
 import { setFontPref, setupSettings, syncSettingsPanel } from "./ui/settings";
+import { createEditSession, type EditSession } from "./editor/editor";
 import "./app.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
@@ -22,7 +24,14 @@ import "katex/dist/katex.min.css";
 interface LoadedFile {
   text: string;
   encoding: string;
+  /** Rust 车道新增字段（D7 保真），未合入时缺省 */
+  bom?: boolean;
+  crlf?: boolean;
 }
+
+/** 会话先于 tabs 建好，但 showError/resetToWelcome 由 tabs 回调触发——模块级引用 */
+let editorSession: EditSession | null = null;
+let activeTabs: TabManager | null = null;
 
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -33,6 +42,7 @@ function $<T extends HTMLElement>(id: string): T {
 }
 
 function showError(message: string): void {
+  editorSession?.reset(); // 错误页是纯阅读态：编辑器让位
   const doc = $<HTMLElement>("doc");
   doc.hidden = false;
   doc.textContent = message;
@@ -119,6 +129,7 @@ function scheduleFollow(): void {
 /* ---- 标签接线（四个入口最终都汇到 openPath → tabs.openTab） ---- */
 
 function resetToWelcome(): void {
+  editorSession?.reset(); // 空态：收起编辑器并作废当前档
   const doc = $<HTMLElement>("doc");
   doc.textContent = "";
   doc.hidden = true;
@@ -129,32 +140,27 @@ function resetToWelcome(): void {
   $("doc-title").textContent = "未打开文件";
   $("st-encoding").textContent = "—";
   $("st-progress").textContent = "0%";
+  const editBtn = document.getElementById("btn-edit") as HTMLButtonElement | null;
+  if (editBtn !== null) {
+    editBtn.disabled = true; // 无文档不可编辑
+  }
   $("content").scrollTop = 0;
 }
 
-function createTabs(findbar: Findbar): TabManager {
+function createTabs(session: EditSession, mountRendered: (ctx: MountContext) => void): TabManager {
   // designer 并行重构标题栏，#tabbar 可能移位或暂缺：缺席时挂到离屏容器保 boot 不炸
   const bar = document.getElementById("tabbar") ?? document.createElement("nav");
   return createTabManager(bar as HTMLElement, {
     render: (source) => renderDocument(source, { pangu: true }),
-    mountDoc: ({ tab, html, outline }) => {
-      const doc = $<HTMLElement>("doc");
-      doc.innerHTML = html;
-      doc.hidden = false;
-      $("empty-hint").hidden = true;
-      mountOutline(outline);
-      observeHeadings(); // F4：正文已换，重挂一批观察对象
-      enhanceView(doc);
-      findbar.close(); // 正文已换，旧命中作废，避免残留陈旧 mark
-      $("doc-title").textContent = tab.title;
-      $("st-encoding").textContent = tab.encoding;
-    },
+    mountDoc: mountRendered,
     getScroll: () => $("content").scrollTop,
     setScroll: (top) => {
       $("content").scrollTop = top;
     },
     onEmpty: resetToWelcome,
     confirmClose: (tab) => window.confirm(`「${tab.title}」有未保存的修改，确定要关闭吗？`),
+    saveEditorState: () => session.saveEditorState(), // 切走标签：编辑器态存回
+    loadEditorState: (saved) => session.loadEditorState(saved), // 切入标签：按档恢复
   });
 }
 
@@ -251,7 +257,38 @@ async function boot(): Promise<void> {
     onThemeChange: (theme) => refreshMermaidTheme(theme),
   });
   const findbar = setupFindbar(() => document.getElementById("doc"));
-  const tabs = createTabs(findbar);
+  // 挂载一篇渲染结果：#doc/大纲/F4 观察/增强/查找作废/状态栏——两处入口（标签激活、编辑回读）共用
+  function mountRendered(ctx: MountContext): void {
+    const doc = $<HTMLElement>("doc");
+    doc.innerHTML = ctx.html;
+    doc.hidden = false;
+    $("empty-hint").hidden = true;
+    mountOutline(ctx.outline);
+    observeHeadings(); // F4：正文已换，重挂一批观察对象
+    enhanceView(doc);
+    findbar.close(); // 正文已换，旧命中作废，避免残留陈旧 mark
+    $("doc-title").textContent = ctx.tab.title;
+    $("st-encoding").textContent = ctx.tab.encoding;
+    $<HTMLButtonElement>("btn-edit").disabled = false;
+  }
+
+  // M3-A 编辑会话（Ctrl+E/S/F 捕获路由、✎ 同 Ctrl+E）：先建会话再建标签（getTab 经 activeTabs 回指）
+  editorSession = createEditSession({
+    container: $<HTMLElement>("editor-pane"),
+    docEl: $<HTMLElement>("doc"),
+    contentEl: $<HTMLElement>("content"),
+    statusEl: $<HTMLElement>("st-saved"),
+    getTab: () => activeTabs?.activeTab() ?? null,
+    setDirty: (path, dirty) => activeTabs?.setDirty(path, dirty), // docChanged → 标签圆点
+    saveFile: ({ path, text, encoding, bom }) => invoke<void>("save_file", { path, text, encoding, bom }),
+    rerenderRead: (tab, text) => {
+      const result = renderDocument(text, { pangu: true });
+      mountRendered({ tab, html: result.html, outline: result.outline });
+    },
+  });
+  const tabs = createTabs(editorSession, mountRendered);
+  activeTabs = tabs;
+  $("btn-edit").addEventListener("click", () => editorSession?.toggle());
   $("btn-open").addEventListener("click", () => void onOpenClick(tabs));
   $("btn-newtab").addEventListener("click", () => void onOpenClick(tabs)); // 标签栏「+」= 打开…
   setupRecentMenu((path) => void openPath(tabs, path));

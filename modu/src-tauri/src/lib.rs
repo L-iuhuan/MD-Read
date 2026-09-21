@@ -1,4 +1,4 @@
-mod fs;
+pub mod fs;
 mod print;
 mod single;
 

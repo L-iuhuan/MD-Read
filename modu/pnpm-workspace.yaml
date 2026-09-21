@@ -1,0 +1,7 @@
+# pnpm v11: project settings live here (overrides no longer read from package.json).
+# Pin one transitive dep: @lezer/javascript 1.0.0 is too old for lang-html 6.4.12
+# (missing SingleExpression top rule) - bump to current 1.x, not a new dependency.
+overrides:
+  "@lezer/javascript": 1.5.5
+minimumReleaseAgeExclude:
+  - "@lezer/javascript@1.5.5"
