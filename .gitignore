@@ -1,0 +1,21 @@
+# 参考素材（Print Studio WIP）不入库
+参考/
+
+# Node
+node_modules/
+dist/
+*.local
+
+# Tauri / Rust
+modu/src-tauri/target/
+modu/src-tauri/gen/
+
+# IDE / 系统
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# 日志与临时
+*.log
+*.tmp
