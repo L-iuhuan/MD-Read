@@ -69,6 +69,10 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     el.className = isActive ? "tab active" : "tab";
     el.dataset.path = tab.path;
     el.title = tab.path;
+    // 键盘可达性（波2 designer 遗留#1）：div 默认不可聚焦，补语义与键激活
+    el.setAttribute("role", "tab");
+    el.setAttribute("aria-selected", String(isActive));
+    el.tabIndex = 0;
     const dot = document.createElement("span");
     dot.className = "tab-dirty";
     dot.hidden = !tab.dirty; // dirty 圆点（M3 启用，渲染逻辑先就位）
@@ -86,6 +90,12 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
       closeTab(tab.path);
     });
     el.addEventListener("click", () => activateTab(tab.path));
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        activateTab(tab.path);
+      }
+    });
     el.append(dot, title, close);
     return el;
   }

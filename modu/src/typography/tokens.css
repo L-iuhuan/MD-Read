@@ -116,6 +116,23 @@
   --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", 宋体, SimSun,
                 Georgia, "Times New Roman", serif;                         /* §4 D3 衬线栈 */
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+
+  /* ==========================================================================
+     M2 波2 新增：应用壳（chrome）刻度 —— 只新增，上方既有值一字未改。
+     壳层与正文刻度分离的理由：字号设置只改 --fs-body，若壳层跟着走，工具条/标签/
+     状态栏会随正文一起变大并挤掉阅读空间；壳层保持恒定才是阅读器的正确行为。
+     控制高度（--h-*）不属于 Open Props 刻度（Open Props 只管间距/圆角/阴影/缓动），
+     是壳层控件尺寸，按最小实用集只留三档；颜色一律复用既有阶数与语义映射，
+     **不新增任何色值**。
+     ========================================================================== */
+  --fs-chrome: 12px;      /* 按钮 / 标签 / 查找条输入 */
+  --fs-chrome-sm: 11px;   /* 状态栏 / 大纲条目 / 元信息 */
+  --bg-active: var(--slate-5);  /* 按压底（slate.5，语义层补口，值来自既有阶数）*/
+  --h-topbar: 38px;       /* 顶栏高度 */
+  --h-tabbar: 34px;       /* 标签栏高度 */
+  --h-status: 24px;       /* 状态栏高度 */
+  --w-outline: 216px;     /* 大纲栏宽度 */
+  --z-float: 20;          /* 浮层层级（查找条 / 最近下拉；两者不重叠，共用一档）*/
 }
 
 /* 暗色阶：Radix Colors v3 dark —— 成对设计，与亮色同步验收（§3.3）。

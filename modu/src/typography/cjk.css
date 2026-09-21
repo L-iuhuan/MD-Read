@@ -247,12 +247,25 @@
   font-weight: 600;
 }
 
-/* --- 引用块 --- */
+/* --- 引用块（M2 波2：编辑感个性化）---
+   选型 A（本处实现）：把中性条换成 3px accent 细条，底色在 --bg-quote 上向强调色
+   冷调微偏 6%，让引用块从页面底（--bg-app = slate.2）里轻轻浮出来，又不至于变成色块。
+   条色直接用语义层 --accent-solid（blue.9，亮暗同值）：与聚焦环/勾选框/标签指示线
+   同源，守住「单色基底 + 唯一强调色」纪律，不新开色相。
+   备选 B（未实现，留档）：保留中性条但加粗到 4px、底色压到 slate.2 同族，走「杂志抽引」
+   路线（无彩度，只靠粗细与留白）；放弃原因：与页面底同色后引用块边界几乎消失，
+   暗色下尤其看不出范围，等于把「引用」这个语义交给一根 4px 灰条独自承担。
+   对比度（Chrome 实测，含 oklab 混色换算）：
+     正文 slate.12 于本底色 = 亮 13.41:1 / 暗 12.45:1 ✔ 均 ≥4.5:1；
+     条色 blue.9 于本底色 = 亮 2.67:1 / 暗 4.43:1 —— 条是装饰性分隔，不承载信息，
+     不适用 4.5:1；如需把它当「引用标记」读，亮色下应改用更深的阶数。
+   color-mix 之前先写一行纯 --bg-quote：不支持 color-mix 的引擎退回原来的 slate.3 底。 */
 .mdc blockquote {
   margin-block: 0 1.2em;
   padding: var(--size-3) var(--size-4) var(--size-3) var(--size-5);
   background: var(--bg-quote);
-  border-inline-start: 3px solid var(--quote-bar);
+  background: color-mix(in oklab, var(--bg-quote) 94%, var(--accent-text));
+  border-inline-start: 3px solid var(--accent-solid);
   border-radius: 0 var(--radius-2) var(--radius-2) 0;
 }
 .mdc blockquote > p:last-child { margin-block-end: 0; }

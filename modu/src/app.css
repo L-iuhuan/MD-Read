@@ -1,93 +1,475 @@
-/* 应用壳布局（chrome 层）——排版规则一律在 typography/，此处只管骨架 */
+/* ==========================================================================
+   墨读 MoDu · src/app.css —— 应用壳（chrome）层
+   --------------------------------------------------------------------------
+   只做壳：顶栏 / 标签栏 / 查找条 / 大纲 / 最近下拉 / 正文容器 / 状态栏。
+   正文排版一律在 typography/cjk.css，色值一律取 typography/tokens.css 的语义层。
+   三条纪律（规格 §3.3 + 设计协议五铁律）：
+   1. 色值只用既有 Radix 阶数/语义映射，本文件**不出现任何新色值**；
+   2. 装饰最小化：层次靠字号、间距、颜色深度（surface 与 app 只差一阶），
+      不靠边框堆砌、不靠渐变、圆角 ≤9px、浮层只用一档阴影 --shadow-2；
+   3. 动效 ≤250ms（全部走 --duration-1/.1s 与 --duration-2/.2s），
+      focus-visible 全控件可见，prefers-reduced-motion 降级。
+   深色是一等公民：亮暗只由 tokens.css 的阶数变量切换，本文件不含暗色专规则。
+   ========================================================================== */
+
+/* [hidden] 兜底：下面会给 #tabbar / #findbar / #recent-menu / #empty-hint 等 id 元素
+   设 display，而作者样式优先于 UA 的 [hidden]{display:none}——不补这条，hidden 属性
+   会被自己的 display 顶掉（标签栏/查找条会一直显形）。 */
+[hidden] { display: none !important; }
+
+html, body { margin: 0; padding: 0; }
+body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现第二条滚动条 */
+
 #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--bg-app);
+  background: var(--bg-app);   /* 正文面（app 面，slate.2）*/
   color: var(--text);
+  /* 壳层字体与字号在此落定：此前无人设置，壳层一直在用浏览器默认衬线体 */
+  font-family: var(--font-sans);
+  font-size: var(--fs-chrome);
+  /* 控件高度靠 --h-* 精确控制，故统一 border-box（否则 38px+1px 边框会错位 1px）*/
+}
+#app *, #app *::before, #app *::after { box-sizing: border-box; }
+
+/* 全控件焦点态（正文区内的焦点态由 cjk.css 自理）*/
+#app :where(button, input, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-radius: var(--radius-1);
 }
 
+/* ==========================================================================
+   1. 顶栏 —— 紧凑、按钮去边框化（hover 才显底）、标题居中弱化、禁用态明确
+   表面分层：顶栏在 surface 面（slate.1），正文区在 app 面（slate.2），只差一阶。
+   ========================================================================== */
 .topbar {
   display: flex;
   align-items: center;
-  gap: var(--size-2);
-  padding: 0 var(--size-3);
-  height: 40px;
   flex: none;
-  border-bottom: 1px solid var(--border);
+  gap: var(--size-1);
+  height: var(--h-topbar);
+  padding: 0 var(--size-2);
   background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  position: relative;   /* 让最近下拉在壳层内建立自己的定位上下文 */
+  /* 顶栏要盖住内容区浮层：下拉菜单是顶栏的子元素，会被困在顶栏的层叠上下文里，
+     所以顶栏自身的 z 必须高于查找条（--z-float），否则菜单会被查找条压住。 */
+  z-index: calc(var(--z-float) + 10);
 }
+
 .topbar button {
+  flex: none;
   height: 26px;
   padding: 0 var(--size-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  background: var(--bg-surface);
-  color: var(--text);
+  font: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;                       /* 去边框化：靠 hover 底色表态 */
+  border-radius: var(--radius-2);
   cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
 }
-.topbar button:hover:not(:disabled) { background: var(--bg-app); }
-.topbar button:disabled { opacity: 0.45; cursor: default; }
-.topbar button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.topbar button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.topbar button:active:not(:disabled) { background: var(--bg-active); }
+/* 禁用态：压暗 + 不回显 hover，鼠标指针不变手型（M4 前 PDF 导出恒禁用）*/
+.topbar button:disabled { opacity: .42; cursor: default; }
+
+/* 标题：占据中段并居中，弱化色；min-inline-size:0 让 ellipsis 生效 */
 .doc-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  text-align: center;
+  font-size: var(--fs-chrome);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* .topbar-spacer 是 index.html 留下的旧撑开件：标题改为 flex:1 自居中后，
+   它再占一份弹性空间会把标题推离中线，故在壳层里让它退出布局（DOM 契约不动）。*/
+.topbar-spacer { display: none; }
+
+/* 开关状态回显。主题态挂在 <html data-theme> 上（既有契约，直接读）；
+   衬线态落在 #doc[data-face] 上（main.ts 契约），只得用 :has() 反向映射到按钮——
+   不支持 :has() 时该条失效，开关仍可用，只是少了状态底色。 */
+html[data-theme="dark"] #btn-theme,
+html:has(#doc[data-face="serif"]) #btn-face {
+  background: var(--accent-tint);
+  color: var(--accent-text-hover);   /* blue.12 于 blue.3：亮 ≈11:1 ✔ 暗 ≈11.4:1 ✔ */
+}
+
+/* ==========================================================================
+   2. 标签栏 —— 贴顶栏下沿；活动标签与正文同底色（连通感）+ 2px accent 底边指示线
+   ========================================================================== */
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  gap: var(--size-1);
+  height: var(--h-tabbar);
+  padding: 0 var(--size-2);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+.tab-list {
+  display: flex;
+  align-items: flex-end;        /* 标签贴栏底，与正文区接缝对齐 */
+  gap: 2px;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow-x: auto;             /* 标签溢出横向滚动 */
+  overflow-y: hidden;
+  scrollbar-width: thin;        /* 细滚动条（Firefox / 规范路径）*/
+  scrollbar-color: var(--slate-7) transparent;
+}
+.tab-list::-webkit-scrollbar { height: 6px; }
+.tab-list::-webkit-scrollbar-track { background: transparent; }
+.tab-list::-webkit-scrollbar-thumb {
+  background: var(--slate-7);
+  border-radius: 3px;
+}
+.tab-list::-webkit-scrollbar-thumb:hover { background: var(--slate-8); }
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  flex: none;
+  max-inline-size: 200px;
+  height: 28px;
+  padding: 0 var(--size-1) 0 var(--size-2);
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: var(--radius-2) var(--radius-2) 0 0;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.tab:hover { background: var(--bg-hover); color: var(--text); }
+.tab.active {
+  background: var(--bg-app);    /* 同正文底色 → 视觉上连成一片 */
+  color: var(--text);
+}
+.tab.active::before {           /* 2px accent 底边线：压在栏的分割线上，重合即「指示」*/
+  content: "";
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: 0;
+  height: 2px;
+  background: var(--accent-solid);
+}
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab-dirty {
+  flex: none;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--accent-solid);   /* 未保存圆点用强调色（非错误语义，不占红/黄）*/
+}
+.tab-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  opacity: 0;                   /* hover / 活动标签 / 键盘聚焦才现；不可见时仍可聚焦 */
+  transition: opacity var(--duration-1) var(--ease-1),
+              background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.tab:hover .tab-close, .tab.active .tab-close, .tab-close:focus-visible { opacity: 1; }
+.tab-close:hover { background: var(--bg-active); color: var(--text); }
+/* 说明：.tab 是 div，键盘不可聚焦（需 TS 侧加 tabindex/role，属波1 接线范畴）。
+   :focus-visible 规则先就位，接线补上即生效。 */
+.tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+#btn-newtab {
+  flex: none;
+  align-self: center;
+  inline-size: 26px;
+  block-size: 26px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+#btn-newtab:hover { background: var(--bg-hover); color: var(--text); }
+
+/* ==========================================================================
+   3. 查找条 —— 浮于内容区顶部右侧（不占流、不随正文滚动）
+   命中分色只用 accent 族两阶：find-hit = blue.3，find-current = blue.7。
+   两种底色都不含 padding/border/字重变化 —— mark 只包字符不增删一字，
+   加内边距会让正文在搜索期间重排（M1 复制保真红线）。
+   ========================================================================== */
+.findbar {
+  position: absolute;
+  z-index: var(--z-float);
+  inset-block-start: calc(var(--h-topbar) + var(--size-2));
+  inset-inline-end: var(--size-4);
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  padding: var(--size-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);   /* 浮层只给一档阴影 */
+}
+/* 有标签栏时整体下移一条标签栏的高度 */
+body:has(.tabbar:not([hidden])) .findbar {
+  inset-block-start: calc(var(--h-topbar) + var(--h-tabbar) + var(--size-2));
+}
+
+#find-input {
+  inline-size: 176px;
+  height: 24px;
+  padding: 0 var(--size-2);
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-app);     /* 在 surface 浮层上挖一档做输入区，不用边框堆砌 */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  transition: border-color var(--duration-1) var(--ease-1);
+}
+#find-input::placeholder { color: var(--text-muted); }
+#find-input:focus { border-color: var(--accent-tint-border); }
+
+.find-count {
+  min-inline-size: 42px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-chrome-sm);
+  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
-.topbar-spacer { flex: 1; }
+.findbar button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.findbar button:hover { background: var(--bg-hover); color: var(--text); }
+.findbar button:active { background: var(--bg-active); }
 
-.body-row { display: flex; flex: 1; min-height: 0; }
+/* 命中：同一强调色两阶，无极细边框、无阴影，避免密集命中时变成花斑 */
+.mdc mark.find-hit {
+  background: var(--accent-tint);       /* blue.3：亮暗两套自动跟随 */
+  color: var(--text);
+  border-radius: var(--radius-1);
+}
+.mdc mark.find-current {
+  background: var(--blue-7);            /* blue.7：同族更重一阶，与 find-hit 明确分层 */
+  color: var(--text);
+  border-radius: var(--radius-1);
+}
 
+/* ==========================================================================
+   4. 大纲侧栏 —— 条目紧凑、层级缩进由 main.ts 内联 paddingLeft 提供
+   ⚠ 禁止覆盖 padding-left：缩进是 (level-1)*12px 的内联值，覆盖会毁掉层级。
+   活动态用「2px 左侧指示条 + 文字加强」，不做大色块。
+   ========================================================================== */
 .outline {
-  width: 224px;
+  inline-size: var(--w-outline);
   flex: none;
   overflow-y: auto;
-  border-right: 1px solid var(--border);
-  padding: var(--size-3) var(--size-2);
+  padding: var(--size-3) var(--size-2) var(--size-4);
+  background: var(--bg-surface);        /* 与顶栏同面：壳层为框、正文为页 */
+  border-inline-end: 1px solid var(--border);
 }
 .outline-title {
-  font-size: var(--fs-title-sm);
+  font-size: var(--fs-chrome-sm);
+  letter-spacing: .08em;
   color: var(--text-muted);
-  margin-bottom: var(--size-2);
+  padding: 0 var(--size-1) var(--size-2);
 }
+.outline-list { display: block; }
 .outline-list a {
   display: block;
-  padding: 2px 0;
+  padding-inline-end: var(--size-2);    /* 只给右内边距；左缩进留给内联值 */
+  padding-block: 3px;
+  border-inline-start: 2px solid transparent;  /* 常驻占位：active 只换色，不挪位 */
+  font-size: var(--fs-chrome);
+  line-height: 1.5;
   color: var(--text-muted);
   text-decoration: none;
   cursor: pointer;
-  border-radius: var(--radius-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1),
+              border-color var(--duration-1) var(--ease-1);
 }
-.outline-list a:hover { color: var(--accent-text); }
-.outline-list a:focus-visible { outline: 2px solid var(--focus-ring); }
+.outline-list a:hover { background: var(--bg-hover); color: var(--text); }
+.outline-list a.active {
+  border-inline-start-color: var(--accent-solid);
+  background: var(--bg-app);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* 空态（首访）：不摆一个只有「大纲」二字的光杆侧栏，让欢迎页独占画面 */
+body:has(#empty-hint:not([hidden])) .outline { display: none; }
+
+/* ==========================================================================
+   5. 最近下拉 —— 卡片式浮层、一档阴影、点外收起的视觉闭环
+   ========================================================================== */
+.recent-wrap { position: relative; flex: none; }
+.recent-menu {
+  position: absolute;
+  z-index: var(--z-float);
+  inset-block-start: calc(100% + var(--size-1));
+  /* 右对齐触发器：菜单向左展开。「最近」按钮距窗口右缘不足一个菜单宽，
+     左对齐会把菜单顶出窗口右缘（实测 1280px 窗口下溢出 41px）。*/
+  inset-inline-end: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 224px;
+  max-inline-size: min(360px, calc(100vw - var(--size-6)));
+  max-block-size: 56vh;
+  overflow-y: auto;
+  padding: var(--size-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);      /* 一圈 hairline + 一档阴影 = 可收起的浮层闭环 */
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+}
+.recent-item {
+  display: block;
+  inline-size: 100%;
+  padding: var(--size-1) var(--size-2);
+  font: inherit;
+  text-align: start;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background-color var(--duration-1) var(--ease-1);
+}
+.recent-item:hover { background: var(--bg-hover); }
+.recent-empty {
+  padding: var(--size-2) var(--size-1);
+  font-size: var(--fs-chrome-sm);
+  text-align: center;
+  color: var(--text-muted);             /* 空态文案弱化 */
+}
+
+/* ==========================================================================
+   6. 正文容器与欢迎页
+   ========================================================================== */
+.body-row { display: flex; flex: 1; min-height: 0; }
 
 .content {
   flex: 1;
-  overflow-y: auto;
   min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;   /* 阅读到边界不把滚动链传给外层 */
 }
-.empty-hint {
-  color: var(--text-muted);
-  text-align: center;
-  margin-top: 20vh;
-}
-/* 排版正文容器（.mdc 的限宽/行高等规则在 cjk.css） */
+/* 排版正文容器（.mdc 的限宽/行高等规则在 cjk.css）*/
 #doc {
   margin: 0 auto;
-  padding: var(--size-6) var(--size-4) 25vh;
+  padding: var(--size-6) var(--size-4) 25vh;   /* 底部留白：最后一段也能停在舒服的视位 */
 }
 
+/* 欢迎页：居中引导，首访不喧宾夺主 —— 一枚发丝线词标 + 一行提示。
+   标记选型取舍：先用过「56px 方框内放大号墨字」的做法，放弃——墨是 15 画字，
+   放大到 26px 当装饰标记时笔画密度过高（且合成加粗会糊），在小尺寸/低 DPI 下不可读；
+   改用产品名词标（15px/600 发丝线胶囊）：信息更明确，也不虚构一套图标语言。*/
+.empty-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-4);
+  min-block-size: 100%;
+  padding: var(--size-6);
+  text-align: center;
+  font-size: var(--fs-body);      /* 跟随用户字号设置，与正文同一档 */
+  color: var(--text-muted);
+}
+.empty-hint::before {
+  content: "墨读";
+  padding: var(--size-1) var(--size-3) var(--size-1) calc(var(--size-3) + .18em);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .18em;          /* 右内边距多留 .18em，补掉字距的尾隙 */
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2);
+}
+
+/* ==========================================================================
+   7. 状态栏 —— 低调一行；编码与进度用等宽体弱化，读数不跳字
+   ========================================================================== */
 .statusbar {
   display: flex;
   align-items: center;
-  height: 24px;
   flex: none;
-  padding: 0 var(--size-3);
   gap: var(--size-3);
-  border-top: 1px solid var(--border);
+  height: var(--h-status);
+  padding: 0 var(--size-3);
   background: var(--bg-surface);
+  border-top: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: var(--fs-title-sm);
+  font-size: var(--fs-chrome-sm);
 }
 .statusbar-spacer { flex: 1; }
+#st-encoding, #st-progress {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+/* ==========================================================================
+   8. 窄窗与动效降级
+   ========================================================================== */
+@media (max-width: 1000px) {
+  :root { --w-outline: 184px; }
+}
+@media (max-width: 840px) {
+  .outline { display: none; }     /* 窄窗优先保正文宽度 */
+}
+@media (prefers-reduced-motion: reduce) {
+  #app *, #app *::before, #app *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+  }
+}
