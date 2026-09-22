@@ -133,4 +133,10 @@
     background: none;
     color: inherit;
   }
+
+  /* 屏显交互件不进 PDF（用户反馈批次·代码块复制钮）：hover 浮现的钮属屏幕交互，
+     打印一律隐藏（opacity:0 仍占层叠，display 彻底退场） */
+  .mdc .code-copy {
+    display: none;
+  }
 }

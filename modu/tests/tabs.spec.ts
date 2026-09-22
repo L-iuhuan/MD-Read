@@ -283,6 +283,69 @@ describe("异常路径", () => {
     expect(() => h.manager.activateTab("无.md")).toThrow("标签不存在");
     expect(() => h.manager.setDirty("无.md", true)).toThrow("标签不存在");
   });
+
+  it("paths()：有序快照（Ctrl+Tab 车道取邻居用）", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    await open(h, "c.md", "CCC");
+    expect(h.manager.paths()).toEqual(["a.md", "b.md", "c.md"]);
+  });
+});
+
+/* ---- 拖拽排序（用户反馈批次）：HTML5 DnD——dragstart 记源、dragover 实时挪
+ *      DOM 插入位、drop 按 DOM 序回写数组重渲。jsdom 无 DragEvent/dataTransfer，
+ *      用带 bubbles/cancelable 的裸 Event 派发（实现侧对 dataTransfer 缺席已宽容）。 ---- */
+
+describe("拖拽排序", () => {
+  function drag(el: HTMLElement, type: string): Event {
+    const ev = new Event(type, { bubbles: true, cancelable: true });
+    el.dispatchEvent(ev);
+    return ev;
+  }
+
+  it("dragstart 半透明 → dragover 实时挪位 → drop 回写数组与 DOM 同序", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    await open(h, "c.md", "CCC");
+    const [a, , c] = tabEls();
+    drag(c as HTMLElement, "dragstart");
+    expect((c as HTMLElement).classList.contains("dragging")).toBe(true); // 拖动中半透明
+    // jsdom 无几何：rect 全零 + clientX 缺省（undefined），判定恒为「插到目标之后」
+    drag(a as HTMLElement, "dragover");
+    expect((a as HTMLElement).nextElementSibling).toBe(c); // DOM 先行：a|c|b
+    drag(a as HTMLElement, "drop");
+    expect(h.manager.paths()).toEqual(["a.md", "c.md", "b.md"]); // 数组按 DOM 序回写
+    expect(tabEls().map((el) => el.dataset.path)).toEqual(["a.md", "c.md", "b.md"]);
+    expect((c as HTMLElement).classList.contains("dragging")).toBe(false); // 拖拽态清场
+  });
+
+  it("排序不动内容：活动标签与正文保持原样", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    await open(h, "c.md", "CCC"); // 活动是 c
+    const [a] = tabEls();
+    drag(tabEls()[0] as HTMLElement, "dragstart"); // 拖 a
+    drag(a as HTMLElement, "dragover");
+    drag(a as HTMLElement, "drop");
+    expect(h.manager.activeTab()?.path).toBe("c.md"); // 活动不变
+    expect(docHtml()).toBe("<p>CCC</p>"); // 正文不重渲
+    expect(h.render.mock.calls.length).toBe(3); // 零新增渲染
+  });
+
+  it("dragend（落点在列表外）也按当前 DOM 序收场", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    await open(h, "c.md", "CCC");
+    const [a, , c] = tabEls();
+    drag(c as HTMLElement, "dragstart");
+    drag(a as HTMLElement, "dragover"); // DOM 先行：a|c|b
+    drag(document.getElementById("tab-list") as HTMLElement, "dragend"); // 无 drop 直接收场
+    expect(h.manager.paths()).toEqual(["a.md", "c.md", "b.md"]);
+  });
 });
 
 describe("渲染缓存（P5 批3：切走回收、切回免重渲）", () => {

@@ -141,9 +141,13 @@
      字号刻度说明：正文基准 --fs-body 一档 + 标题/表格/脚注等按 em 相对缩放
      （见 cjk.css），应用层字号增减只改 --fs-body 一处即可全局生效。*/
   --fs-body: 16px;                       /* 正文基准字号，应用字号设置增减的唯一作用点 */
-  --measure: calc(46 * var(--fs-body));  /* §4 D3 正文限宽 46em。用 calc 而非直接写 46em：
+  --measure: calc(var(--me-width, 46) * var(--fs-body));
+                                          /* §4 D3 正文限宽 46em（默认）。用 calc 而非直接写 46em：
                                             变量替换后 em 按「使用元素」的字号解析，
-                                            若写 46em，h2 的栏宽会比正文宽，栏位对不齐 */
+                                            若写 46em，h2 的栏宽会比正文宽，栏位对不齐。
+                                            用户反馈批次·行宽可调：--me-width 由 Aa 面板写
+                                            （40–60 步进 2，modu-width 持久化），单位为正文 em
+                                            倍数（数字），缺省 46 = 旧固定值，两处派生一致。 */
   --measure-wide: calc(60 * var(--fs-body)); /* 宽表带出，避免 7 列财务表腰斩（设计决策）
                                              ⚠ 波5 复核：渲染管线直出裸 table，不生成 .table-wrap，
                                              而 `.mdc > *` 已把每个直接子元素限在 --measure，

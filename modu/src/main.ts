@@ -7,10 +7,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
+import { attachCodeCopyButtons } from "./render/codecopy";
 import { awaitPrintReady } from "./render/print-ready";
 import { createTabManager, type MountContext, type TabManager } from "./app/tabs";
 import { pushRecent, setupRecentMenu } from "./app/recent";
@@ -18,7 +19,14 @@ import { openEachMd } from "./app/drop";
 import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
 import { setupFindbar, closeTopmostOverlay, type Findbar } from "./ui/findbar";
-import { setupSettings, syncSettingsPanel, readAutosavePref } from "./ui/settings";
+import { setupSettings, readAutosavePref } from "./ui/settings";
+import {
+  applyThemePref,
+  nextThemePref,
+  readThemePref,
+  setupThemeEngine,
+  watchSystemTheme,
+} from "./ui/theme";
 import { createEditSession, flashStatus, type EditSession } from "./editor/editor";
 import { firstVisibleLine } from "./editor/position-map";
 import "./app.css";
@@ -292,8 +300,8 @@ async function onExportClick(tabs: TabManager): Promise<void> {
     return; // 用户取消：静默结束
   }
   try {
-    // title：文档名进原生页眉（用户反馈批次·导出问题三，print.rs 查证注释）
-    flashStatus(await invoke<string>("export_pdf", { path: picked, title: tab.title }), "ok");
+    // 页眉已按平台限制取舍清空（用户反馈批次：PDF 只要页码不要页眉，print.rs 查证注释）
+    flashStatus(await invoke<string>("export_pdf", { path: picked }), "ok");
   } catch (error) {
     flashStatus(`导出失败：${String(error)}`, "error");
   }
@@ -319,6 +327,60 @@ function setupGlobalKeys(): void {
   });
 }
 
+/* ---- 标签快捷键（用户反馈批次）：Ctrl+W 关标签、Ctrl+Tab / Ctrl+Shift+Tab
+ *      循环切换。capture 阶段全局拦截——Ctrl+Tab 若放行会先被 CM 的面板/编辑器
+ *      键位吃掉，先于一切目标定夺；编辑态照常工作（CM 对 Mod-w / Tab 无默认绑定，
+ *      有绑定的 Tab 缩进被 preventDefault 接管）。 ---- */
+
+/** 循环切换：delta=1 下一个（Ctrl+Tab），-1 上一个（Ctrl+Shift+Tab），环回 */
+function cycleTab(delta: number): void {
+  const tabs = activeTabs;
+  if (tabs === null) {
+    return;
+  }
+  const paths = tabs.paths();
+  if (paths.length < 2) {
+    return; // 0/1 张标签无可切换
+  }
+  const active = tabs.activeTab();
+  if (active === null) {
+    return;
+  }
+  const idx = paths.indexOf(active.path);
+  if (idx < 0) {
+    return;
+  }
+  tabs.activateTab(paths[(idx + delta + paths.length) % paths.length]);
+}
+
+function setupTabHotkeys(): void {
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (!(event.ctrlKey || event.metaKey)) {
+        return;
+      }
+      if (event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activeTabs !== null) {
+          const tab = activeTabs.activeTab();
+          if (tab !== null) {
+            activeTabs.closeTab(tab.path); // dirty 标签走 confirmClose 确认
+          }
+        }
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        event.stopPropagation();
+        cycleTab(event.shiftKey ? -1 : 1);
+      }
+    },
+    true,
+  );
+}
+
 function setupDragDrop(tabs: TabManager): void {
   void getCurrentWebview().onDragDropEvent((event) => {
     if (event.payload.type === "drop") {
@@ -330,6 +392,22 @@ function setupDragDrop(tabs: TabManager): void {
 
 /* ---- 无边框窗口标题栏（M2 波3 反馈⑤）---- */
 
+/** 最大化/还原图标状态切换（用户反馈批次）：两套 SVG（#ic-max 单框 /
+ *  #ic-restore 双框）+ title/aria 同步「最大化 / 向下还原」 */
+async function syncMaxState(win: TauriWindow): Promise<void> {
+  let maximized = false;
+  try {
+    maximized = await win.isMaximized();
+  } catch {
+    return; // 查询失败（窗口关闭中等）：维持当前图标态
+  }
+  const btn = $("win-max");
+  btn.title = maximized ? "向下还原" : "最大化";
+  btn.setAttribute("aria-label", maximized ? "向下还原" : "最大化");
+  document.getElementById("ic-max")?.toggleAttribute("hidden", maximized);
+  document.getElementById("ic-restore")?.toggleAttribute("hidden", !maximized);
+}
+
 function setupWindowControls(): void {
   const win = getCurrentWindow();
   $("win-min").addEventListener("click", () => void win.minimize());
@@ -339,17 +417,16 @@ function setupWindowControls(): void {
   document.querySelector<HTMLElement>(".titlebar-drag")?.addEventListener("dblclick", () => {
     void win.toggleMaximize();
   });
+  void syncMaxState(win); // 启动对齐（可能是系统记住的最大化态）
+  void win.onResized(() => void syncMaxState(win)); // 最大化/还原随尺寸变化即时切图标
 }
 
 function applyPrefs(): void {
-  const theme = localStorage.getItem("modu-theme");
-  if (theme === "dark" || theme === "light") {
-    document.documentElement.dataset.theme = theme;
-  }
+  applyThemePref(readThemePref()); // 三档主题（含自动：解析系统偏好后落 data-theme）
   if (localStorage.getItem("modu-outline") === "off") {
     document.body.classList.add("outline-off"); // 大纲折叠态恢复（P5 批2）
   }
-  // 字号/字体恢复移入 setupSettings（modu-fs / modu-font，含旧 modu-face 迁移）
+  // 字号/行宽/字体恢复移入 setupSettings（modu-fs / modu-width / modu-font，含旧 modu-face 迁移）
 }
 
 /** 大纲折叠钮（P5 批2）：☰ toggle body.outline-off，态存 localStorage modu-outline */
@@ -360,14 +437,11 @@ function setupOutlineToggle(): void {
   });
 }
 
+/** ◐ 按钮循环三态（用户反馈批次·跟随系统主题）：亮 → 暗 → 自动 → 亮；
+ *  状态机与回显（含 ◐ 钮 title）在 ui/theme.ts */
 function setupToggles(): void {
   $("btn-theme").addEventListener("click", () => {
-    const root = document.documentElement;
-    const next = root.dataset.theme === "dark" ? "light" : "dark";
-    root.dataset.theme = next;
-    localStorage.setItem("modu-theme", next);
-    refreshMermaidTheme(next);
-    syncSettingsPanel(); // 面板可能开着：◐ 改主题后回显即时跟上（波5 反馈）
+    applyThemePref(nextThemePref(readThemePref()));
   });
 }
 
@@ -421,11 +495,14 @@ function injectLoadingStyle(): void {
 
 async function boot(): Promise<void> {
   setupGlobalKeys(); // 先于 setupFindbar：统一 Esc 仲裁须最先注册（见函数注释）
+  setupTabHotkeys(); // Ctrl+W / Ctrl+Tab(+Shift)：capture 拦截，先于 CM 键位
   injectLoadingStyle(); // loading 指示符样式一次就位（P5 批3）
-  applyPrefs();
-  setupWindowControls(); // 无边框标题栏三钮（反馈⑤）
+  setupThemeEngine((theme) => refreshMermaidTheme(theme)); // 主题引擎钩子（三档）
+  applyPrefs(); // 内含 applyThemePref（自动档按系统解析落 data-theme）
+  watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
+  setupWindowControls(); // 无边框标题栏三钮 + 最大化/还原图标切换（反馈⑤）
   setupOutlineToggle(); // ☰ 大纲折叠（P5 批2）
-  // 「Aa」设置面板（反馈⑥）：恢复字号/字体 + 面板接线；钩子接排版重算与 Mermaid 刷新
+  // 「Aa」设置面板（反馈⑥）：恢复字号/行宽/字体 + 面板接线；钩子接排版重算
   setupSettings({
     getDoc: () => document.getElementById("doc"),
     onFontChange: () => {
@@ -434,7 +511,6 @@ async function boot(): Promise<void> {
         refitView(doc); // 字体度量变了：断行守卫与公式缩放重算
       }
     },
-    onThemeChange: (theme) => refreshMermaidTheme(theme),
   });
   const findbar = setupFindbar(() => document.getElementById("doc"));
   activeFindbar = findbar;
@@ -449,7 +525,8 @@ async function boot(): Promise<void> {
     $("empty-hint").hidden = true;
     mountOutline(ctx.outline);
     observeHeadings(); // F4：正文已换，重挂一批观察对象
-    enhanceView(doc);
+    enhanceView(doc); // 增强幂等：缓存直挂与重渲两路径都走（mermaid 懒观察在此重挂）
+    attachCodeCopyButtons(doc); // 代码块复制钮（用户反馈批次）：幂等，缓存重挂不双挂
     findbar.close(); // 正文已换，旧命中作废，避免残留陈旧 mark
     $("doc-title").textContent = ctx.tab.title;
     $("st-encoding").textContent = ctx.tab.encoding;

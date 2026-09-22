@@ -1,7 +1,7 @@
 /**
  * 「Aa」设置面板（M2 波3，用户反馈：字体是否考虑可以切换或者设置）。
  *
- * 三件事：
+ * 五件事：
  * ① 字号步进 14–20px：改 --fs-body（cjk.css 认定的唯一作用点），
  *   localStorage modu-fs 持久化、启动恢复；
  * ② 字体族四预设（微软雅黑/宋体/楷体/黑体，西文回落不变）：
@@ -9,14 +9,22 @@
  *   serif 走既有 #doc[data-face] 契约（cjk.css --font-serif 栈）；
  *   kai/hei 在 typography 冻结期落内联 font-family，不开新 CSS 钩子；
  *   旧键 modu-face=serif 作存量迁移回退，写入新键后退役。
- * ③ 主题亮暗切换入面板（原 ◐ 按钮保留，两者同源 modu-theme）。
- * ④（波5）syncSettingsPanel：面板外（◐ 按钮）改状态后刷新面板回显，
- *   面板每次打开时也自调——修「面板开着时点 ◐，下拉回显陈旧」。
- * ⑤（用户反馈批次）自动保存开关：modu-autosave 持久化、默认开，
- *   editor.ts 经 readAutosavePref 取值；面板变更+整体失焦后自动收起。
+ * ③ 主题三档（亮/暗/自动）入面板：状态机在 ui/theme.ts，此处只接下拉；
+ * ④（波5）syncSettingsPanel：面板外改状态后刷新面板回显，面板打开时自调；
+ * ⑤（用户反馈批次）自动保存开关：modu-autosave 持久化、默认开；
+ * ⑥（用户反馈批次·语义纠正）行宽步进 40–60em 步进 2（默认 46）：写 --me-width，
+ *   tokens.css --measure 派生链消费；modu-width 持久化；
+ * ⑦（用户反馈批次·语义纠正）点外关闭：document 点击委托（与最近菜单同款），
+ *   点击面板与 Aa 钮之外任意处立即收起；手动路径（Aa 钮/Esc）不变——
+ *   原 fix-15 的 focusout 延时自动关按用户语义纠正移除。
  *
  * DOM 结构与 id 就位、样式最简（app.css），波4 美化；禁 any、函数 ≤50 行。
  */
+import {
+  applyThemePref,
+  isThemePref,
+  readThemePref,
+} from "./theme";
 
 const FS_MIN = 14;
 const FS_MAX = 20;
@@ -24,7 +32,10 @@ const FS_DEFAULT = 16; // 与 tokens.css --fs-body 默认同值
 const FS_KEY = "modu-fs";
 const FONT_KEY = "modu-font";
 const LEGACY_FACE_KEY = "modu-face"; // M2 波2 起的旧键：serif 存量迁移回退
-const THEME_KEY = "modu-theme";
+const WIDTH_MIN = 40; // em；步进 2，默认 46（与 tokens.css --measure 旧固定值同源）
+const WIDTH_MAX = 60;
+const WIDTH_DEFAULT = 46;
+const WIDTH_KEY = "modu-width";
 const AUTOSAVE_KEY = "modu-autosave";
 
 /** kai/hei 预设字体栈（sans=清内联回默认栈，serif=--font-serif 栈；西文回落沿用衬线/无衬线既有搭配） */
@@ -40,8 +51,6 @@ export interface SettingsHooks {
   getDoc(): HTMLElement | null;
   /** 字体/字号变化后重算排版（壳层接 refitView：字体度量变了，断行与公式缩放要重跑） */
   onFontChange(): void;
-  /** 主题切换后刷新 Mermaid（壳层接 refreshMermaidTheme） */
-  onThemeChange(theme: "light" | "dark"): void;
 }
 
 function req<T extends HTMLElement>(id: string): T {
@@ -56,7 +65,6 @@ function req<T extends HTMLElement>(id: string): T {
 let hooks: SettingsHooks = {
   getDoc: () => null,
   onFontChange: () => {},
-  onThemeChange: () => {},
 };
 
 /** 字号钳制到 [14, 20] 并取整 px */
@@ -123,11 +131,32 @@ export function setFontPref(font: FontPref): void {
   hooks.onFontChange();
 }
 
-/** 主题切换：data-theme + 持久化 + 钩子（与顶栏 ◐ 按钮同源同效果） */
-function setTheme(theme: "light" | "dark"): void {
-  document.documentElement.dataset.theme = theme;
-  localStorage.setItem(THEME_KEY, theme);
-  hooks.onThemeChange(theme);
+/** 行宽钳制到 [40, 60] 并吸附到 2 的倍数（步进 2） */
+export function clampWidth(em: number): number {
+  const snapped = Math.round(em / 2) * 2;
+  return Math.min(WIDTH_MAX, Math.max(WIDTH_MIN, snapped));
+}
+
+/** 读持久化行宽；无记录/坏值回退 46（与 tokens --measure 旧固定值一致） */
+export function readWidthPref(): number {
+  const raw = localStorage.getItem(WIDTH_KEY);
+  const n = raw === null ? NaN : Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? clampWidth(n) : WIDTH_DEFAULT;
+}
+
+/** 应用行宽：写 --me-width（tokens --measure 派生链消费）、回显、持久化 */
+function writeWidth(em: number): void {
+  const v = clampWidth(em);
+  document.documentElement.style.setProperty("--me-width", String(v));
+  req<HTMLElement>("set-width-val").textContent = String(v);
+  localStorage.setItem(WIDTH_KEY, String(v));
+}
+
+/** 当前实际行宽：优先读 --me-width（唯一作用点），未设时回退持久化值 */
+function currentWidth(): number {
+  const raw = document.documentElement.style.getPropertyValue("--me-width");
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? clampWidth(n) : readWidthPref();
 }
 
 /** 当前实际字号：优先读 --fs-body（唯一作用点），未设时回退持久化值 */
@@ -138,18 +167,22 @@ function currentFs(): number {
 }
 
 /**
- * 刷新面板回显（主题/字号/字体族）以反映当前实际状态。
- * 壳层在 ◐ 按钮改主题后调用；面板每次打开时也自调（防陈旧）。
+ * 刷新面板回显（主题/字号/行宽/字体族）以反映当前实际状态。
+ * 壳层在外部改状态后调用；面板每次打开时也自调（防陈旧）。
  * 元素缺席时静默跳过——同步回显属锦上添花，不配炸按钮回调。
  */
 export function syncSettingsPanel(): void {
   const theme = document.getElementById("set-theme") as HTMLSelectElement | null;
   if (theme !== null) {
-    theme.value = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    theme.value = readThemePref(); // 回显三档偏好（非解析值）
   }
   const fsVal = document.getElementById("set-fs-val");
   if (fsVal !== null) {
     fsVal.textContent = String(currentFs());
+  }
+  const widthVal = document.getElementById("set-width-val");
+  if (widthVal !== null) {
+    widthVal.textContent = String(currentWidth());
   }
   const font = document.getElementById("set-font") as HTMLSelectElement | null;
   if (font !== null) {
@@ -178,10 +211,22 @@ function wireFontSelect(): void {
 
 function wireThemeSelect(): void {
   const select = req<HTMLSelectElement>("set-theme");
-  select.value = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  select.value = readThemePref();
   select.addEventListener("change", () => {
-    setTheme(select.value === "dark" ? "dark" : "light");
+    if (isThemePref(select.value)) {
+      applyThemePref(select.value); // 三档状态机（含自动档）在 ui/theme.ts
+    }
   });
+}
+
+function wireWidth(): void {
+  writeWidth(readWidthPref()); // 启动恢复 + 回显
+  req<HTMLButtonElement>("set-width-dec").addEventListener("click", () =>
+    writeWidth(readWidthPref() - 2),
+  );
+  req<HTMLButtonElement>("set-width-inc").addEventListener("click", () =>
+    writeWidth(readWidthPref() + 2),
+  );
 }
 
 /** Aa 按钮切换面板显隐；打开时刷新回显（面板外改过的状态不带到面板里） */
@@ -193,6 +238,26 @@ function wireToggle(): void {
   });
 }
 
+/** 点外关闭（用户反馈批次·语义纠正，与最近菜单同款 document 点击委托）：
+ *  点击面板与 Aa 钮之外任意处**立即**收起——不是失焦延时。手动路径
+ *  （Aa 钮再点一次 / Esc 统一仲裁）一概不变。 */
+function wireClickOutside(panel: HTMLElement): void {
+  const btn = document.getElementById("btn-settings");
+  document.addEventListener("click", (event) => {
+    if (panel.hidden) {
+      return;
+    }
+    const target = event.target;
+    if (
+      target instanceof Node &&
+      (panel.contains(target) || (btn !== null && btn.contains(target)))
+    ) {
+      return;
+    }
+    panel.hidden = true; // 点外部立即收起
+  });
+}
+
 function wireAutosaveToggle(): void {
   const box = req<HTMLInputElement>("set-autosave");
   box.checked = readAutosavePref(); // 启动回显
@@ -201,54 +266,14 @@ function wireAutosaveToggle(): void {
   });
 }
 
-/** 面板卡片自动收起延时（用户反馈批次）：变更过且整体失焦后再等一小会 */
-export const PANEL_AUTO_CLOSE_MS = 800;
-
-/** 面板自动关（用户反馈批次）：字号步进/字体/主题任一变更后，**整个面板失焦**
- *  （focusout 且落点不在面板内）800ms 才收起。实现要点：焦点落在面板内任何控件上
- *  都会先触发一次 focusout（旧控件）再 focusin（新控件）——所以判定必须看
- *  relatedTarget 是否仍在面板内：用户正连点步进对比字号时焦点始终在面板内，
- *  绝不打断；失焦计时中焦点回面板（focusin）即取消。手动关闭路径
- *  （Aa 按钮 / Esc 统一仲裁 / 面板外点击）一概不变。 */
-function wireAutoClose(panel: HTMLElement): void {
-  let changed = false;
-  let closeTimer = 0;
-
-  function markChanged(): void {
-    changed = true;
-  }
-
-  panel.addEventListener("focusin", () => window.clearTimeout(closeTimer));
-  panel.addEventListener("focusout", (event) => {
-    if (!changed) {
-      return; // 没改过任何设置：面板留着对比，不自动关
-    }
-    const next = event.relatedTarget;
-    if (next instanceof Node && panel.contains(next)) {
-      window.clearTimeout(closeTimer); // 焦点在面板内挪动（步进 ↔ 下拉）
-      return;
-    }
-    closeTimer = window.setTimeout(() => {
-      closeTimer = 0;
-      changed = false;
-      panel.hidden = true;
-    }, PANEL_AUTO_CLOSE_MS);
-  });
-  // 三个变更源只认用户在面板上的操作（启动恢复不算变更）
-  for (const id of ["set-fs-dec", "set-fs-inc"]) {
-    req<HTMLButtonElement>(id).addEventListener("click", markChanged);
-  }
-  req<HTMLSelectElement>("set-font").addEventListener("change", markChanged);
-  req<HTMLSelectElement>("set-theme").addEventListener("change", markChanged);
-}
-
-/** boot 时调用一次：恢复字号/字体并接好全部面板交互 */
+/** boot 时调用一次：恢复字号/行宽/字体/主题并接好全部面板交互 */
 export function setupSettings(deps: SettingsHooks): void {
   hooks = deps;
   wireFontSize();
+  wireWidth();
   wireFontSelect();
   wireThemeSelect();
   wireAutosaveToggle();
   wireToggle();
-  wireAutoClose(req<HTMLElement>("settings-panel"));
+  wireClickOutside(req<HTMLElement>("settings-panel"));
 }

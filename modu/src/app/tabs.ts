@@ -76,6 +76,8 @@ export interface TabManager {
   activeTab(): Tab | null;
   setDirty(path: string, dirty: boolean): void;
   count(): number;
+  /** 标签路径有序快照（用户反馈批次：Ctrl+Tab 循环切换取邻居用） */
+  paths(): string[];
 }
 
 function fileName(path: string): string {
@@ -187,6 +189,7 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     el.setAttribute("role", "tab");
     el.setAttribute("aria-selected", String(isActive));
     el.tabIndex = 0;
+    el.draggable = true; // 拖拽排序（用户反馈批次）：HTML5 DnD，见 setupTabDnd
     const dot = document.createElement("span");
     dot.className = "tab-dirty";
     dot.hidden = !tab.dirty; // dirty 圆点（M3 启用，渲染逻辑先就位）
@@ -221,6 +224,76 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     }
     bar.hidden = tabs.length === 0;
   }
+
+  /** 拖拽排序（用户反馈批次）：HTML5 DnD——dragstart 记源并半透明（.dragging），
+   *  dragover preventDefault + 按命中标签中点实时挪 DOM 插入位，drop/dragend
+   *  按 DOM 序回写 tabs 数组并重渲标签栏（活动标签与正文不动，纯重排）。 */
+  function setupTabDnd(): void {
+    let dragging: HTMLElement | null = null;
+
+    tabList.addEventListener("dragstart", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.classList.contains("tab")) {
+        return;
+      }
+      dragging = target;
+      target.classList.add("dragging");
+      if (event.dataTransfer != null) {
+        // jsdom 裸 Event 无 dataTransfer（undefined），真拖拽恒有
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", target.dataset.path ?? ""); // Firefox 需数据
+      }
+    });
+
+    tabList.addEventListener("dragover", (event) => {
+      if (dragging === null || dragging.parentNode !== tabList) {
+        return;
+      }
+      event.preventDefault(); // 声明落点，否则 drop 不触发
+      if (event.dataTransfer != null) {
+        event.dataTransfer.dropEffect = "move"; // jsdom 裸 Event 无此属性，真拖拽恒有
+      }
+      const over = event.target instanceof HTMLElement ? tabUnder(event.target) : null;
+      if (over !== null) {
+        const rect = over.getBoundingClientRect();
+        const before = event.clientX < rect.left + rect.width / 2;
+        const ref = before ? over : over.nextElementSibling;
+        if (ref !== dragging) {
+          tabList.insertBefore(dragging, ref); // ref 为 null 即追加到末尾
+        }
+      } else if (tabList.lastElementChild !== dragging) {
+        tabList.appendChild(dragging); // 悬停在条尾空隙
+      }
+    });
+
+    function tabUnder(target: HTMLElement): HTMLElement | null {
+      const tab = target.closest(".tab");
+      return tab instanceof HTMLElement && tab !== dragging ? tab : null;
+    }
+
+    function commit(): void {
+      if (dragging === null) {
+        return;
+      }
+      dragging.classList.remove("dragging");
+      dragging = null;
+      const order = new Map(
+        Array.from(tabList.children).map((el, i) => [
+          (el as HTMLElement).dataset.path ?? "",
+          i,
+        ]),
+      );
+      tabs.sort((a, b) => (order.get(a.path) ?? 0) - (order.get(b.path) ?? 0));
+      renderBar();
+    }
+    tabList.addEventListener("drop", (event) => {
+      event.preventDefault();
+      commit();
+    });
+    tabList.addEventListener("dragend", () => commit()); // 落点在列表外也按当前 DOM 序收场
+  }
+
+  setupTabDnd();
 
   function openTab(path: string, file: TabFile, activate = true): void {
     const existing = find(path);
@@ -294,5 +367,6 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
       renderBar();
     },
     count: () => tabs.length,
+    paths: () => tabs.map((tab) => tab.path),
   };
 }

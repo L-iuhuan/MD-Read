@@ -64,10 +64,9 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 
 /* ==========================================================================
    1. 自定义标题栏（decorations:false）—— 标签行 + 拖拽区 + 窗口三钮，同一条 36px 行
-   浏览器式排布：[#tabbar 起始居左][弹性留白 + 墨读（拖拽区）][三窗钮]。
-   标题从「按窗口居中」改为「靠右水印」的理由：标签左置后左侧已被标签占据，
-   标题再居中会与活动标签在窄窗下抢同一条中轴；贴着窗口钮放，拖拽区（.titlebar-drag
-   = 弹性留白本身）反而拿到整条栏里最大的一块热区，双击最大化也更好点。
+   浏览器式排布：[#tabbar 起始居左][弹性留白（拖拽区）][三窗钮]。
+   用户反馈批次：「墨读」文字已删——弹性留白保留为空拖拽垫片，标签左置后它仍是
+   整条栏里最大的一块热区，双击最大化照常绑在它身上（main.ts）。
    ========================================================================== */
 .titlebar {
   display: flex;
@@ -104,25 +103,13 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 #win-close:hover { background: var(--danger-bg); color: var(--danger-text); }
 #win-close:active { background: var(--danger-text); color: var(--bg-app); }
 
-/* --- 弹性留白 = 拖拽区：标题贴右，余下整块可拖（data-tauri-drag-region 在 HTML 上）---
+/* --- 弹性留白 = 拖拽垫片（「墨读」文字已删，拖拽能力不丢）---
    flex:1 1 auto 让它独吞剩余空间；flex-basis 走内容（auto）而非 0，是为了在标签很多时
-   让「标签先缩、标题后缩」（收缩量按 base×shrink 分配，标签 base 大者先让位）。 */
+   让「标签先缩、垫片后缩」（收缩量按 base×shrink 分配，标签 base 大者先让位）。 */
 .titlebar-drag {
   flex: 1 1 auto;
-  min-inline-size: 4rem;     /* 标题永不消失的底线（再窄就轮到标签行横向滚动）*/
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-inline: var(--size-3) var(--size-4);   /* 左接标签、右接窗口钮 */
+  min-inline-size: 4rem;     /* 拖拽热区永不归零的底线（再窄就轮到标签行横向滚动）*/
   overflow: hidden;
-}
-.titlebar-title {
-  font-size: var(--fs-chrome-sm);
-  letter-spacing: .18em;
-  color: var(--text-muted);      /* 标题弱化：品牌名只是锚点，不是内容 */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -270,6 +257,8 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
               color var(--duration-1) var(--ease-1);
 }
 .tab:hover { background: var(--bg-hover); color: var(--text); }
+/* 拖拽排序中（用户反馈批次）：被拖标签半透明，落点更可读 */
+.tab.dragging { opacity: .5; }
 /* 活动标签：纸面填充 + 一圈内描边（inset 阴影，不占盒尺寸 → 切换标签时零位移）。
    为什么需要那圈线：波6 标题栏提亮到 2 阶后，纸面填充与栏底只差 1.05:1，
    单靠填充钉不住「我在读这份」；描边对栏底 1.34:1，与顶栏按钮同一套「填充+发丝线」语言。 */
@@ -294,12 +283,13 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   flex: none;
   display: grid;
   place-items: center;
-  /* 波5：24 → 22px（标签缩到 28px 以适配 36px 标题栏，内嵌按钮同比收一档，
-     四周仍留 3px 呼吸）；label 里的 ✕ 由 tabs.ts 直出文本节点，不改成 SVG。 */
-  inline-size: 22px;
-  block-size: 22px;
+  /* 用户反馈批次·✕ 瘦身：22 → 18px（标签 28px 内四留 5px 呼吸），标题可用宽度
+     相应让出 4px；常驻占位不变（宽度恒在，标题不因 hover 重排），
+     label 里的 ✕ 由 tabs.ts 直出文本节点，不改成 SVG。 */
+  inline-size: 18px;
+  block-size: 18px;
   font: inherit;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1;
   color: var(--text-muted);
   background: transparent;
@@ -311,7 +301,9 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
               background-color var(--duration-1) var(--ease-1),
               color var(--duration-1) var(--ease-1);
 }
-.tab:hover .tab-close, .tab.active .tab-close, .tab-close:focus-visible { opacity: 1; }
+/* 键盘/触屏可达：焦点落在标签上（含 ✕ 自身）即浮现——:focus-within 覆盖
+   Tab 聚焦 .tab 与聚焦 .tab-close 两种路径，点击聚焦同样命中（可接受） */
+.tab:hover .tab-close, .tab.active .tab-close, .tab:focus-within .tab-close { opacity: 1; }
 .tab-close:hover { background: var(--bg-active); color: var(--text); }
 /* 键盘可达性：tabs.ts 已给 .tab 落 role="tab" / tabindex / Enter·Space 激活，
    故这条 :focus-visible 是生效路径（不再只是「先就位」）。 */
@@ -767,12 +759,14 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   z-index: calc(var(--z-float) + 1);
 }
 /* 卡片本体：与 §4/§6/§7 三处浮层同一套四件套，右上角起浮（与 findbar 同角落、
-   同 16px 右边距、同 8px 上边距，编辑/阅读两态的查找工具看起来是同一件东西） */
+   同 16px 右边距、同 8px 上边距，编辑/阅读两态的查找工具看起来是同一件东西）。
+   用户反馈批次·布局留位：右内边距加宽 32px——关闭钮（绝对定位 24px 方钮 +
+   8px inset）独占右上角车道，输入框/勾选项永不钻到它底下（z 序相同也不重叠）。 */
 #editor-pane .cm-panel.cm-search {
   inline-size: fit-content;
   max-inline-size: calc(100% - 2 * var(--size-4));
   margin: var(--size-2) var(--size-4) 0 auto;   /* 上 8 / 右 16 / 左 auto = 贴右上 */
-  padding: var(--size-2) var(--size-3);
+  padding: var(--size-2) calc(var(--size-3) + 32px) var(--size-2) var(--size-3);
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
@@ -814,8 +808,14 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
 }
 #editor-pane .cm-search .cm-button:hover { background: var(--bg-hover); color: var(--text); }
 #editor-pane .cm-search .cm-button:active { background: var(--bg-active); }
-/* 勾选行：与 Aa 面板的分组标签同一档小字，勾选框走全站 accent 色 */
+/* 勾选行：与 Aa 面板的分组标签同一档小字，勾选框走全站 accent 色。
+   用户反馈批次·内部对齐：label 改 inline-flex + align-center + gap 一档——
+   原生 inline 流里 checkbox 与文字基线不齐（CM 的 white-space:pre 更放大错位），
+   flex 居中后「区分大小写/正则/全字」三枚勾选行与文字同高同心。 */
 #editor-pane .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
   font-size: var(--fs-chrome-sm);
   color: var(--text-muted);
   white-space: nowrap;

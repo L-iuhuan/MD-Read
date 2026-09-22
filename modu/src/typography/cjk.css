@@ -123,6 +123,14 @@
 .mdc strong { font-weight: 700; }
 .mdc .doc-meta { font-size: .8125em; color: var(--text-muted); line-height: 1.7; text-align: start; }
 .mdc hr { border: 0; border-top: 1px solid var(--rule); margin-block: var(--size-4) var(--size-5); }
+/* 脚注分隔线（用户反馈批次·双横线消解）：markdown-it-footnote 自动插入的
+   hr.footnotes-sep 与 .footnotes 的整幅 border-top 叠出两条横线；现 section
+   不再画线（见下），分隔全部交给这条 hr，并与正文 hr 区分——浅一阶
+   （--border = slate.6，正文 hr 用 --rule = slate.7）+ 短宽 40% 居中。 */
+.mdc hr.footnotes-sep {
+  border-top-color: var(--border);
+  max-inline-size: 40%;
+}
 
 /* --- 链接 --- */
 .mdc a {
@@ -146,7 +154,7 @@
 }
 
 /* --- 代码块（§2.1 F2）；横向滚动允许。块的底色/描边与语言标签归 hljs.css
-      （P5 批2 起 .code-block/.code-lang 死选择器已清理，此处只剩排版职责） --- */
+       （P5 批2 起 .code-block/.code-lang 死选择器已清理，此处只剩排版职责） --- */
 .mdc pre {
   margin-block: 0 1.2em;  /* 修复（用户实测代码块贴在一起）：批2 清死选择器时 margin 归零丢失；与 p 的 1.05em 同节奏 */
   padding: var(--size-3) var(--size-4);
@@ -157,6 +165,39 @@
   text-align: start;      /* 代码不参与两端对齐 */
   white-space: pre;
   tab-size: 4;
+}
+
+/* --- 代码块复制钮（用户反馈批次·新功能）：右上角 hover 浮现 ---
+   定位锚点化 pre；钮落在语言标签条（hljs.css 的 ::before 横带）同一水平带，
+   与左上角语言名分居两端，不遮代码行。按钮由 render/codecopy.ts 挂载，
+   打印退场在 print.css；focus-visible 常显保键盘可达。 */
+.mdc pre[data-lang] { position: relative; }
+.mdc .code-copy {
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: var(--size-2);
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  opacity: 0;                    /* hover 该代码块 / 键盘聚焦才浮现 */
+  z-index: 1;
+  transition: opacity var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1),
+              border-color var(--duration-1) var(--ease-1),
+              background-color var(--duration-1) var(--ease-1);
+}
+.mdc pre:hover .code-copy, .mdc .code-copy:focus-visible { opacity: 1; }
+.mdc .code-copy:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
 }
 
 /* ==========================================================================
@@ -348,10 +389,9 @@
 .mdc .fn-ref a { font-size: .72em; vertical-align: .35em; text-decoration: none; padding-inline: .1em; }
 .mdc .footnotes {
   margin-block-start: var(--size-5);
-  padding-block-start: var(--size-3);
-  border-top: 1px solid var(--rule);
   font-size: .8125em;
   color: var(--text-muted);
+  /* 分隔线由上方 hr.footnotes-sep 独自承担（section 自身的整幅分隔线已删，双横线消解） */
 }
 .mdc .footnotes ol { padding-inline-start: 1.4em; }
 .mdc .footnotes li { margin-block-end: var(--size-2); }

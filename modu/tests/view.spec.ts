@@ -4,7 +4,12 @@
  * 错误路径 catch 行为与主题重画（动态 chunk 用 vi.mock 顶替，不打真实包）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mermaidThemeName, refreshMermaidTheme, renderMermaidEl } from '../src/render/mermaid'
+import {
+  mermaidThemeName,
+  observeMermaid,
+  refreshMermaidTheme,
+  renderMermaidEl,
+} from '../src/render/mermaid'
 import { hasLongToken, justifyCandidates } from '../src/render/justify'
 
 const mocks = vi.hoisted(() => ({
@@ -101,6 +106,112 @@ describe('mermaid 渲染路径', () => {
     )
     expect(mocks.run).toHaveBeenLastCalledWith(expect.objectContaining({ nodes: [el] }))
     expect(el.getAttribute('data-processed')).toBeNull()
+    expect(el.getAttribute('data-rendered')).toBe('1')
+  })
+})
+
+/* ---- 懒加载观察器（用户反馈批次·切标签后渲染失败修复）：
+ *      单例 IO + 回调时 pending 复核 + renderMermaidEl 在途去重。
+ *      jsdom 无 IntersectionObserver，测试用可驱动的假实现顶替。 ---- */
+
+interface FakeEntry {
+  target: HTMLElement
+  isIntersecting: boolean
+}
+
+class FakeIO {
+  static instances: FakeIO[] = []
+  observe = vi.fn()
+  unobserve = vi.fn()
+  disconnect = vi.fn()
+  callback: (entries: FakeEntry[], obs: FakeIO) => void
+  constructor(cb: (entries: FakeEntry[], obs: FakeIO) => void) {
+    this.callback = cb
+    FakeIO.instances.push(this)
+  }
+  fire(entries: FakeEntry[]): void {
+    this.callback(entries, this)
+  }
+}
+
+describe('懒加载观察器（单例 + pending 复核 + 在途去重）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.run.mockImplementation((): Promise<void> => Promise.resolve())
+    vi.stubGlobal('IntersectionObserver', FakeIO as unknown as typeof IntersectionObserver)
+    document.body.innerHTML = ''
+  })
+
+  /** 模块级单例：首次 observeMermaid 起一直复用同一实例（本文件内不自增） */
+  function theObserver(): FakeIO {
+    expect(FakeIO.instances.length).toBe(1)
+    return FakeIO.instances[0] as FakeIO
+  }
+
+  it('observeMermaid：只观察未定稿节点，已渲染/已失败者不进观察名单', () => {
+    const box = document.createElement('div')
+    const pending = document.createElement('div')
+    pending.className = 'mermaid'
+    const done = document.createElement('div')
+    done.className = 'mermaid'
+    done.setAttribute('data-rendered', '1')
+    const failed = document.createElement('div')
+    failed.className = 'mermaid'
+    failed.setAttribute('data-mmd-error', 'x')
+    box.append(pending, done, failed)
+    observeMermaid(box)
+    const io = theObserver()
+    expect(io.observe).toHaveBeenCalledTimes(1)
+    expect(io.observe).toHaveBeenCalledWith(pending)
+  })
+
+  it('两次挂载共用同一单例（缓存重挂不再累积观察器）', () => {
+    const box = document.createElement('div')
+    const a = document.createElement('div')
+    a.className = 'mermaid'
+    box.appendChild(a)
+    observeMermaid(box)
+    observeMermaid(box)
+    const io = theObserver()
+    expect(io.observe).toHaveBeenCalledTimes(2) // 重复 observe 同节点幂等
+  })
+
+  it('相交回调：pending 节点触发渲染并 unobserve；已定稿节点的迟到回调不再渲染', async () => {
+    const pending = document.createElement('div')
+    pending.className = 'mermaid'
+    pending.textContent = 'flowchart TD\nA-->B'
+    document.body.appendChild(pending)
+    const done = document.createElement('div')
+    done.className = 'mermaid'
+    done.setAttribute('data-rendered', '1')
+    document.body.appendChild(done)
+    observeMermaid(document.body)
+    const io = theObserver()
+    io.fire([
+      { target: pending, isIntersecting: true },
+      { target: done, isIntersecting: true }, // 陈旧观察器对已渲染节点的迟到回调
+    ])
+    expect(io.unobserve).toHaveBeenCalledWith(pending)
+    expect(io.unobserve).toHaveBeenCalledWith(done)
+    await flush()
+    expect(mocks.run).toHaveBeenCalledTimes(1)
+    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ nodes: [pending] }))
+  })
+
+  it('renderMermaidEl 在途去重：同节点并发两支只跑一次 run', async () => {
+    let release: (() => void) | null = null
+    mocks.run.mockImplementation(
+      (): Promise<void> => new Promise((resolve) => { release = resolve })
+    )
+    const el = document.createElement('div')
+    el.className = 'mermaid'
+    el.textContent = 'flowchart TD\nA-->B'
+    const p1 = renderMermaidEl(el)
+    const p2 = renderMermaidEl(el) // 第二支（另一观察器的迟到回调）
+    await flush() // initMermaid 是异步：让第一支走到 run 并挂起，第二支已确认走缓存
+    expect(mocks.run).toHaveBeenCalledTimes(1)
+    ;(release as unknown as () => void)()
+    await Promise.all([p1, p2])
     expect(el.getAttribute('data-rendered')).toBe('1')
   })
 })
