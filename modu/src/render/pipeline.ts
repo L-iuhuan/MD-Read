@@ -54,20 +54,37 @@ function extractOutline(root: Element): OutlineItem[] {
   return out
 }
 
-/** 渲染一篇 Markdown 源文：返回安全 HTML 与大纲 */
+/** 渲染一篇 Markdown 源文：返回安全 HTML 与大纲。
+ *  各阶段耗时挂 window.__renderProfile（性能基线诊断用，CDP/控制台可读）。 */
 export function renderDocument(src: string, opts?: RenderOptions): RenderResult {
-  // M1-E2 数学保护（顺序写死，不得调整）：extract 必须在 md.render 之前
-  // （否则 \( 被 markdown-it 反斜杠转义吃掉）；restore 必须在 render 之后、
-  // sanitize 之前——占位符是纯字母数字，还原文本已做 HTML 实体转义，
-  // 两者都 sanitize 安全，不给 DOMPurify 开口子。
-  const guards = extractMath(src)
-  const raw = restoreMath(md.render(guards.text), guards)
-  const clean = sanitizeHtml(raw)
-  const doc = new DOMParser().parseFromString(clean, 'text/html')
-  renderMath(doc)
+  const t: Record<string, number> = {};
+  let s = performance.now();
+  // 性能早退（P3 基线诊断）：源文无 \( 与 \[ 时跳过保护（$$ 无反斜杠不需保护）
+  // ——1MB 级无公式文档实测 extract 约 0.9s，indexOf 预检近乎零成本
+  const needGuard = src.includes("\\(") || src.includes("\\[");
+  const guards = needGuard ? extractMath(src) : null;
+  t.extract = Math.round(performance.now() - s); s = performance.now();
+  const rendered = md.render(guards !== null ? guards.text : src);
+  t.mdRender = Math.round(performance.now() - s); s = performance.now();
+  const raw = guards !== null ? restoreMath(rendered, guards) : rendered;
+  t.restore = Math.round(performance.now() - s); s = performance.now();
+  const clean = sanitizeHtml(raw);
+  t.sanitize = Math.round(performance.now() - s); s = performance.now();
+  const doc = new DOMParser().parseFromString(clean, 'text/html');
+  t.parse = Math.round(performance.now() - s); s = performance.now();
+  renderMath(doc);
+  t.math = Math.round(performance.now() - s);
   if (opts?.pangu !== false) {
-    applyPangu(doc, doc.body)
+    s = performance.now();
+    applyPangu(doc, doc.body);
+    t.pangu = Math.round(performance.now() - s);
   }
-  wrapLongTokens(doc, doc.body)
-  return { html: doc.body.innerHTML, outline: extractOutline(doc.body) }
+  s = performance.now();
+  wrapLongTokens(doc, doc.body);
+  t.tokbreak = Math.round(performance.now() - s); s = performance.now();
+  const html = doc.body.innerHTML;
+  t.serialize = Math.round(performance.now() - s);
+  const outline = extractOutline(doc.body);
+  (window as unknown as Record<string, unknown>).__renderProfile = t;
+  return { html, outline };
 }

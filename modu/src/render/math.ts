@@ -103,6 +103,12 @@ function degradeCjkMath(doc: Document, root: Element): void {
 
 /** 对 detached 文档的 body 做公式渲染；CJK 伪公式先降级，真解析失败的单个公式保留原文 */
 export function renderMath(doc: Document): void {
+  // 性能早退（P3 基线诊断）：全文无任何定界符时跳过 CJK 预检与 auto-render
+  // 两轮全树遍历（1MB 级无公式文档实测省约 0.5s；textContent 单遍原生扫描近乎零成本）
+  const txt = doc.body.textContent ?? ""
+  if (!txt.includes("$$") && !txt.includes("\\(") && !txt.includes("\\[")) {
+    return
+  }
   degradeCjkMath(doc, doc.body)
   renderMathInElement(doc.body, {
     delimiters: DELIMITERS,

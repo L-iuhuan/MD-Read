@@ -62,6 +62,8 @@ function mountOutline(items: OutlineItem[]): void {
   const list = $<HTMLElement>("outline-list");
   list.textContent = "";
   outlineLinks.clear();
+  // Fragment 批量挂载：长文大纲可达数千条，逐个 appendChild 会触发回流风暴（P3 性能诊断）
+  const frag = document.createDocumentFragment();
   for (const item of items) {
     const link = document.createElement("a");
     link.textContent = item.text;
@@ -72,8 +74,9 @@ function mountOutline(items: OutlineItem[]): void {
       document.getElementById(item.id)?.scrollIntoView();
     });
     outlineLinks.set(item.id, link);
-    list.appendChild(link);
+    frag.appendChild(link);
   }
+  list.appendChild(frag);
 }
 
 /* ---- 大纲滚动跟随（F4）：IO 圈定可见标题，滚动时取离视口顶最近者高亮 ---- */
@@ -304,6 +307,8 @@ function setupProgress(): void {
     const percent = max > 0 ? Math.round((content.scrollTop / max) * 100) : 0;
     $("st-progress").textContent = `${percent}%`;
     scheduleFollow(); // F4：滚动时重算最近标题
+    // 沉浸淡出（M5/P2）：下滚过 48px 淡化标题栏+顶栏；hover/聚焦/浮层开/编辑态由 CSS 豁免
+    document.body.classList.toggle("chrome-dim", content.scrollTop > 48);
   });
 }
 
