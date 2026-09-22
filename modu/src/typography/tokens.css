@@ -176,9 +176,13 @@
   --z-float: 20;          /* 浮层层级（查找条 / 最近下拉 / Aa 面板 / CM 查找卡；互不重叠，共用一档）*/
   --opacity-dim: .4;      /* 工具条沉浸淡出态的不透明度（波6）：可及性下限 0.35，取 .4 留余量；
                              配合 ≤250ms 的 opacity 过渡与「悬停/聚焦/编辑态立即恢复」的豁免 */
-  --pad-page: clamp(var(--size-5), 4vw, var(--size-7));
-                          /* 纸面左右内边距（波5 新增）：纸宽 = --measure + 2×本值，
-                             随窗口缩到 24px 仍留得住纸边；与 --measure 一起决定纸宽 */
+  --pad-page: calc(3 * var(--fs-body));
+                          /* 纸面左右内边距（beta：改与 --fs-body 联动）：纸宽 =
+                             --measure + 2×本值，两项都随正文字号走，纸边才不会在
+                             用户调大字号时显得越挤。旧值 clamp(1.5rem, 4vw, 3rem)
+                             里的 rem/vw 都不跟 --fs-body（rem 跟根字号、vw 跟窗口），
+                             16px 基准下取值 48px，与本式一致；撤掉 vw 后窄窗不再收边，
+                             改用 #doc 的 max-inline-size 自适应退让（纸只会变窄，不会溢出）。 */
 }
 
 /* 暗色阶：Radix Colors v3 dark —— 成对设计，与亮色同步验收（§3.3）。

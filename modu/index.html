@@ -43,6 +43,8 @@
         </button>
       </header>
       <header class="topbar">
+        <!-- ☰ 大纲折叠（P5 批2）：toggle body.outline-off，态存 localStorage modu-outline -->
+        <button id="btn-outline" type="button" title="显示/隐藏大纲" aria-label="显示或隐藏大纲">☰</button>
         <button id="btn-open" type="button" title="打开 Markdown 文件">打开…</button>
         <span id="doc-title" class="doc-title" title="当前文件">未打开文件</span>
         <div id="recent-wrap" class="recent-wrap">
@@ -81,7 +83,6 @@
           </div>
         </div>
         <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
-        <button id="btn-face" type="button" title="切换正文衬线/无衬线">衬</button>
         <button id="btn-edit" type="button" title="编辑 / 阅读（Ctrl+E）" aria-label="切换编辑与阅读模式" disabled>✎ 编辑</button>
         <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>⇩ PDF</button>
       </header>
@@ -106,6 +107,8 @@
       </div>
       <footer class="statusbar">
         <span id="st-encoding">—</span>
+        <!-- 行号（P5 批2）：阅读态=视口首个 [data-line] 块；编辑态=切态回填 -->
+        <span id="st-line" hidden></span>
         <span id="st-saved" hidden aria-live="polite"></span>
         <span class="statusbar-spacer"></span>
         <span id="st-progress">0%</span>

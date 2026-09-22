@@ -53,7 +53,9 @@ export interface TabManagerDeps {
 }
 
 export interface TabManager {
-  openTab(path: string, file: TabFile): void;
+  /** activate=false：只上栏不渲染不激活（多文件连开时中间项省掉白做的渲染，P5 批2）；
+   *  默认 true。刷新当前活动标签时强制重挂（防 stale DOM），忽略 false。 */
+  openTab(path: string, file: TabFile, activate?: boolean): void;
   activateTab(path: string): void;
   closeTab(path: string): void;
   activeTab(): Tab | null;
@@ -146,8 +148,9 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     deps.loadEditorState?.(target.editor);
   }
 
-  function openTab(path: string, file: TabFile): void {
+  function openTab(path: string, file: TabFile, activate = true): void {
     const existing = find(path);
+    let wasActive = false;
     if (existing === null) {
       tabs.push({
         path,
@@ -161,6 +164,7 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
         editor: null,
       });
     } else {
+      wasActive = existing.path === activePath;
       existing.source = file.text; // 同路径重开 = 刷新内容并回到顶部（M1 语义）
       existing.encoding = file.encoding;
       existing.scroll = 0;
@@ -168,7 +172,11 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
       existing.crlf = file.crlf === true;
       existing.editor = null; // 内容已刷新，旧编辑器态作废
     }
-    activateTab(path);
+    if (activate || wasActive) {
+      activateTab(path);
+    } else {
+      renderBar(); // 中间项：只上栏，正文留待末项统一挂载
+    }
   }
 
   function closeTab(path: string): void {

@@ -10,10 +10,12 @@
    .icon-btn/.ghost-btn/.fs-val）、自检面板（.evidence/.ev-*）、CDN 降级横幅
    （.banner/.fallback-note）、间隙标记显形（[data-gap-marker]，评审辅助）、
    对照栏固定亮色纸面（.col__paper--ua）。
-   工程适配（相对 demo 的两处必要改动）：
-   1. .code-lang 字体 demo 用工具条专用 --font-chrome-mono，此处改用 --font-mono；
-   2. focus-visible 与动效降级规则收敛到 .mdc 作用域内，避免跨车道污染应用 UI 层。
-   ========================================================================== */
+    工程适配（相对 demo 的必要改动）：
+    focus-visible 与动效降级规则收敛到 .mdc 作用域内，避免跨车道污染应用 UI 层；
+    .code-block / .code-lang 两节已删（P5 批2 死选择器清理：管线直出的是
+    pre[data-lang] + code.hljs，从来不存在这两个元素，块外观与语言标签由
+    hljs.css 等效接管，防将来双写）。
+    ========================================================================== */
 
 /* --------------------------------------------------------------------------
    1. pangu 的非破坏实现（§4 D3）
@@ -127,25 +129,8 @@
   overflow-wrap: anywhere;
 }
 
-/* --- 代码块（含语言标签，§2.1 F2）；横向滚动允许 --- */
-.mdc .code-block {
-  margin-block: 0 1.2em;
-  background: var(--bg-code);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-  overflow: hidden;
-}
-.mdc .code-lang {
-  display: block;
-  font-family: var(--font-mono);   /* demo 用工具条专用等宽体，工程改用 --font-mono */
-  font-size: 10.5px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 5px var(--size-3);
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in oklab, var(--bg-surface) 45%, transparent);
-}
+/* --- 代码块（§2.1 F2）；横向滚动允许。块的底色/描边与语言标签归 hljs.css
+      （P5 批2 起 .code-block/.code-lang 死选择器已清理，此处只剩排版职责） --- */
 .mdc pre {
   margin: 0;
   padding: var(--size-3) var(--size-4);

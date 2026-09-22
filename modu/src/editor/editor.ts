@@ -119,6 +119,30 @@ export interface RevealTarget { line?: number; scrollTop?: number }
 
 export interface SavedEditorState { state: EditorState; scrollTop: number }
 
+/* ---- 状态栏统一闪显（P5 批2·错误通道统一）----
+ * #st-saved 单槽复用：kind 映射语义色类（app.css st-ok/st-warn/st-error →
+ * tokens.css 的 --ok-text/--warn-text/--danger-text），时长统一 2000ms
+ * （替换原先 2.5s/1.5s 两套）。放本模块而非 main.ts：编辑会话（已保存/保存
+ * 失败/阅读态键位提示）与应用壳（导出/打开失败）走同一通道，tests 可直接导入。 */
+export type FlashKind = "ok" | "warn" | "error";
+
+const FLASH_MS = 2000;
+let flashTimer = 0;
+
+export function flashStatus(message: string, kind: FlashKind): void {
+  const el = document.getElementById("st-saved");
+  if (el === null) {
+    return;
+  }
+  el.textContent = message;
+  el.className = `st-${kind}`;
+  el.hidden = false;
+  window.clearTimeout(flashTimer);
+  flashTimer = window.setTimeout(() => {
+    el.hidden = true;
+  }, FLASH_MS);
+}
+
 export interface EditorHandle {
   readonly dom: HTMLElement;
   /** 全文换档：重置历史——换文档才清撤销链 */
@@ -213,13 +237,14 @@ export interface EditSessionDeps {
   docEl: HTMLElement;
   /** 滚动容器（#content）：视口判定与保位落点 */
   contentEl: HTMLElement;
-  /** 状态栏闪显位（#st-saved） */
-  statusEl: HTMLElement;
   getTab(): Tab | null;
   saveFile(args: SaveFileArgs): Promise<void>;
   /** 编辑→阅读：用新文本重渲并挂载正文 */
   rerenderRead(tab: Tab, text: string): void;
   setDirty(path: string, dirty: boolean): void;
+  /** 状态切换通知（P5 批2）：entering=进编辑/回阅读；line=定位行（进入=视口首块，回读=编辑器顶行）。
+   *  壳层接 findbar 关闭与状态栏行号回填。 */
+  onModeChange?(editing: boolean, line: number | null): void;
   /** 测试注入替身；默认真 CM6 编辑器 */
   makeEditor?(container: HTMLElement, host: EditorHost): EditorHandle;
 }
@@ -237,10 +262,12 @@ export interface EditSession {
 }
 
 export function createEditSession(deps: EditSessionDeps): EditSession {
-  const { container, docEl, contentEl, statusEl } = deps;
+  const { container, docEl, contentEl } = deps;
   let editing = false;
   let currentPath: string | null = null;
-  let flashTimer = 0;
+  /** #doc 当前呈现的文本（P5 批2）：toRead 时编辑器内容与之相同即跳过重渲、复用 DOM。
+   *  激活标签（loadEditorState）与重渲（toRead 已变分支）两处同步。 */
+  let domText: string | null = null;
   const editor = (deps.makeEditor ?? createEditor)(container, {
     onDocChanged: () => {
       const tab = deps.getTab();
@@ -249,15 +276,6 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
       }
     },
   });
-
-  function flash(message: string): void {
-    statusEl.textContent = message;
-    statusEl.hidden = false;
-    window.clearTimeout(flashTimer);
-    flashTimer = window.setTimeout(() => {
-      statusEl.hidden = true;
-    }, 1500);
-  }
 
   /** 编辑器同步到目标标签；返回是否从存量档恢复 */
   function syncDoc(tab: Tab): boolean {
@@ -288,6 +306,7 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     } else {
       editor.reveal({ line: line ?? undefined }); // 阅读位置 → 同行块顶
     }
+    deps.onModeChange?.(true, line); // 壳层：关 findbar + 状态栏行号回填
   }
 
   function toRead(): void {
@@ -302,13 +321,17 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     }
     const line = editor.topLineNumber();
     const text = editor.getDoc();
-    tab.source = text;
-    deps.rerenderRead(tab, text);
+    if (text !== domText) {
+      tab.source = text;
+      domText = text;
+      deps.rerenderRead(tab, text);
+    } // 未变（P5 批2）：跳过重渲，复用已渲染 DOM，只复显正文
     docEl.hidden = false;
     const target = nearestBlockLine(contentEl, line);
     if (target !== null) {
       contentEl.querySelector(`[data-line="${target}"]`)?.scrollIntoView();
     }
+    deps.onModeChange?.(false, line); // 壳层：状态栏行号按阅读态重算
   }
 
   async function save(): Promise<void> {
@@ -320,12 +343,12 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     try {
       await deps.saveFile(buildSaveArgs(tab, text));
     } catch (error) {
-      flash(`保存失败：${error instanceof Error ? error.message : String(error)}`);
+      flashStatus(`保存失败：${error instanceof Error ? error.message : String(error)}`, "error");
       return;
     }
     tab.source = text;
     deps.setDirty(tab.path, false);
-    flash("已保存");
+    flashStatus("已保存", "ok");
   }
 
   function saveEditorState(): SavedEditorState | null {
@@ -342,6 +365,7 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
       return;
     }
     currentPath = tab.path;
+    domText = tab.source; // 激活挂载刚渲染了 tab.source：#doc 与之同步
     if (saved !== null) {
       editor.restoreState(saved);
     } else {
@@ -354,7 +378,8 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     }
   }
 
-  /** 捕获阶段接管 Ctrl+E/S/F：编辑态 Ctrl+F 走 CM 面板，阅读态放行给 findbar */
+  /** 捕获阶段接管 Ctrl+E/S/F/H：编辑态 Ctrl+F 走 CM 面板，阅读态放行给 findbar；
+   *  阅读态 Ctrl+S/Ctrl+H 无动作对象，闪中文提示（alpha 反直觉项，P5 批2） */
   function onKey(event: KeyboardEvent): void {
     if (!(event.ctrlKey || event.metaKey)) {
       return;
@@ -371,7 +396,16 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     } else if (key === "s") {
       event.preventDefault();
       event.stopPropagation();
-      void save();
+      if (editing) {
+        void save();
+      } else {
+        flashStatus("阅读态无需保存，按 Ctrl+E 进入编辑", "warn");
+      }
+    } else if (key === "h" && !editing) {
+      // 编辑态放行给 CM 面板（Mod-h = openSearchPanel，坑3）
+      event.preventDefault();
+      event.stopPropagation();
+      flashStatus("阅读态无替换，按 Ctrl+E 进入编辑", "warn");
     } else if (key === "f" && editing) {
       event.preventDefault();
       event.stopPropagation();
@@ -391,6 +425,7 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
       editing = false;
       container.hidden = true;
       currentPath = null;
+      domText = null;
     },
     saveEditorState,
     loadEditorState,

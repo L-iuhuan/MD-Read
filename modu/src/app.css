@@ -154,12 +154,7 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 /* 撑开件必须排在左组之后、右组之前（order 默认 0 会跑到最前面，
    把「打开…/最近」一起顶到右边去——视觉复核抓到的坑）*/
 .topbar-spacer { order: 3; flex: 1; }
-/* 波4（反馈⑧）：「衬」按钮隐藏——字体职责已并入 Aa 面板，顶栏去冗余。
-   ⚠ 波5 复核：main.ts 侧已在这轮并行改动里换成 `getElementById("btn-face")?.` 可选链，
-   删元素不会再炸 boot；但本任务书把「现有 id 一个不能少」列为硬约束（接线契约），
-   故仍保留 DOM 常驻 + display:none：不在布局、不在可聚焦序列，接线也照旧成立。
-   要彻底删，需 HTML 与 main.ts 两处同批（同步删），别单留一边。*/
-.topbar > #btn-face { display: none; }
+/* 「衬」按钮已删（P5 批2·des-2 遗留三处同批：HTML 节点 + main.ts 引用 + 本规则）。 */
 
 .topbar button {
   flex: none;
@@ -479,6 +474,10 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
 /* 空态（首访）：不摆一个只有「大纲」二字的光杆侧栏，让欢迎页独占画面 */
 body:has(#empty-hint:not([hidden])) .outline { display: none; }
 
+/* 大纲折叠（P5 批2）：顶栏 ☰ toggle body.outline-off，态存 localStorage modu-outline；
+   与上面空态规则、窄窗隐藏（§12）相互独立。 */
+.outline-off #outline { display: none; }
+
 /* ==========================================================================
    6. 最近下拉 —— 浮层卡片语言之二（同 §4 四件套：纸面底 + 1px --border +
    radius-3 + --shadow-2）。波4：「最近」按钮移到左侧后，菜单由右对齐改左对齐。
@@ -688,7 +687,11 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
 .empty-hint::before {
   content: "墨读";
   padding: var(--size-1) var(--size-3) var(--size-1) calc(var(--size-3) + .18em);
-  font-size: 15px;
+  /* 字号随 --fs-body 联动（beta 实锤：原先写死 15px，用户调大正文字号时词标不跟手）。
+     用 em 而非 calc：本元素的父级 .empty-hint 已是 var(--fs-body)，.9375em = 15px@16px，
+     与旧值逐像素相同，且随字号等比放大。不用 rem：rem 跟的是根字号（恒 16px），
+     改了也不动，等于没改。 */
+  font-size: .9375em;
   font-weight: 600;
   letter-spacing: .18em;          /* 右内边距多留 .18em，补掉字距的尾隙 */
   color: var(--text-muted);
@@ -718,6 +721,13 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   font-variant-numeric: tabular-nums;
   letter-spacing: .02em;
 }
+
+/* 状态栏闪显语义色（P5 批2·错误通道统一）：flashStatus 的 kind 映射三类，
+   色值全部来自 tokens.css 语义层——--ok-text(green.12) / --warn-text(amber.12) /
+   --danger-text(red.11)，亮暗两套自动跟随；时长 2000ms 由 TS 侧统一。 */
+#st-saved.st-ok { color: var(--ok-text); }
+#st-saved.st-warn { color: var(--warn-text); }
+#st-saved.st-error { color: var(--danger-text); }
 
 /* ==========================================================================
    10. CM6 查找/替换面板（编辑态）—— 用 CSS 覆盖 CM 默认灰皮，不碰 TS

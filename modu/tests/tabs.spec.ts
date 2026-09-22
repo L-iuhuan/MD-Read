@@ -105,6 +105,36 @@ describe("openTab / 激活", () => {
   });
 });
 
+describe("openTab activate 参数（P5 批2：多文件只渲染最后一个）", () => {
+  it("activate=false：只上栏不挂载——不渲染、活动标签不变、正文不动", () => {
+    const h = setup();
+    h.manager.openTab("a.md", { text: "AAA", encoding: "UTF-8" });
+    h.manager.openTab("b.md", { text: "BBB", encoding: "UTF-8" }, false);
+    expect(h.manager.count()).toBe(2);
+    expect(h.manager.activeTab()?.path).toBe("a.md"); // 活动标签仍是 a
+    expect(h.render).not.toHaveBeenCalledWith("BBB");
+    expect(docHtml()).toBe("<p>AAA</p>"); // 正文保持 a 的渲染
+    expect(tabEls().length).toBe(2); // 标签条两枚都上栏
+  });
+
+  it("末项 activate=true：激活并渲染（连开场景的收尾）", () => {
+    const h = setup();
+    h.manager.openTab("a.md", { text: "AAA", encoding: "UTF-8" });
+    h.manager.openTab("b.md", { text: "BBB", encoding: "UTF-8" }, false);
+    h.manager.openTab("c.md", { text: "CCC", encoding: "UTF-8" });
+    expect(h.manager.activeTab()?.path).toBe("c.md");
+    expect(docHtml()).toBe("<p>CCC</p>");
+  });
+
+  it("刷新当前活动标签时即便 activate=false 也强制重挂（防 stale DOM）", () => {
+    const h = setup();
+    h.manager.openTab("a.md", { text: "AAA", encoding: "UTF-8" });
+    h.manager.openTab("a.md", { text: "NEW", encoding: "UTF-8" }, false);
+    expect(h.render).toHaveBeenLastCalledWith("NEW");
+    expect(docHtml()).toBe("<p>NEW</p>");
+  });
+});
+
 describe("scroll 保存与恢复（懒挂载下位置正确）", () => {
   it("切走保存、切回恢复", () => {
     const h = setup();

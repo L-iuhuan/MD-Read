@@ -15,13 +15,17 @@ import { awaitPrintReady } from "./render/print-ready";
 import { createTabManager, type MountContext, type TabManager } from "./app/tabs";
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { openEachMd } from "./app/drop";
-import { setupFindbar } from "./ui/findbar";
-import { setFontPref, setupSettings, syncSettingsPanel } from "./ui/settings";
-import { createEditSession, type EditSession } from "./editor/editor";
+import { setupExternalLinks } from "./app/links";
+import { resolveRelativeImages } from "./app/images";
+import { setupFindbar, closeTopmostOverlay, type Findbar } from "./ui/findbar";
+import { setupSettings, syncSettingsPanel } from "./ui/settings";
+import { createEditSession, flashStatus, type EditSession } from "./editor/editor";
+import { firstVisibleLine } from "./editor/position-map";
 import "./app.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
 import "./typography/print.css";
+import "./typography/hljs.css"; // 代码高亮唯一主题（P5 批2 接线；配色细化在批4）
 import "katex/dist/katex.min.css";
 
 interface LoadedFile {
@@ -35,6 +39,8 @@ interface LoadedFile {
 /** 会话先于 tabs 建好，但 showError/resetToWelcome 由 tabs 回调触发——模块级引用 */
 let editorSession: EditSession | null = null;
 let activeTabs: TabManager | null = null;
+/** P5 批2：全局 Esc / Ctrl+P / 导出入口都要操作 findbar，模块级引用（boot 时赋值） */
+let activeFindbar: Findbar | null = null;
 /** ⇩PDF 按钮（HTML 初始 disabled，由 JS 在有文档时启用——不动 HTML 的约定） */
 let exportButton: HTMLButtonElement | null = null;
 
@@ -46,12 +52,17 @@ function $<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
-function showError(message: string): void {
-  editorSession?.reset(); // 错误页是纯阅读态：编辑器让位
-  const doc = $<HTMLElement>("doc");
-  doc.hidden = false;
-  doc.textContent = message;
-  $("empty-hint").hidden = true;
+/** 打开失败（P5 批2·错误通道统一）：不清正文、不顶标签——当前标签内容保持，
+ *  状态栏红字闪错（多文件拖放单个失败同走此道，不中断其余）；
+ *  doc-title 若指向失败文件则复位为当前活动标签名。 */
+function showError(path: string, error: unknown): void {
+  flashStatus(`打开失败：${String(error)}`, "error");
+  const failedName = path.split(/[\\/]/).pop() ?? path;
+  const title = $("doc-title");
+  if (title.textContent === failedName) {
+    const active = activeTabs?.activeTab() ?? null;
+    title.textContent = active !== null ? active.title : "未打开文件";
+  }
 }
 
 /* ---- 大纲 ---- */
@@ -131,7 +142,31 @@ function scheduleFollow(): void {
   requestAnimationFrame(() => {
     followPending = false;
     updateActiveHeading();
+    updateStatusLine(); // 状态栏行号与大纲跟随同一帧节流（P5 批2）
   });
+}
+
+/* ---- 状态栏行号（P5 批2）：阅读态随滚动取视口首个 [data-line] 块；
+ *      编辑态由切态回填（onModeChange）。 ---- */
+
+function setStatusLine(line: number): void {
+  const el = $<HTMLElement>("st-line");
+  el.hidden = false;
+  el.textContent = `行 ${line}`;
+}
+
+function updateStatusLine(): void {
+  const doc = document.getElementById("doc");
+  if (doc === null || doc.hidden) {
+    $<HTMLElement>("st-line").hidden = true;
+    return;
+  }
+  const line = firstVisibleLine($("content"));
+  if (line === null) {
+    $<HTMLElement>("st-line").hidden = true; // 无 data-line 块（空文档等）：不显示
+    return;
+  }
+  setStatusLine(line);
 }
 
 /* ---- 标签接线（四个入口最终都汇到 openPath → tabs.openTab） ---- */
@@ -148,6 +183,7 @@ function resetToWelcome(): void {
   $("doc-title").textContent = "未打开文件";
   $("st-encoding").textContent = "—";
   $("st-progress").textContent = "0%";
+  $("st-line").hidden = true;
   const editBtn = document.getElementById("btn-edit") as HTMLButtonElement | null;
   if (editBtn !== null) {
     editBtn.disabled = true; // 无文档不可编辑
@@ -175,13 +211,14 @@ function createTabs(session: EditSession, mountRendered: (ctx: MountContext) => 
   });
 }
 
-async function openPath(tabs: TabManager, path: string): Promise<void> {
+/** activate=false：多文件连开的中间项——只开标签不挂载（P5 批2，见 drop.ts） */
+async function openPath(tabs: TabManager, path: string, activate = true): Promise<void> {
   try {
     const file = await invoke<LoadedFile>("read_file", { path });
-    tabs.openTab(path, file);
+    tabs.openTab(path, file, activate);
     pushRecent(path);
   } catch (error) {
-    showError(`打开失败：${String(error)}`);
+    showError(path, error);
   }
 }
 
@@ -199,19 +236,6 @@ async function onOpenClick(tabs: TabManager): Promise<void> {
 
 /* ---- 导出 PDF（M4）：等待渲染完备 → 存路径 → PrintToPdf 直出 ---- */
 
-let exportFlashTimer = 0;
-
-/** 状态栏闪显（复用 #st-saved 位，与「已保存」同一渠道） */
-function flashStatus(message: string): void {
-  const el = $<HTMLElement>("st-saved");
-  el.textContent = message;
-  el.hidden = false;
-  window.clearTimeout(exportFlashTimer);
-  exportFlashTimer = window.setTimeout(() => {
-    el.hidden = true;
-  }, 2500);
-}
-
 /** 默认存档名：当前文件名去 .md/.markdown 扩展 + .pdf */
 function defaultPdfName(path: string): string {
   const name = path.split(/[\\/]/).pop() ?? "";
@@ -220,6 +244,7 @@ function defaultPdfName(path: string): string {
 }
 
 async function onExportClick(tabs: TabManager): Promise<void> {
+  activeFindbar?.close(); // P5 批2：查找 mark 不进 PDF
   const tab = tabs.activeTab();
   if (tab === null) {
     return; // 无文档：按钮本应禁用，双保险
@@ -231,9 +256,13 @@ async function onExportClick(tabs: TabManager): Promise<void> {
   if (doc === null) {
     return;
   }
+  const failed = doc.querySelectorAll(".mermaid[data-mmd-error]").length;
+  if (failed > 0) {
+    flashStatus(`有 ${failed} 张图渲染失败，将按占位导出`, "warn"); // 告警不阻断（P5 批2）
+  }
   const ready = await awaitPrintReady(doc);
   if (ready.timedOut) {
-    flashStatus("部分图表未渲染完成，将按当前版式导出");
+    flashStatus("部分图表未渲染完成，将按当前版式导出", "warn");
   }
   let picked: string | null;
   try {
@@ -241,24 +270,44 @@ async function onExportClick(tabs: TabManager): Promise<void> {
       defaultName: defaultPdfName(tab.path),
     });
   } catch (error) {
-    flashStatus(`导出失败：${String(error)}`);
+    flashStatus(`导出失败：${String(error)}`, "error");
     return;
   }
   if (picked === null || picked === "") {
     return; // 用户取消：静默结束
   }
   try {
-    flashStatus(await invoke<string>("export_pdf", { path: picked }));
+    flashStatus(await invoke<string>("export_pdf", { path: picked }), "ok");
   } catch (error) {
-    flashStatus(`导出失败：${String(error)}`);
+    flashStatus(`导出失败：${String(error)}`, "error");
   }
+}
+
+/* ---- 全局键位（P5 批2）：Ctrl+P 绑导出（阅读/编辑两态都触发，
+ *      preventDefault 阻浏览器打印对话框）；Esc 依序关浮层
+ *      findbar → 设置面板 → 最近菜单（一次只关一个）。
+ *      ⚠ 须先于 setupFindbar 注册：统一 Esc 要抢在 findbar 自有 Esc 之前定夺，
+ *      否则一次 Esc 会连关两层。 ---- */
+function setupGlobalKeys(): void {
+  document.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      if (activeTabs !== null) {
+        void onExportClick(activeTabs);
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      closeTopmostOverlay(activeFindbar);
+    }
+  });
 }
 
 function setupDragDrop(tabs: TabManager): void {
   void getCurrentWebview().onDragDropEvent((event) => {
     if (event.payload.type === "drop") {
-      // 多文件拖放（M2 波3 反馈①）：全部 .md 逐个开标签，串行保证最后一个激活
-      void openEachMd(event.payload.paths, (path) => openPath(tabs, path));
+      // 多文件拖放（M2 波3 反馈①）：全部 .md 逐个开标签；仅末项渲染（P5 批2）
+      void openEachMd(event.payload.paths, (path, activate) => openPath(tabs, path, activate));
     }
   });
 }
@@ -281,7 +330,18 @@ function applyPrefs(): void {
   if (theme === "dark" || theme === "light") {
     document.documentElement.dataset.theme = theme;
   }
+  if (localStorage.getItem("modu-outline") === "off") {
+    document.body.classList.add("outline-off"); // 大纲折叠态恢复（P5 批2）
+  }
   // 字号/字体恢复移入 setupSettings（modu-fs / modu-font，含旧 modu-face 迁移）
+}
+
+/** 大纲折叠钮（P5 批2）：☰ toggle body.outline-off，态存 localStorage modu-outline */
+function setupOutlineToggle(): void {
+  $<HTMLButtonElement>("btn-outline").addEventListener("click", () => {
+    const off = document.body.classList.toggle("outline-off");
+    localStorage.setItem("modu-outline", off ? "off" : "on");
+  });
 }
 
 function setupToggles(): void {
@@ -292,11 +352,6 @@ function setupToggles(): void {
     localStorage.setItem("modu-theme", next);
     refreshMermaidTheme(next);
     syncSettingsPanel(); // 面板可能开着：◐ 改主题后回显即时跟上（波5 反馈）
-  });
-  // 「衬」按钮与 Aa 面板同源 modu-font；designer 重构可能删此节点——缺席则跳过注册，不抛错
-  document.getElementById("btn-face")?.addEventListener("click", () => {
-    const doc = $<HTMLElement>("doc");
-    setFontPref(doc.dataset.face === "serif" ? "sans" : "serif");
   });
 }
 
@@ -313,8 +368,10 @@ function setupProgress(): void {
 }
 
 async function boot(): Promise<void> {
+  setupGlobalKeys(); // 先于 setupFindbar：统一 Esc 仲裁须最先注册（见函数注释）
   applyPrefs();
   setupWindowControls(); // 无边框标题栏三钮（反馈⑤）
+  setupOutlineToggle(); // ☰ 大纲折叠（P5 批2）
   // 「Aa」设置面板（反馈⑥）：恢复字号/字体 + 面板接线；钩子接排版重算与 Mermaid 刷新
   setupSettings({
     getDoc: () => document.getElementById("doc"),
@@ -327,10 +384,12 @@ async function boot(): Promise<void> {
     onThemeChange: (theme) => refreshMermaidTheme(theme),
   });
   const findbar = setupFindbar(() => document.getElementById("doc"));
+  activeFindbar = findbar;
   // 挂载一篇渲染结果：#doc/大纲/F4 观察/增强/查找作废/状态栏——两处入口（标签激活、编辑回读）共用
   function mountRendered(ctx: MountContext): void {
     const doc = $<HTMLElement>("doc");
     doc.innerHTML = ctx.html;
+    setupExternalLinks(doc); // P5 批1 接线：外链交系统浏览器（幂等，data 标记防重注册）
     doc.hidden = false;
     $("empty-hint").hidden = true;
     mountOutline(ctx.outline);
@@ -343,6 +402,8 @@ async function boot(): Promise<void> {
     if (exportButton !== null) {
       exportButton.disabled = false; // 有文档即可导出
     }
+    updateStatusLine(); // 行号就位（滚动由 setupProgress 的 rAF 持续刷新）
+    resolveRelativeImages(doc, ctx.tab.path); // P5 批1 接线：相对路径图片 → asset 协议
   }
 
   // M3-A 编辑会话（Ctrl+E/S/F 捕获路由、✎ 同 Ctrl+E）：先建会话再建标签（getTab 经 activeTabs 回指）
@@ -350,13 +411,20 @@ async function boot(): Promise<void> {
     container: $<HTMLElement>("editor-pane"),
     docEl: $<HTMLElement>("doc"),
     contentEl: $<HTMLElement>("content"),
-    statusEl: $<HTMLElement>("st-saved"),
     getTab: () => activeTabs?.activeTab() ?? null,
     setDirty: (path, dirty) => activeTabs?.setDirty(path, dirty), // docChanged → 标签圆点
     saveFile: ({ path, text, encoding, bom }) => invoke<void>("save_file", { path, text, encoding, bom }),
     rerenderRead: (tab, text) => {
       const result = renderDocument(text, { pangu: true });
       mountRendered({ tab, html: result.html, outline: result.outline });
+    },
+    onModeChange: (editing, line) => {
+      if (editing) {
+        findbar.close(); // 进编辑态关查找条（P5 批2）：mark 属阅读 DOM
+        setStatusLine(line ?? 1);
+      } else {
+        updateStatusLine(); // 回阅读：按视口重算
+      }
     },
   });
   const tabs = createTabs(editorSession, mountRendered);
@@ -372,8 +440,8 @@ async function boot(): Promise<void> {
   setupProgress();
   await listen<string>("open-file", (event) => void openPath(tabs, event.payload));
   await listen<string[]>("second-instance", (event) => {
-    // 多文件二次实例参数与拖放同路径（M2 波3 反馈①）：全部 .md 逐个开标签
-    void openEachMd(event.payload, (path) => openPath(tabs, path));
+    // 多文件二次实例参数与拖放同路径（M2 波3 反馈①）：全部 .md 逐个开标签，仅末项渲染
+    void openEachMd(event.payload, (path, activate) => openPath(tabs, path, activate));
   });
   const pending = await invoke<string | null>("take_pending_file");
   if (pending !== null) {

@@ -1,0 +1,164 @@
+/* ==========================================================================
+   墨读 MoDu · typography/hljs.css —— 唯一代码高亮主题（宪法：样式不漂移）
+   --------------------------------------------------------------------------
+   管什么：fence 代码块的**全部** hljs 语义类配色（正文区 .mdc 内），一处写死。
+   不管什么：代码块的字体/字号/行高/内边距/滚动（那是 cjk.css §3 的排版职责），
+   本文件只负责「底色 + 语法配色」。
+   与行内代码的关系（读 cjk.css §3 后对齐）：行内 code 用 --bg-subtle 底 + --border
+   描边 + radius-1；代码块沿用同一族料，只升一档（--bg-code 底 + --border 描边 +
+   radius-2），两者亮暗都同色系，读者不会以为来自两个应用。
+
+   纪律（与 tokens.css 同源）：
+   1. 不出现新的字面色值：所有颜色要么引用 tokens.css 的 Radix 阶数变量，
+      要么是这些变量的 color-mix 派生（混合比例随行注明）。
+   2. 亮暗成对：token 在下方 :root / :root[data-theme="dark"] 两块成对声明。
+   3. 每个 token 对**代码底**的对比度 ≥4.5:1（数字按 WCAG 公式算，随行标注）；
+      代码底 = --bg-code，亮 slate.3 #f0f0f3 / 暗 slate.dark.4 #272a2d。
+   4. 动效：本文件只改颜色，不引入任何 transition（无需 ≤250ms 约束）。
+   5. 打印友好：全部是 color 声明，配合 print.css 的 print-color-adjust: exact
+      与 pre 的 box-decoration-break: clone —— 跨页代码块两段都保色保框，无需本文件另写打印规则。
+
+   为什么亮色的三个色相要「11 阶与 12 阶混色」：Radix 阶数 11 是「1~2 阶底上的正文色」
+   （约 4.5:1），而我们的代码底在 3 阶，11 阶落上去只剩 4.1~4.6:1 —— 蓝 4.19:1、
+   绿 4.15:1 都不达标本文件的 4.5:1 硬线。混入 12 阶（高对比暗档）既提对比又不掉色相：
+   70:30 混合后蓝 5.65:1、绿 5.58:1。暗色的 11 阶在深底上本来就有 6.8~7.7:1，
+   故暗色直接用 11 阶原值，不需要混。
+   ========================================================================== */
+
+/* --- hljs 专用 token（本文件唯一允许新增变量的地方）----------------------- */
+:root {
+  --hljs-keyword: color-mix(in oklab, var(--blue-11) 70%, var(--blue-12));
+  /* 关键词/标签/字面量：blue.11 × blue.12 = 7:3（对代码底 5.65:1 ✔）*/
+  --hljs-string: color-mix(in oklab, var(--green-11) 70%, var(--green-12));
+  /* 字符串/正则/属性名：green.11 × green.12 = 7:3（5.58:1 ✔）*/
+  --hljs-const: var(--amber-12);
+  /* 数字/常量/变量/内建：amber.12 #4f3422（10.00:1 ✔，暖档不刺眼）*/
+  --hljs-name: var(--red-11);
+  /* 函数名/类名/标题：red.11 #ce2c31（4.58:1 ✔ 刚过线 —— 全主题最低的一档，
+     若日后代码底再变浅，改这里为 red.12；tokens.css 未定义 12 阶，故不在此自造色值）*/
+  --hljs-comment: var(--slate-11);
+  /* 注释/引用：slate.11 #60646c（5.22:1 ✔）+ 斜体，弱而不虚 */
+}
+
+:root[data-theme="dark"] {
+  --hljs-keyword: var(--blue-11);    /* blue.dark.11 #70b8ff（6.86:1 ✔）*/
+  --hljs-string: var(--green-11);    /* green.dark.11 #3dd68c（7.69:1 ✔）*/
+  --hljs-const: var(--amber-12);     /* amber.dark.12 #ffe7b3（11.91:1 ✔）*/
+  --hljs-name: var(--red-11);        /* red.dark.11 #ff9592（6.85:1 ✔）*/
+  --hljs-comment: var(--slate-11);   /* slate.dark.11 #b0b4ba（6.93:1 ✔）*/
+}
+
+/* --- 1. 容器与代码块底 ----------------------------------------------------
+   代码块底本该由 cjk.css 的 .code-block 铺 —— 但渲染管线直出的是
+   `<pre data-lang><code class="language-x hljs">`（markdown.ts installFenceRule），
+   从来不存在 .code-block/.code-lang 元素，那两条规则是死选择器，于是代码块一直是
+   裸文本（只有 pre 的内边距，没有底、没有框）。主题按 --bg-code 设计配色，
+   这层底就不能缺席，补在这里：:has(> code.hljs) 只命中真正的代码块，
+   不给将来可能出现的其它 pre 添乱。
+   ⚠ 若日后管线改成输出 .code-block 容器，本规则与下面的语言标签要同批删除。 */
+.mdc .hljs { color: var(--text); }   /* 未命中任何 token 的普通代码：正文色（14.41:1 / 12.43:1 ✔）*/
+.mdc pre:has(> code.hljs) {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+
+/* --- 2. 语言标签（data-lang）----------------------------------------------
+   pre 的内边距由 cjk.css §3 提供（--size-3 / --size-4），标签要铺满整块，
+   故用负外边距把那圈内边距抵消掉；改 cjk.css 的 pre padding 时这里要同步。
+   :not(:has(.code-lang)) 是防漂移保险：管线哪天补上 .code-lang 元素，
+   本伪元素自动让位，不会出现两个标签。 */
+.mdc pre[data-lang]:not(:has(.code-lang))::before {
+  content: attr(data-lang);
+  display: block;
+  margin: calc(-1 * var(--size-3)) calc(-1 * var(--size-4)) var(--size-3);
+  padding: 5px var(--size-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  white-space: normal;              /* pre 是 white-space: pre，标签要能正常排版 */
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg-surface) 45%, transparent);
+}
+
+/* --- 3. 语法分组 ----------------------------------------------------------
+   四个色相 + 一档中性，覆盖 hljs v11 全部常用类（含 v11 的
+   `hljs-title function_` 复合写法）。分组原则：让读者一眼分出「关键字 / 字面量 /
+   名字 / 注释」四类，宁可少一色也不把两个语义塞进同一个色相。 */
+
+/* 3.1 关键词蓝：关键字、字面量、标签、章节、装饰器等「语言结构」 */
+.mdc .hljs-keyword,
+.mdc .hljs-literal,
+.mdc .hljs-selector-tag,
+.mdc .hljs-tag,
+.mdc .hljs-name,
+.mdc .hljs-section,
+.mdc .hljs-doctag,
+.mdc .hljs-meta-keyword,
+.mdc .hljs-template-tag,
+.mdc .hljs-link {
+  color: var(--hljs-keyword);
+  font-weight: 600;                 /* 关键词加重：经典高亮里关键字是最先被扫到的一档 */
+}
+
+/* 3.2 字符串绿：字符串、正则、属性名、增量（diff 的 + 行） */
+.mdc .hljs-string,
+.mdc .hljs-regexp,
+.mdc .hljs-attr,
+.mdc .hljs-attribute,
+.mdc .hljs-code,
+.mdc .hljs-meta-string,
+.mdc .hljs-selector-attr,
+.mdc .hljs-addition {
+  color: var(--hljs-string);
+}
+
+/* 3.3 常量琥珀：数字、符号、变量、内建、类型、属性（暖档，不抢关键词）
+   变量/模板变量也归这档：JS 模板 ${x}、SQL $1 占位符都在这，属「值」不属「名字」 */
+.mdc .hljs-number,
+.mdc .hljs-symbol,
+.mdc .hljs-bullet,
+.mdc .hljs-variable,
+.mdc .hljs-template-variable,
+.mdc .hljs-meta,
+.mdc .hljs-property,
+.mdc .hljs-selector-class,
+.mdc .hljs-selector-id,
+.mdc .hljs-selector-pseudo,
+.mdc .hljs-built_in,
+.mdc .hljs-type {
+  color: var(--hljs-const);
+}
+
+/* 3.4 名字红：函数名、类名、标题（v11 复合类 hljs-title function_ 也被 .hljs-title 命中） */
+.mdc .hljs-title,
+.mdc .hljs-function,
+.mdc .hljs-class {
+  color: var(--hljs-name);
+}
+
+/* 3.5 注释灰：注释、引用（斜体是唯一的「非颜色」区分手段） */
+.mdc .hljs-comment,
+.mdc .hljs-quote {
+  color: var(--hljs-comment);
+  font-style: italic;
+}
+
+/* 3.6 中性：标点、运算符、参数、模板替换、公式 —— 保持正文色，
+   让四色只落在有语义的位置上（标点染色是密集代码里最常见的「花斑」来源） */
+.mdc .hljs-punctuation,
+.mdc .hljs-operator,
+.mdc .hljs-params,
+.mdc .hljs-subst,
+.mdc .hljs-formula {
+  color: var(--text);
+  font-style: normal;
+  font-weight: inherit;
+}
+
+/* 3.7 语义强调 / diff 删除 */
+.mdc .hljs-strong { font-weight: 700; }
+.mdc .hljs-emphasis { font-style: italic; }
+.mdc .hljs-deletion { color: var(--hljs-name); }

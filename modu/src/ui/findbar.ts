@@ -13,6 +13,30 @@ export interface Findbar {
   isOpen(): boolean;
 }
 
+/**
+ * Esc 统一关浮层（P5 批2）：依序 findbar → 设置面板 → 最近菜单，一次只关
+ * 最上层一个（都开着也只关一个）；返回是否关掉了东西。
+ * ⚠ main.ts 的全局 Esc 监听须先于 setupFindbar 注册，保证统一仲裁抢在
+ * findbar 自有的 Esc 之前定夺（否则一次 Esc 会连关两层）。
+ */
+export function closeTopmostOverlay(findbar: Findbar | null): boolean {
+  if (findbar !== null && findbar.isOpen()) {
+    findbar.close();
+    return true;
+  }
+  const panel = document.getElementById("settings-panel");
+  if (panel !== null && !panel.hidden) {
+    panel.hidden = true;
+    return true;
+  }
+  const menu = document.getElementById("recent-menu");
+  if (menu !== null && !menu.hidden) {
+    menu.hidden = true;
+    return true;
+  }
+  return false;
+}
+
 interface TextHit {
   node: Text;
   start: number;

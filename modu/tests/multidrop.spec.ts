@@ -32,4 +32,16 @@ describe("openEachMd（串行逐开）", () => {
     await openEachMd(["a.txt"], open);
     expect(open).not.toHaveBeenCalled();
   });
+
+  it("activate 标记：中间项 false、仅末项 true（P5 批2：中间渲染白做）", async () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    await openEachMd(["a.md", "b.md", "c.md"], open);
+    expect(open.mock.calls.map((call) => call[1])).toEqual([false, false, true]);
+  });
+
+  it("单个 .md 也带 activate=true", async () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    await openEachMd(["only.md"], open);
+    expect(open.mock.calls[0]?.[1]).toBe(true);
+  });
 });

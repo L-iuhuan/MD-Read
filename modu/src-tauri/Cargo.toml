@@ -27,6 +27,7 @@ tauri-plugin-dialog = "2.7.3"
 tauri-plugin-single-instance = "2.4.5"
 chardetng = "1.0.0"
 encoding_rs = "0.8.41"
+tauri-plugin-opener = "2.5.5"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

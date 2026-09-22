@@ -23,12 +23,40 @@ import {
   type TabManagerDeps,
 } from "../src/app/tabs";
 
+/* 会话在 document 上挂捕获 keydown，测试间不清理会串台（阅读态 Ctrl+S/H 提示
+   被上一个测试的陈旧会话抢先闪）。这里代理注册、afterEach 逐个摘除。 */
+interface DocListener {
+  type: string;
+  listener: EventListener;
+  capture: boolean;
+}
+const docListeners: DocListener[] = [];
+
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn(); // jsdom 未实现，保位落点需要
+  const proto = Document.prototype;
+  const originalAdd = proto.addEventListener;
+  vi.spyOn(proto, "addEventListener").mockImplementation(function (
+    this: Document,
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions
+  ) {
+    if (typeof listener === "function") {
+      docListeners.push({
+        type,
+        listener,
+        capture: options === true || (typeof options === "object" && options?.capture === true),
+      });
+    }
+    return originalAdd.call(this, type, listener, options);
+  } as typeof proto.addEventListener);
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  for (const { type, listener, capture } of docListeners.splice(0)) {
+    document.removeEventListener(type, listener, { capture });
+  }
 });
 
 /* ---- 短语表与语言表（纯数据） ---- */
@@ -119,17 +147,19 @@ describe("buildSaveArgs：save_file 载荷组装", () => {
 interface StubEditor extends EditorHandle {
   calls: string[];
   host: EditorHost | null;
+  doc: string;
 }
 
 function stubEditor(): StubEditor {
   const stub: StubEditor = {
     calls: [],
     host: null,
+    doc: "编辑后文本",
     dom: document.createElement("div"),
     setDoc(text: string, crlf: boolean) {
       stub.calls.push(`setDoc(${text},${crlf})`);
     },
-    getDoc: () => "编辑后文本",
+    getDoc: () => stub.doc,
     saveState: () => ({ state: createDocState("存档", false), scrollTop: 42 }),
     restoreState(saved) {
       stub.calls.push(`restore(${saved.scrollTop})`);
@@ -158,6 +188,7 @@ interface SessionHarness {
   saveFile: ReturnType<typeof vi.fn>;
   setDirty: ReturnType<typeof vi.fn>;
   rerenderRead: ReturnType<typeof vi.fn>;
+  onModeChange: ReturnType<typeof vi.fn>;
   container: HTMLElement;
   docEl: HTMLElement;
 }
@@ -170,23 +201,24 @@ function setupSession(): SessionHarness {
   const saveFile = vi.fn(async (): Promise<void> => {});
   const setDirty = vi.fn();
   const rerenderRead = vi.fn();
+  const onModeChange = vi.fn();
   const stub = stubEditor();
   const container = document.getElementById("editor-pane") as HTMLElement;
   const deps: EditSessionDeps = {
     container,
     docEl: document.getElementById("doc") as HTMLElement,
     contentEl: document.getElementById("content") as HTMLElement,
-    statusEl: document.getElementById("st-saved") as HTMLElement,
     getTab: () => tab,
     saveFile,
     setDirty,
     rerenderRead,
+    onModeChange,
     makeEditor: (_c, host) => {
       stub.host = host;
       return stub;
     },
   };
-  return { session: createEditSession(deps), stub, tab, saveFile, setDirty, rerenderRead, container, docEl: deps.docEl };
+  return { session: createEditSession(deps), stub, tab, saveFile, setDirty, rerenderRead, onModeChange, container, docEl: deps.docEl };
 }
 
 function press(key: string): void {
@@ -305,6 +337,76 @@ describe("EditSession：键位路由", () => {
     const searches = h.stub.calls.filter((c) => c === "search").length;
     press("f"); // 阅读态：不拦截，由既有 findbar 处理（此处无 findbar 即无动作）
     expect(h.stub.calls.filter((c) => c === "search").length).toBe(searches);
+  });
+
+  it("阅读态 Ctrl+S：不落盘，闪 warn 提示（P5 批2 alpha 反直觉项）", async () => {
+    const h = setupSession();
+    press("s");
+    expect(h.saveFile).not.toHaveBeenCalled();
+    const status = document.getElementById("st-saved") as HTMLElement;
+    expect(status.textContent).toBe("阅读态无需保存，按 Ctrl+E 进入编辑");
+    expect(status.className).toBe("st-warn");
+    expect(status.hidden).toBe(false);
+  });
+
+  it("阅读态 Ctrl+H 闪提示；编辑态 Ctrl+H 放行（不拦，交给 CM 面板）", () => {
+    const h = setupSession();
+    press("h");
+    const status = document.getElementById("st-saved") as HTMLElement;
+    expect(status.textContent).toBe("阅读态无替换，按 Ctrl+E 进入编辑");
+    expect(status.className).toBe("st-warn");
+    h.session.toEdit();
+    status.hidden = true;
+    status.textContent = "";
+    press("h"); // 编辑态：session 不再接管，事件放行
+    expect(status.textContent).toBe("");
+  });
+});
+
+describe("EditSession：onModeChange（P5 批2 状态栏行号回填钩子）", () => {
+  it("toEdit 上报进入行（视口首块 data-line=3），toRead 上报编辑器顶行 7", () => {
+    const h = setupSession();
+    h.session.toEdit();
+    expect(h.onModeChange).toHaveBeenLastCalledWith(true, 3);
+    h.session.toRead();
+    expect(h.onModeChange).toHaveBeenLastCalledWith(false, 7);
+  });
+
+  it("阅读态与重复切态不重复上报（编辑态中 toEdit 幂等）", () => {
+    const h = setupSession();
+    expect(h.onModeChange).not.toHaveBeenCalled();
+    h.session.toEdit();
+    h.session.toEdit();
+    expect(h.onModeChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("EditSession：toRead dirty 分支（P5 批2 未变不白渲）", () => {
+  it("内容未变：rerenderRead 不调用、tab.source 不动、正文复显", () => {
+    const h = setupSession();
+    h.session.loadEditorState(null); // 激活挂载：domText ← tab.source（旧文）
+    h.stub.doc = "旧文"; // 编辑器一字未改
+    h.session.toEdit();
+    h.session.toRead();
+    expect(h.rerenderRead).not.toHaveBeenCalled();
+    expect(h.tab.source).toBe("旧文");
+    expect(h.docEl.hidden).toBe(false);
+  });
+
+  it("内容已变：走重渲管线并同步 tab.source", () => {
+    const h = setupSession();
+    h.session.loadEditorState(null);
+    h.session.toEdit();
+    h.session.toRead();
+    expect(h.rerenderRead).toHaveBeenCalledWith(h.tab, "编辑后文本");
+    expect(h.tab.source).toBe("编辑后文本");
+  });
+
+  it("未进过激活流程（domText 空）：视为已变，照常重渲", () => {
+    const h = setupSession();
+    h.session.toEdit();
+    h.session.toRead();
+    expect(h.rerenderRead).toHaveBeenCalledWith(h.tab, "编辑后文本");
   });
 });
 

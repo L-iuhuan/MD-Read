@@ -86,4 +86,22 @@
     padding: 0;
     background: none;
   }
+
+  /* PDF 裁边修复（P5 批1·P0 #3）：屏显 .mdc > * 限宽 var(--measure)（约 736px）居中，
+     A4 减 18mm 边距后可印宽约 658px，每侧虚裁 39px。打印时清零限宽与行向外边距，
+     正文占满可印区。只动 max-inline-size 与 margin-inline——table-wrap 的滚动容器
+     与代码块规则（cjk.css）不受影响，长表仍由上方行级规则跨页。 */
+  .mdc > * {
+    max-inline-size: none;
+    margin-inline: 0;
+  }
+
+  /* 查找高亮不进 PDF（P5 批1·P0 #4，双保险之一；批2 另加导出前 findbar.close）：
+     命中底色与当前项加深还原为正文配色。选择器带 .mdc 前缀以平齐 app.css
+     .mdc mark.find-hit 的特异性（裸 mark.find-hit 压不过屏显规则）。 */
+  .mdc mark.find-hit,
+  .mdc mark.find-current {
+    background: none;
+    color: inherit;
+  }
 }
