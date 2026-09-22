@@ -196,6 +196,11 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
   position: absolute;
   inset-block: 0;
   inset-inline: 0;
+  /* 修复（用户实测按钮点不动）：absolute 全宽层绘制在 in-flow 按钮之上，
+     L194 注释"DOM 顺序晚的按钮命中在上层"的假设错误——absolute 与 in-flow
+     的绘制顺序由定位决定，与 DOM 序无关。标题是纯标签，禁收指针即可，
+     命中穿透到下层按钮。 */
+  pointer-events: none;
   padding-inline: 180px;         /* 护栏：文字永不压到左右两组按钮 */
   line-height: var(--h-topbar);  /* 单行文本靠行高在整条顶栏内垂直居中 */
   text-align: center;

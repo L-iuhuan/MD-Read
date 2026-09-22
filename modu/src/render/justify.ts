@@ -14,6 +14,15 @@
 /** 亏空 > 5% 即回退左对齐；demo 实测依据：正常行亏空 0.8%~1.8%，被撑开行 33.8% */
 const JUSTIFY_MAX_STRETCH = 0.05
 
+/**
+ * 测量上限（性能修复，2026-09-22 用户实测 1MB 文档 41 秒定罪）：
+ * content-visibility:auto 会跳过视口外布局，但守卫逐块调 Range.getClientRects
+ * 会把每个被跳过的块强行拉回布局 → O(n²)——8700 块实测 guardJustify 39.5s。
+ * 候选超上限的病态长文整体跳过守卫（默认即全 justify，跳过=不标记=维持默认，
+ * 无视觉损伤）；真实文档（几百段以内）完整保留守卫。
+ */
+export const JUSTIFY_MEASURE_CAP = 400
+
 /** 预筛正则：≥8 字符的技术串（字母/数字/下划线/连字符） */
 const RE_LONG_TOKEN = /[A-Za-z0-9_-]{8,}/
 
@@ -75,6 +84,7 @@ export function guardJustify(root: HTMLElement): number {
   const measure = blocks.filter((el) => hasLongToken(el.textContent ?? ''))
   if (measure.length === 0) return 0
   for (const el of blocks) el.removeAttribute('data-justify') // 预筛跳过的块也清残留
+  if (measure.length > JUSTIFY_MEASURE_CAP) return 0 // 病态长文：守卫降级（见常量注释）
   root.setAttribute('data-justify-measure', '')
   const rows = measure.map((el) => ({ el, avail: el.clientWidth, ws: naturalLineWidths(el) }))
   root.removeAttribute('data-justify-measure')

@@ -144,7 +144,7 @@
 /* --- 代码块（§2.1 F2）；横向滚动允许。块的底色/描边与语言标签归 hljs.css
       （P5 批2 起 .code-block/.code-lang 死选择器已清理，此处只剩排版职责） --- */
 .mdc pre {
-  margin: 0;
+  margin-block: 0 1.2em;  /* 修复（用户实测代码块贴在一起）：批2 清死选择器时 margin 归零丢失；与 p 的 1.05em 同节奏 */
   padding: var(--size-3) var(--size-4);
   overflow-x: auto;       /* 横向滚动允许：代码不做折行破坏 */
   font-family: var(--font-mono);
