@@ -499,6 +499,7 @@ async function boot(): Promise<void> {
   injectLoadingStyle(); // loading 指示符样式一次就位（P5 批3）
   setupThemeEngine((theme) => refreshMermaidTheme(theme)); // 主题引擎钩子（三档）
   applyPrefs(); // 内含 applyThemePref（自动档按系统解析落 data-theme）
+  document.documentElement.classList.add("app-ready"); // FOUC 放行：主题偏好已应用，配合 index.html 内联防闪样式
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框标题栏三钮 + 最大化/还原图标切换（反馈⑤）
   setupOutlineToggle(); // ☰ 大纲折叠（P5 批2）

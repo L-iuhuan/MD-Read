@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- FOUC 防闪（用户实测启动时简陋界面一闪）：内联关键样式随 HTML 首帧前生效，
+         main.ts 的 boot() 应用完主题/字号偏好后再给 html 加 .app-ready 放行——
+         同时消灭无样式闪屏与主题闪错。JS 是应用的运行前提，失败时隐藏可接受。 -->
+    <style>html:not(.app-ready) body{visibility:hidden}</style>
     <title>墨读 MoDu</title>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
