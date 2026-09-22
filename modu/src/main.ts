@@ -200,6 +200,21 @@ function createTabs(session: EditSession, mountRendered: (ctx: MountContext) => 
   return createTabManager(bar as HTMLElement, {
     render: (source) => renderDocument(source, { pangu: true }),
     mountDoc: mountRendered,
+    // 切走时零拷贝回收正文（P5 批3 渲染缓存）；编辑态正文可能滞后 source，不回收
+    harvestDoc: () => {
+      if (editorSession?.isEditing() === true) {
+        return null;
+      }
+      const doc = document.getElementById("doc");
+      if (doc === null || doc.hidden) {
+        return null;
+      }
+      const frag = document.createDocumentFragment();
+      frag.replaceChildren(...Array.from(doc.childNodes)); // 节点搬运，mermaid/增强产物随行
+      return frag;
+    },
+    beginLoading: () => $("content").classList.add("content-loading"),
+    endLoading: () => $("content").classList.remove("content-loading"),
     getScroll: () => $("content").scrollTop,
     setScroll: (top) => {
       $("content").scrollTop = top;
@@ -367,8 +382,45 @@ function setupProgress(): void {
   });
 }
 
+/* ---- loading 指示符（P5 批3）：#content.content-loading 顶部 2px 脉冲条 ---- */
+
+/** 样式走 main 内联注入而非 cjk.css：它是壳层反馈不是正文排版，且批3 对
+ *  cjk.css 的改动面限定为 content-visibility 屏显规则。选 class 方案
+ *  （不占状态栏 flashStatus 单槽，长渲染不打扰错误/保存提示）。 */
+const LOADING_STYLE = `
+#content.content-loading::before {
+  content: "";
+  position: sticky;
+  top: 0;
+  display: block;
+  height: 2px;
+  margin-block-end: -2px;
+  background: var(--accent-solid);
+  transform-origin: 0 50%;
+  animation: modu-loading-pulse .9s ease-in-out infinite alternate;
+  z-index: 1;
+}
+@keyframes modu-loading-pulse {
+  from { opacity: .25; transform: scaleX(.3); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #content.content-loading::before { animation: none; opacity: 1; }
+}`;
+
+function injectLoadingStyle(): void {
+  if (document.getElementById("loading-style") !== null) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = "loading-style";
+  style.textContent = LOADING_STYLE;
+  document.head.appendChild(style);
+}
+
 async function boot(): Promise<void> {
   setupGlobalKeys(); // 先于 setupFindbar：统一 Esc 仲裁须最先注册（见函数注释）
+  injectLoadingStyle(); // loading 指示符样式一次就位（P5 批3）
   applyPrefs();
   setupWindowControls(); // 无边框标题栏三钮（反馈⑤）
   setupOutlineToggle(); // ☰ 大纲折叠（P5 批2）
@@ -388,7 +440,9 @@ async function boot(): Promise<void> {
   // 挂载一篇渲染结果：#doc/大纲/F4 观察/增强/查找作废/状态栏——两处入口（标签激活、编辑回读）共用
   function mountRendered(ctx: MountContext): void {
     const doc = $<HTMLElement>("doc");
-    doc.innerHTML = ctx.html;
+    ctx.tab.cachedFragment = null; // 挂载即消费：rerenderRead 等旁路入口同样作废旧缓存
+    doc.replaceChildren();
+    doc.appendChild(document.adoptNode(ctx.fragment)); // P5 批3：零序列化、零二次 parse
     setupExternalLinks(doc); // P5 批1 接线：外链交系统浏览器（幂等，data 标记防重注册）
     doc.hidden = false;
     $("empty-hint").hidden = true;
@@ -416,7 +470,7 @@ async function boot(): Promise<void> {
     saveFile: ({ path, text, encoding, bom }) => invoke<void>("save_file", { path, text, encoding, bom }),
     rerenderRead: (tab, text) => {
       const result = renderDocument(text, { pangu: true });
-      mountRendered({ tab, html: result.html, outline: result.outline });
+      mountRendered({ tab, fragment: result.fragment, outline: result.outline });
     },
     onModeChange: (editing, line) => {
       if (editing) {

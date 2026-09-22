@@ -4,7 +4,7 @@
  * 顺序写死（v1.3 定序约束，不得调整）：
  *   mathprotect.extract → md.render → mathprotect.restore → DOMPurify
  *   → DOMParser → KaTeX auto-render → pangu(默认开) → tok-break
- *   → outline 提取 → body.innerHTML
+ *   → outline 提取 → fragment 搬运（P5 批3：html 字段改惰性，挂载走 fragment）
  *
  * 为什么是这个顺序：
  * - cjk-gap / tok-break 的空 span 必须在 sanitize 之后插入，消毒配置无需
@@ -29,8 +29,13 @@ export interface OutlineItem {
 }
 
 export interface RenderResult {
-  html: string
+  /** 安全 HTML（P5 批3 起惰性求值：生产挂载只走 fragment，零序列化成本；
+ *  既有测试与 A/B 对照访问 .html 时才从 fragment 克隆序列化并缓存） */
+  readonly html: string
   outline: OutlineItem[]
+  /** 渲染完成的正文节点（全链处理已就位），挂载方 adoptNode 直挂——
+ *  摘掉了「serialize ~59ms + main.ts innerHTML 对 124K 节点二次 parse」双重解析 */
+  readonly fragment: DocumentFragment
 }
 
 export interface RenderOptions {
@@ -54,7 +59,7 @@ function extractOutline(root: Element): OutlineItem[] {
   return out
 }
 
-/** 渲染一篇 Markdown 源文：返回安全 HTML 与大纲。
+/** 渲染一篇 Markdown 源文：返回正文 fragment、惰性安全 HTML 与大纲。
  *  各阶段耗时挂 window.__renderProfile（性能基线诊断用，CDP/控制台可读）。 */
 export function renderDocument(src: string, opts?: RenderOptions): RenderResult {
   const t: Record<string, number> = {};
@@ -82,9 +87,26 @@ export function renderDocument(src: string, opts?: RenderOptions): RenderResult 
   s = performance.now();
   wrapLongTokens(doc, doc.body);
   t.tokbreak = Math.round(performance.now() - s); s = performance.now();
-  const html = doc.body.innerHTML;
-  t.serialize = Math.round(performance.now() - s);
   const outline = extractOutline(doc.body);
+  // P5 批3·摘双重解析：正文节点一次搬运进 fragment（appendChild 跨文档即收养，
+  // 零拷贝零字符串化）。html 字段改惰性——生产路径不触碰即零序列化成本，
+  // 访问时从 fragment 克隆序列化（与旧 body.innerHTML 逐字节等价）。
+  const fragment = document.createDocumentFragment();
+  fragment.append(...Array.from(doc.body.childNodes));
+  t.fragment = Math.round(performance.now() - s);
+  let htmlCache: string | null = null;
+  const result: RenderResult = {
+    get html(): string {
+      if (htmlCache === null) {
+        const box = document.createElement("div");
+        box.append(...Array.from(fragment.childNodes).map((node) => node.cloneNode(true)));
+        htmlCache = box.innerHTML;
+      }
+      return htmlCache;
+    },
+    outline,
+    fragment,
+  };
   (window as unknown as Record<string, unknown>).__renderProfile = t;
-  return { html, outline };
+  return result;
 }

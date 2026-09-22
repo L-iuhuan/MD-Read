@@ -88,12 +88,20 @@
   }
 
   /* PDF 裁边修复（P5 批1·P0 #3）：屏显 .mdc > * 限宽 var(--measure)（约 736px）居中，
-     A4 减 18mm 边距后可印宽约 658px，每侧虚裁 39px。打印时清零限宽与行向外边距，
-     正文占满可印区。只动 max-inline-size 与 margin-inline——table-wrap 的滚动容器
-     与代码块规则（cjk.css）不受影响，长表仍由上方行级规则跨页。 */
+      A4 减 18mm 边距后可印宽约 658px，每侧虚裁 39px。打印时清零限宽与行向外边距，
+      正文占满可印区。只动 max-inline-size 与 margin-inline——table-wrap 的滚动容器
+      与代码块规则（cjk.css）不受影响，长表仍由上方行级规则跨页。 */
   .mdc > * {
     max-inline-size: none;
     margin-inline: 0;
+  }
+
+  /* content-visibility 打印还原（P5 批3，宪法级红线）：cjk.css 屏显 .mdc > * 的
+     content-visibility:auto 在打印管线里同样跳过视口外块 → PDF 缺内容。
+     打印一律 visible 并清占位尺寸，全文进分页流（tests/css-fixes.spec.ts 有锚）。 */
+  .mdc > * {
+    content-visibility: visible;
+    contain-intrinsic-size: auto;
   }
 
   /* 查找高亮不进 PDF（P5 批1·P0 #4，双保险之一；批2 另加导出前 findbar.close）：

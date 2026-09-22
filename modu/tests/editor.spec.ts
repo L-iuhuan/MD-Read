@@ -22,6 +22,7 @@ import {
   type TabManager,
   type TabManagerDeps,
 } from "../src/app/tabs";
+import { flushed, fragOf } from "./raf";
 
 /* 会话在 document 上挂捕获 keydown，测试间不清理会串台（阅读态 Ctrl+S/H 提示
    被上一个测试的陈旧会话抢先闪）。这里代理注册、afterEach 逐个摘除。 */
@@ -418,7 +419,7 @@ function setupTabs(): { manager: TabManager; saveState: ReturnType<typeof vi.fn>
   const saveState = vi.fn(() => savedPayload);
   const loadState = vi.fn();
   const deps: TabManagerDeps = {
-    render: (src: string) => ({ html: `<p>${src}</p>`, outline: [] }),
+    render: (src: string) => ({ html: `<p>${src}</p>`, outline: [], fragment: fragOf(`<p>${src}</p>`) }),
     mountDoc: () => {},
     getScroll: () => 0,
     setScroll: () => {},
@@ -431,25 +432,31 @@ function setupTabs(): { manager: TabManager; saveState: ReturnType<typeof vi.fn>
 }
 
 describe("tabs × 编辑器态（M3-A 接口）", () => {
-  it("openTab：bom/crlf 按真值判定落标签（缺省容忍为 false）", () => {
+  it("openTab：bom/crlf 按真值判定落标签（缺省容忍为 false）", async () => {
     const { manager } = setupTabs();
     manager.openTab("a.md", { text: "A", encoding: "UTF-8" });
+    await flushed();
     expect(manager.activeTab()?.bom).toBe(false);
     expect(manager.activeTab()?.crlf).toBe(false);
     manager.openTab("b.md", { text: "B", encoding: "UTF-8", bom: true, crlf: true });
+    await flushed();
     expect(manager.activeTab()?.bom).toBe(true);
     expect(manager.activeTab()?.crlf).toBe(true);
   });
 
-  it("切走保存编辑器态、切回恢复；同路径重开作废旧态", () => {
+  it("切走保存编辑器态、切回恢复；同路径重开作废旧态", async () => {
     const { manager, saveState, loadState } = setupTabs();
     manager.openTab("a.md", { text: "A", encoding: "UTF-8" });
+    await flushed();
     manager.openTab("b.md", { text: "B", encoding: "UTF-8" });
+    await flushed();
     expect(saveState).toHaveBeenCalled(); // 离开 a 时把编辑器态存回 a
     expect(loadState).toHaveBeenLastCalledWith(null); // b 从未进过编辑态
     manager.activateTab("a.md");
+    await flushed();
     expect(loadState).toHaveBeenLastCalledWith(expect.objectContaining({ scrollTop: 42 }));
     manager.openTab("a.md", { text: "刷新", encoding: "UTF-8" }); // 同路径重开
+    await flushed();
     expect(loadState).toHaveBeenLastCalledWith(null); // 旧编辑器态已作废
   });
 });

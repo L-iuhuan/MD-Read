@@ -190,3 +190,30 @@ describe('⑧ M1-E2 回归（mathprotect + emoji 扩词）', () => {
     expect(renderDocument(src, { pangu: false }).html).not.toContain('MoDuMathGuard')
   })
 })
+
+describe('⑨ P5 批3 fragment 路径（摘双重解析）', () => {
+  it('fragment 与 html 等价：fragment 克隆序列化 === html 字段（逐字节）', () => {
+    const r = renderDocument(src)
+    const box = document.createElement('div')
+    box.append(...Array.from(r.fragment.childNodes).map((n) => n.cloneNode(true)))
+    expect(box.innerHTML).toBe(r.html)
+    expect(box.querySelectorAll('*').length)
+      .toBe(parse(r.html).body.querySelectorAll('*').length)
+  })
+
+  it('html 惰性但确定：先取 fragment 后取 html 仍与模块级基准一致', () => {
+    const r = renderDocument(src)
+    expect(r.fragment.children.length).toBeGreaterThan(0) // 未访问 html 前 fragment 完整
+    expect(r.html).toBe(html) // 渲染确定性 + 惰性序列化与旧 body.innerHTML 等价
+  })
+
+  it('fragment 已含全部后处理产物（cjk-gap / tok-break / katex / 标题锚点）', () => {
+    const r = renderDocument(src)
+    expect(r.fragment.querySelectorAll('.cjk-gap').length).toBeGreaterThan(0)
+    expect(r.fragment.querySelectorAll('.tok-break').length).toBeGreaterThan(0)
+    expect(r.fragment.querySelectorAll('.katex').length).toBe(4)
+    const h1 = r.fragment.querySelector('h1')
+    expect(h1?.getAttribute('data-line')).toBe('1')
+    expect(h1?.id).toBe(outline[0]?.id)
+  })
+})

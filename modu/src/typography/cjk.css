@@ -81,6 +81,18 @@
   margin-inline: auto;
 }
 
+/* 长文分段渲染（P5 批3·性能路径 b，P4 共识裁定）：124K 节点文档首次布局
+   ~4.3s 的根因是全量布局+绘制；content-visibility:auto 让视口外的直接子元素
+   跳过渲染，滚动临近再补。contain-intrinsic-size 用 auto 2lh——auto 记住
+   已渲染块的实测尺寸，2lh 是未渲染块的便宜占位（两行行高），滚动条长度与
+   滚动锚点跳动可控。
+   ⚠ 打印必须还原：print.css 同名规则 content-visibility:visible（宪法级红线，
+   否则视口外内容不进 PDF），tests/css-fixes.spec.ts 有反向断言锚。 */
+.mdc > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 2lh;
+}
+
 /* ==========================================================================
    3. 标题层级：靠字号/重量/间距拉开，不靠边框堆砌（§3.1）
    ========================================================================== */

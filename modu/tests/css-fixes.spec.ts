@@ -13,6 +13,8 @@ import { describe, expect, it } from "vitest";
 const app = readFileSync("src/app.css", "utf8");
 const cjk = readFileSync("src/typography/cjk.css", "utf8");
 const tokens = readFileSync("src/typography/tokens.css", "utf8");
+const printCss = readFileSync("src/typography/print.css", "utf8");
+const main = readFileSync("src/main.ts", "utf8");
 
 describe("M2 波3 CSS 修复锚点（波4 归位后）", () => {
   it("反馈③：末行线根因规则不得复现（抑制规则已根治删除）", () => {
@@ -35,5 +37,23 @@ describe("M2 波3 CSS 修复锚点（波4 归位后）", () => {
     const offsets = app.match(/\.findbar\s*\{[^}]*inset-block-start:[^}]*/g) ?? [];
     const withTitlebar = offsets.filter((rule) => rule.includes("--h-titlebar"));
     expect(withTitlebar.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("P5 批3 性能锚点（content-visibility 分段 + 打印还原 + fragment 挂载）", () => {
+  it("屏显分段：cjk.css .mdc > * 带 content-visibility:auto 与 auto 2lh 占位", () => {
+    expect(cjk).toMatch(/\.mdc > \*\s*\{[^}]*content-visibility:\s*auto/);
+    expect(cjk).toMatch(/\.mdc > \*\s*\{[^}]*contain-intrinsic-size:\s*auto 2lh/);
+  });
+
+  it("打印还原（宪法级红线·反向断言）：print.css 令 .mdc > * visible 并清占位，视口外内容必须进 PDF", () => {
+    expect(printCss).toMatch(/\.mdc > \*\s*\{[^}]*content-visibility:\s*visible/);
+    expect(printCss).toMatch(/\.mdc > \*\s*\{[^}]*contain-intrinsic-size:\s*auto\s*;/);
+  });
+
+  it("摘双重解析：main.ts 挂载走 fragment（adoptNode），不再 innerHTML 二次 parse", () => {
+    expect(main).not.toMatch(/doc\.innerHTML/);
+    expect(main).toMatch(/adoptNode/);
+    expect(main).toMatch(/doc\.replaceChildren\(\)/);
   });
 });
