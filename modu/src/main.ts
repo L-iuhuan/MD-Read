@@ -18,7 +18,7 @@ import { openEachMd } from "./app/drop";
 import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
 import { setupFindbar, closeTopmostOverlay, type Findbar } from "./ui/findbar";
-import { setupSettings, syncSettingsPanel } from "./ui/settings";
+import { setupSettings, syncSettingsPanel, readAutosavePref } from "./ui/settings";
 import { createEditSession, flashStatus, type EditSession } from "./editor/editor";
 import { firstVisibleLine } from "./editor/position-map";
 import "./app.css";
@@ -292,7 +292,8 @@ async function onExportClick(tabs: TabManager): Promise<void> {
     return; // 用户取消：静默结束
   }
   try {
-    flashStatus(await invoke<string>("export_pdf", { path: picked }), "ok");
+    // title：文档名进原生页眉（用户反馈批次·导出问题三，print.rs 查证注释）
+    flashStatus(await invoke<string>("export_pdf", { path: picked, title: tab.title }), "ok");
   } catch (error) {
     flashStatus(`导出失败：${String(error)}`, "error");
   }
@@ -467,6 +468,8 @@ async function boot(): Promise<void> {
     contentEl: $<HTMLElement>("content"),
     getTab: () => activeTabs?.activeTab() ?? null,
     setDirty: (path, dirty) => activeTabs?.setDirty(path, dirty), // docChanged → 标签圆点
+    // 自动保存开关（用户反馈批次）：面板 modu-autosave，默认开
+    isAutosaveEnabled: () => readAutosavePref(),
     saveFile: ({ path, text, encoding, bom }) => invoke<void>("save_file", { path, text, encoding, bom }),
     rerenderRead: (tab, text) => {
       const result = renderDocument(text, { pangu: true });

@@ -5,8 +5,9 @@
  * - Tab 增量：bom/crlf 落标签、编辑器态随标签存取
  */
 import { EditorState } from "@codemirror/state";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AUTOSAVE_DELAY_MS,
   CODE_LANGUAGES,
   PHRASES_ZH,
   buildSaveArgs,
@@ -194,7 +195,7 @@ interface SessionHarness {
   docEl: HTMLElement;
 }
 
-function setupSession(): SessionHarness {
+function setupSession(over: Partial<EditSessionDeps> = {}): SessionHarness {
   document.body.innerHTML =
     '<main id="content"><article id="doc"><p data-line="3">三</p><p data-line="9">九</p></article>' +
     '<div id="editor-pane" hidden></div></main><span id="st-saved" hidden></span>';
@@ -218,6 +219,7 @@ function setupSession(): SessionHarness {
       stub.host = host;
       return stub;
     },
+    ...over,
   };
   return { session: createEditSession(deps), stub, tab, saveFile, setDirty, rerenderRead, onModeChange, container, docEl: deps.docEl };
 }
@@ -320,6 +322,104 @@ describe("EditSession：dirty 与保存", () => {
   it("阅读态保存空转（不落盘）", async () => {
     const h = setupSession();
     await h.session.save();
+    expect(h.saveFile).not.toHaveBeenCalled();
+  });
+});
+
+/* ---- 自动保存（用户反馈批次）：2s 防抖、同保存链、失败重试、开关 ---- */
+
+describe("EditSession：自动保存", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function statusEl(): HTMLElement {
+    return document.getElementById("st-saved") as HTMLElement;
+  }
+
+  it("docChanged 后 2s 防抖落盘：同保存链（原编码/BOM 透传）、闪「已自动保存」、清 dirty", async () => {
+    const h = setupSession();
+    h.session.toEdit();
+    h.stub.host?.onDocChanged();
+    expect(h.saveFile).not.toHaveBeenCalled(); // 防抖窗口内不落盘
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    expect(h.saveFile).toHaveBeenCalledWith(buildSaveArgs(h.tab, "编辑后文本"));
+    expect(h.saveFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bom: true, encoding: "GB18030" })
+    );
+    expect(h.setDirty).toHaveBeenLastCalledWith("D:\\docs\\a.md", false);
+    expect(statusEl().textContent).toBe("已自动保存"); // 与手动「已保存」区分
+    expect(statusEl().className).toBe("st-ok");
+  });
+
+  it("连续变更重置防抖：停笔才存，只落盘一次", async () => {
+    const h = setupSession();
+    h.session.toEdit();
+    h.stub.host?.onDocChanged();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS - 500);
+    h.stub.host?.onDocChanged(); // 重新计时
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS - 500);
+    expect(h.saveFile).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(h.saveFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("失败：只闪中文 error 不弹窗、dirty 不清；下次变更后重试成功", async () => {
+    const h = setupSession();
+    (h.saveFile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("盘被占用"));
+    h.session.toEdit();
+    h.stub.host?.onDocChanged();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    expect(statusEl().textContent).toBe("自动保存失败：盘被占用");
+    expect(statusEl().className).toBe("st-error");
+    expect(h.setDirty).not.toHaveBeenCalledWith("D:\\docs\\a.md", false);
+    h.stub.host?.onDocChanged(); // 下次变更重试
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    expect(h.saveFile).toHaveBeenCalledTimes(2);
+    expect(h.setDirty).toHaveBeenLastCalledWith("D:\\docs\\a.md", false);
+  });
+
+  it("开关关闭（isAutosaveEnabled=false）：变更不安排自动保存", async () => {
+    const h = setupSession({ isAutosaveEnabled: () => false });
+    h.session.toEdit();
+    h.stub.host?.onDocChanged();
+    expect(h.setDirty).toHaveBeenCalledWith("D:\\docs\\a.md", true); // dirty 照常
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 2);
+    expect(h.saveFile).not.toHaveBeenCalled();
+  });
+
+  it("手动保存撤销等待中的自动保存（成功后不双闪「已自动保存」）", async () => {
+    const h = setupSession();
+    h.session.toEdit();
+    h.stub.host?.onDocChanged();
+    await h.session.save(); // 手动先行
+    expect(h.saveFile).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 2);
+    expect(h.saveFile).toHaveBeenCalledTimes(1); // 待存票已被手动保存撤销
+    expect(statusEl().textContent).toBe("已保存");
+  });
+
+  it("票据绑路径：切标签后的过期票不落盘（不误存新标签）", async () => {
+    const tabA = makeTab();
+    const tabB = makeTab({ path: "D:\\docs\\b.md", title: "b.md", source: "B 文" });
+    let current: Tab = tabA;
+    const h = setupSession({ getTab: () => current });
+    h.session.toEdit();
+    h.stub.host?.onDocChanged(); // 票记的是 a.md
+    current = tabB; // 切到 b.md：票过期
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    expect(h.saveFile).not.toHaveBeenCalled();
+  });
+
+  it("toRead 撤销待存票（回阅读态不追补落盘）", async () => {
+    const h = setupSession();
+    h.session.toEdit();
+    h.stub.host?.onDocChanged();
+    h.session.toRead();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 2);
     expect(h.saveFile).not.toHaveBeenCalled();
   });
 });

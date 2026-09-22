@@ -57,3 +57,16 @@ describe("P5 批3 性能锚点（content-visibility 分段 + 打印还原 + frag
     expect(main).toMatch(/doc\.replaceChildren\(\)/);
   });
 });
+
+describe("用户反馈批次：导出修复锚", () => {
+  it("问题一：mermaid 渲染成功态去框去底留呼吸位（源码态框与失败态虚线框保留）", () => {
+    expect(cjk).toMatch(/\.mermaid\[data-rendered="1"\]\s*\{[^}]*border:\s*none/);
+    expect(cjk).toMatch(/\.mermaid\[data-rendered="1"\]\s*\{[^}]*background:\s*transparent/);
+    expect(cjk).toMatch(/\.mermaid\[data-rendered="1"\]\s*\{[^}]*padding-block-end:\s*\.4em/);
+    expect(cjk).toMatch(/\.mermaid\[data-mmd-error\]\s*\{[^}]*border-style:\s*dashed/);
+  });
+
+  it("问题二（反向锚）：首页底色根除——根链 html/body/#app/.body-row 背景清零规则在位", () => {
+    expect(printCss).toMatch(/html,\s*body,\s*#app,\s*\.body-row\s*\{[^}]*background:\s*none/);
+  });
+});

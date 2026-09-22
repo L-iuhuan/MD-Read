@@ -230,6 +230,10 @@ export interface SaveFileArgs {
 export function buildSaveArgs(tab: Tab, text: string): SaveFileArgs {
   return { path: tab.path, text, encoding: tab.encoding, bom: tab.bom };
 }
+/** 自动保存防抖窗（用户反馈批次）：docChanged 后静默 2s 再落盘——
+ *  连续敲键不断重置，停笔才存；与手动 Ctrl+S 同一条保存链（原编码/BOM 保真） */
+export const AUTOSAVE_DELAY_MS = 2000;
+
 export interface EditSessionDeps {
   /** 编辑器容器（#editor-pane）：显隐由 session 控制 */
   container: HTMLElement;
@@ -247,6 +251,8 @@ export interface EditSessionDeps {
   onModeChange?(editing: boolean, line: number | null): void;
   /** 测试注入替身；默认真 CM6 编辑器 */
   makeEditor?(container: HTMLElement, host: EditorHost): EditorHandle;
+  /** 自动保存开关（用户反馈批次）：壳层接设置面板 modu-autosave；缺省视为开 */
+  isAutosaveEnabled?(): boolean;
 }
 
 export interface EditSession {
@@ -268,11 +274,33 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
   /** #doc 当前呈现的文本（P5 批2）：toRead 时编辑器内容与之相同即跳过重渲、复用 DOM。
    *  激活标签（loadEditorState）与重渲（toRead 已变分支）两处同步。 */
   let domText: string | null = null;
+  /** 自动保存票据：绑调度时的标签路径——切标签后的过期票在触发时对不上路径即作废 */
+  let autosaveTimer = 0;
+  const autosaveEnabled = deps.isAutosaveEnabled ?? (() => true);
+
+  function cancelAutosave(): void {
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = 0;
+  }
+
+  function scheduleAutosave(path: string): void {
+    window.clearTimeout(autosaveTimer); // 防抖：连续变更只认最后一次
+    autosaveTimer = window.setTimeout(() => {
+      const tab = deps.getTab();
+      if (editing && tab !== null && tab.path === path) {
+        void persist("已自动保存", "自动保存失败");
+      }
+    }, AUTOSAVE_DELAY_MS);
+  }
+
   const editor = (deps.makeEditor ?? createEditor)(container, {
     onDocChanged: () => {
       const tab = deps.getTab();
       if (editing && tab !== null) {
         deps.setDirty(tab.path, true);
+        if (autosaveEnabled()) {
+          scheduleAutosave(tab.path);
+        }
       }
     },
   });
@@ -313,6 +341,7 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     if (!editing) {
       return;
     }
+    cancelAutosave(); // 离开编辑态：待存票作废（dirty 仍在，关闭确认不失守）
     editing = false;
     container.hidden = true;
     const tab = deps.getTab();
@@ -334,7 +363,10 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     deps.onModeChange?.(false, line); // 壳层：状态栏行号按阅读态重算
   }
 
-  async function save(): Promise<void> {
+  /** 保存链共用（手动 Ctrl+S 与自动保存同路径：buildSaveArgs 原编码/BOM 保真）；
+   *  成功清 dirty（关闭确认自然消失）、闪 ok；失败只闪 error 不弹窗——
+   *  自动保存失败留给下次变更重试，手动失败用户自己再按。 */
+  async function persist(okMessage: string, failPrefix: string): Promise<void> {
     const tab = deps.getTab();
     if (tab === null || !editing) {
       return;
@@ -343,12 +375,17 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     try {
       await deps.saveFile(buildSaveArgs(tab, text));
     } catch (error) {
-      flashStatus(`保存失败：${error instanceof Error ? error.message : String(error)}`, "error");
+      flashStatus(`${failPrefix}：${error instanceof Error ? error.message : String(error)}`, "error");
       return;
     }
     tab.source = text;
     deps.setDirty(tab.path, false);
-    flashStatus("已保存", "ok");
+    flashStatus(okMessage, "ok");
+  }
+
+  async function save(): Promise<void> {
+    cancelAutosave(); // 手动优先：撤待存票，防成功后「已自动保存」覆盖「已保存」
+    await persist("已保存", "保存失败");
   }
 
   function saveEditorState(): SavedEditorState | null {
@@ -423,6 +460,7 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     save,
     reset: () => {
       editing = false;
+      cancelAutosave(); // 空态：待存票随会话作废
       container.hidden = true;
       currentPath = null;
       domText = null;

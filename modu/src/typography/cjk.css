@@ -86,11 +86,15 @@
    跳过渲染，滚动临近再补。contain-intrinsic-size 用 auto 2lh——auto 记住
    已渲染块的实测尺寸，2lh 是未渲染块的便宜占位（两行行高），滚动条长度与
    滚动锚点跳动可控。
-   ⚠ 打印必须还原：print.css 同名规则 content-visibility:visible（宪法级红线，
-   否则视口外内容不进 PDF），tests/css-fixes.spec.ts 有反向断言锚。 */
-.mdc > * {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 2lh;
+   ⚠ 必须包 @media screen（2026-09-22 导出截断回归修复）：曾用 print.css 同名
+   规则还原 visible，但 contain-intrinsic-size:auto 在打印时取"最后记忆尺寸，
+   无则 0"——从未上屏的块记忆为空 → 全部塌缩 0 高 → PDF 只剩 1 页 26KB。
+   包进 screen 后打印媒体下本规则彻底不参与，无需还原仗。 */
+@media screen {
+  .mdc > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 2lh;
+  }
 }
 
 /* ==========================================================================
@@ -269,7 +273,18 @@
   text-align: start;
   overflow-x: auto;   /* 仅源码态文本可滚；渲染态见下 */
 }
-.mdc .mermaid[data-rendered="1"] { color: inherit; font-size: 1em; overflow-x: visible; }
+/* 渲染成功态（用户反馈批次·导出问题一）：去掉源码态的发丝线框与灰底——渲染成
+   图后容器框是多余视觉（样例文档 mermaid 块后紧跟 --- 横线，图框底边与 hr 叠出
+   「图下两条横线」，被用户误读为渲染出错）；padding-block-end 留 .4em 呼吸位，
+   紧随的 hr 不贴图。失败态虚线框是唯一诊断线索，保留不变（见下 data-mmd-error）。 */
+.mdc .mermaid[data-rendered="1"] {
+  color: inherit;
+  font-size: 1em;
+  overflow-x: visible;
+  border: none;
+  background: transparent;
+  padding-block-end: .4em;
+}
 .mdc .mermaid svg { max-inline-size: 100%; block-size: auto; }
 /* 渲染失败态：虚线框 + attr() 显示 mermaid.ts 落的中文错误信息 */
 .mdc .mermaid[data-mmd-error] {

@@ -17,6 +17,19 @@ use windows_core::{implement, Interface, PCWSTR};
 /// 打印回调等待上限（PrintToPdf 对大文档也远快于此；超时视为引擎卡死）
 const PRINT_TIMEOUT_SECS: u64 = 90;
 
+/// PDF 页眉页脚总开关（用户反馈批次·导出问题三：要页码）。
+/// 宪法红线：禁 @page margin-box（Chromium 从未实现），页码只能走 WebView2
+/// PrintSettings 原生页眉页脚。查证结论（MS Learn ICoreWebView2PrintSettings
+/// 文档 + 本地 webview2-com-sys 0.38.2 绑定双核实）：
+/// - ShouldPrintHeaderAndFooter 默认 false，置 true 后页眉页脚一并开启，各高 0.5cm；
+/// - 页眉 = 打印日期时间 + 页标题（HeaderTitle；默认取当前文档标题——对本应用
+///   是 index.html 的「墨读 MoDu」而非正文文件名，故须显式传文档名；
+///   传空串则不显示标题）；
+/// - 页脚 = URI + 页码；FooterUri **默认带当前 URI**（tauri asset 地址，不可接受），
+///   **空串则不显示 URI**，页码独立于 FooterUri 保留——空串正是要的形态。
+/// 若样张目检格式不可接受，把本开关改 false 即回到无页眉页脚的旧行为（等拍板）。 */
+const PRINT_HEADER_AND_FOOTER: bool = true;
+
 /// 前端把结果回传 stdout（自动化采集用）
 #[tauri::command]
 pub fn spike_log(msg: String) {
@@ -163,10 +176,12 @@ impl ICoreWebView2PrintToPdfCompletedHandler_Impl for ExportPdfDone_Impl {
 /// 正式导出的 COM 调用链（UI 线程，with_webview 闭包内）。
 /// 物理页 A4 = 210×297mm = 8.27×11.69in（与 spike 验证值一致；11.65 并非真 A4，不采）。
 /// ShouldPrintBackgrounds=true 是 print.css「print-color-adjust:exact 颜色保真」的物理前提。
+/// header_title：文档名，进原生页眉（PRINT_HEADER_AND_FOOTER 开时）。
 /// CSS 侧版式契约（@page A4/18mm、行级分页）在 src/typography/print.css。
 unsafe fn run_export_chain(
     core: ICoreWebView2,
     path16: Vec<u16>,
+    header_title: windows_core::HSTRING,
     tx: mpsc::Sender<Result<(), String>>,
 ) {
     let pdf_pw = PCWSTR::from_raw(path16.as_ptr());
@@ -204,6 +219,18 @@ unsafe fn run_export_chain(
     if let Err(e) = settings.SetShouldPrintBackgrounds(true) {
         bail!("SetShouldPrintBackgrounds", e);
     }
+    if PRINT_HEADER_AND_FOOTER {
+        if let Err(e) = settings.SetShouldPrintHeaderAndFooter(true) {
+            bail!("SetShouldPrintHeaderAndFooter", e);
+        }
+        // 空串 FooterUri = 页脚不带 URI、只剩页码（查证结论见常量注释）
+        if let Err(e) = settings.SetFooterUri(&windows_core::HSTRING::from("")) {
+            bail!("SetFooterUri", e);
+        }
+        if let Err(e) = settings.SetHeaderTitle(&header_title) {
+            bail!("SetHeaderTitle", e);
+        }
+    }
     let handler: ICoreWebView2PrintToPdfCompletedHandler = ExportPdfDone { tx }.into();
     if let Err(e) = wv7.PrintToPdf(pdf_pw, &settings, &handler) {
         // tx 已随 handler 移交：提交失败时通道随 handler 析构而关闭，
@@ -213,8 +240,13 @@ unsafe fn run_export_chain(
 }
 
 /// 导出 PDF 到指定路径（pick_save_path 的产物）。成功返回中文结果（含字节数）。
+/// title：文档名（活动标签标题），开 PRINT_HEADER_AND_FOOTER 时进原生页眉。
 #[tauri::command]
-pub async fn export_pdf(app: tauri::AppHandle, path: String) -> Result<String, String> {
+pub async fn export_pdf(
+    app: tauri::AppHandle,
+    path: String,
+    title: String,
+) -> Result<String, String> {
     if path.trim().is_empty() {
         return Err("导出路径为空".into());
     }
@@ -224,6 +256,7 @@ pub async fn export_pdf(app: tauri::AppHandle, path: String) -> Result<String, S
     let path16: Vec<u16> = std::os::windows::ffi::OsStrExt::encode_wide(pdf.as_os_str())
         .chain(std::iter::once(0))
         .collect();
+    let header_title = windows_core::HSTRING::from(title);
 
     let window = app
         .get_webview_window("main")
@@ -232,7 +265,7 @@ pub async fn export_pdf(app: tauri::AppHandle, path: String) -> Result<String, S
     window
         .with_webview(move |webview| unsafe {
             match webview.controller().CoreWebView2() {
-                Ok(core) => run_export_chain(core, path16, tx),
+                Ok(core) => run_export_chain(core, path16, header_title, tx),
                 Err(e) => {
                     let _ = tx.send(Err(format!("取得 WebView2 失败：{e}")));
                 }

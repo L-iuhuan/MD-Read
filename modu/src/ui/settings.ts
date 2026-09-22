@@ -12,6 +12,8 @@
  * ③ 主题亮暗切换入面板（原 ◐ 按钮保留，两者同源 modu-theme）。
  * ④（波5）syncSettingsPanel：面板外（◐ 按钮）改状态后刷新面板回显，
  *   面板每次打开时也自调——修「面板开着时点 ◐，下拉回显陈旧」。
+ * ⑤（用户反馈批次）自动保存开关：modu-autosave 持久化、默认开，
+ *   editor.ts 经 readAutosavePref 取值；面板变更+整体失焦后自动收起。
  *
  * DOM 结构与 id 就位、样式最简（app.css），波4 美化；禁 any、函数 ≤50 行。
  */
@@ -23,6 +25,7 @@ const FS_KEY = "modu-fs";
 const FONT_KEY = "modu-font";
 const LEGACY_FACE_KEY = "modu-face"; // M2 波2 起的旧键：serif 存量迁移回退
 const THEME_KEY = "modu-theme";
+const AUTOSAVE_KEY = "modu-autosave";
 
 /** kai/hei 预设字体栈（sans=清内联回默认栈，serif=--font-serif 栈；西文回落沿用衬线/无衬线既有搭配） */
 const FONT_STACKS: Readonly<Record<"kai" | "hei", string>> = {
@@ -105,6 +108,12 @@ function isFontPref(v: string): v is FontPref {
   return v === "sans" || v === "serif" || v === "kai" || v === "hei";
 }
 
+/** 自动保存开关（用户反馈批次）：默认开——只有显式 off 才关，坏值也当开
+ *  （editor.ts 的 EditSessionDeps.isAutosaveEnabled 接此函数） */
+export function readAutosavePref(): boolean {
+  return localStorage.getItem(AUTOSAVE_KEY) !== "off";
+}
+
 /** 统一入口：应用 + 持久化 + 同步面板下拉（「衬」按钮与设置面板共用同一状态源） */
 export function setFontPref(font: FontPref): void {
   applyFontPref(font);
@@ -146,6 +155,10 @@ export function syncSettingsPanel(): void {
   if (font !== null) {
     font.value = readFontPref();
   }
+  const autosave = document.getElementById("set-autosave") as HTMLInputElement | null;
+  if (autosave !== null) {
+    autosave.checked = readAutosavePref();
+  }
 }
 
 function wireFontSize(): void {
@@ -180,11 +193,62 @@ function wireToggle(): void {
   });
 }
 
+function wireAutosaveToggle(): void {
+  const box = req<HTMLInputElement>("set-autosave");
+  box.checked = readAutosavePref(); // 启动回显
+  box.addEventListener("change", () => {
+    localStorage.setItem(AUTOSAVE_KEY, box.checked ? "on" : "off");
+  });
+}
+
+/** 面板卡片自动收起延时（用户反馈批次）：变更过且整体失焦后再等一小会 */
+export const PANEL_AUTO_CLOSE_MS = 800;
+
+/** 面板自动关（用户反馈批次）：字号步进/字体/主题任一变更后，**整个面板失焦**
+ *  （focusout 且落点不在面板内）800ms 才收起。实现要点：焦点落在面板内任何控件上
+ *  都会先触发一次 focusout（旧控件）再 focusin（新控件）——所以判定必须看
+ *  relatedTarget 是否仍在面板内：用户正连点步进对比字号时焦点始终在面板内，
+ *  绝不打断；失焦计时中焦点回面板（focusin）即取消。手动关闭路径
+ *  （Aa 按钮 / Esc 统一仲裁 / 面板外点击）一概不变。 */
+function wireAutoClose(panel: HTMLElement): void {
+  let changed = false;
+  let closeTimer = 0;
+
+  function markChanged(): void {
+    changed = true;
+  }
+
+  panel.addEventListener("focusin", () => window.clearTimeout(closeTimer));
+  panel.addEventListener("focusout", (event) => {
+    if (!changed) {
+      return; // 没改过任何设置：面板留着对比，不自动关
+    }
+    const next = event.relatedTarget;
+    if (next instanceof Node && panel.contains(next)) {
+      window.clearTimeout(closeTimer); // 焦点在面板内挪动（步进 ↔ 下拉）
+      return;
+    }
+    closeTimer = window.setTimeout(() => {
+      closeTimer = 0;
+      changed = false;
+      panel.hidden = true;
+    }, PANEL_AUTO_CLOSE_MS);
+  });
+  // 三个变更源只认用户在面板上的操作（启动恢复不算变更）
+  for (const id of ["set-fs-dec", "set-fs-inc"]) {
+    req<HTMLButtonElement>(id).addEventListener("click", markChanged);
+  }
+  req<HTMLSelectElement>("set-font").addEventListener("change", markChanged);
+  req<HTMLSelectElement>("set-theme").addEventListener("change", markChanged);
+}
+
 /** boot 时调用一次：恢复字号/字体并接好全部面板交互 */
 export function setupSettings(deps: SettingsHooks): void {
   hooks = deps;
   wireFontSize();
   wireFontSelect();
   wireThemeSelect();
+  wireAutosaveToggle();
   wireToggle();
+  wireAutoClose(req<HTMLElement>("settings-panel"));
 }

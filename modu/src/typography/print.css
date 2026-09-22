@@ -80,10 +80,31 @@
     block-size: auto;
     background: none; /* 画布底色不进 PDF（P2 遗留#1）：print-color-adjust exact 会把屏底一并带印 */
   }
+  /* 导出截断根因修复（2026-09-22 用户实测 1 页回归）：app.css 为无边框布局
+     设了 body{overflow:hidden} + #app{height:100vh}（滚动只归 #content），
+     打印时全文档被夹成一个视口高 → PDF 只剩 1 页 26KB。此处必须一并还原。 */
+  html,
+  body,
+  #app {
+    overflow: visible;
+    height: auto;
+    block-size: auto;
+  }
   #doc {
     max-inline-size: none;
     margin: 0;
     padding: 0;
+    background: none;
+  }
+
+  /* 首页底色根除（用户反馈批次·导出问题二，反向锚在 tests/css-fixes.spec.ts）：
+     #content/#doc 清画布色后，第一页仍带底色而边距无色、后页无——根因是
+     Chromium 打印管线把根链（html/body/#app/.body-row）的背景画进第一页的
+     内容盒（只此一页），@page 边距区与续页不吃根背景。四层全清，一个不留。 */
+  html,
+  body,
+  #app,
+  .body-row {
     background: none;
   }
 

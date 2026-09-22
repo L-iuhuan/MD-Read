@@ -635,6 +635,13 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
 }
 .settings-panel select:hover { border-color: var(--border-strong); }
 .settings-panel select:focus-visible { border-color: var(--accent-tint-border); }
+/* 自动保存开关（用户反馈批次）：原生 checkbox 染强调色定调，不另起自绘开关 */
+.settings-panel input[type="checkbox"] {
+  inline-size: 16px;
+  block-size: 16px;
+  accent-color: var(--accent-solid);
+  cursor: pointer;
+}
 /* 说明：下拉的箭头与展开列表由 UA/系统绘制（color-scheme 会跟随亮暗），
    纯 CSS 无法定制展开列表的选项行——要完全自定义需换自绘 listbox（属 TS 改动，越界）。*/
 
