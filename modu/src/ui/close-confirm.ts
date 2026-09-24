@@ -9,7 +9,11 @@
  * 三处 + 本浮层）统一在壳层样式表里读，注入 <style> 会多一份无处可查的 CSS。
  * 运行行为与抽取前逐条一致： #close-guard 遮罩、按钮「保存/放弃/取消」次序、
  * 首枚带 guard-primary、默认焦点在保存、Esc 与点浮层空白 = 取消、
- * capture 阶段监听 keydown 并 stopPropagation（不让全局 Esc 顺手关掉底下的浮层）。
+ * capture 阶段监听 keydown 并 stopImmediatePropagation（不让全局 Esc 顺手关掉底下的浮层）。
+ *
+ * A3：这里必须是 stopImmediatePropagation 而非 stopPropagation——本监听器与
+ * main.ts 的统一 Esc 仲裁、findbar 的自有 Esc 同挂在 document 上，stopPropagation
+ * 只挡「继续传播到别的节点」，挡不住同一节点上的后续监听器（审查报告 §4.1 实测）。
  */
 import type { CloseChoice } from "../app/tabs";
 
@@ -67,7 +71,9 @@ export function askCloseChoice(message: string): Promise<CloseChoice> {
     function onKey(event: KeyboardEvent): void {
       if (event.key === "Escape") {
         event.preventDefault();
-        event.stopPropagation(); // 别让全局 Esc 顺手关掉底下的浮层
+        // A3：stopImmediatePropagation（非 stopPropagation）——同节点同阶段的后续 Esc
+        // 监听器（含同挂 document 的统一仲裁/查找条）必须一并拦下，一次 Esc 只关一层
+        event.stopImmediatePropagation();
         settle("cancel");
       }
     }

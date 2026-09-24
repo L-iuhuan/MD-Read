@@ -9,7 +9,7 @@ export async function flushed(): Promise<void> {
     return;
   }
   await new Promise<void>((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve));
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
 }
 

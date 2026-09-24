@@ -113,7 +113,7 @@ describe("createDocState：行尾保真（D7）", () => {
 /* ---- 保存载荷 ---- */
 
 function makeTab(over: Partial<Tab> = {}): Tab {
-  return {
+  const base: Tab = {
     path: "D:\\docs\\a.md",
     title: "a.md",
     encoding: "GB18030",
@@ -123,8 +123,10 @@ function makeTab(over: Partial<Tab> = {}): Tab {
     bom: true,
     crlf: true,
     editor: null,
-    ...over,
+    cachedFragment: null,
+    outline: [],
   };
+  return { ...base, ...over };
 }
 
 describe("buildSaveArgs：save_file 载荷组装", () => {

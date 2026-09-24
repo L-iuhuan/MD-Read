@@ -67,7 +67,8 @@ let exportButton: HTMLButtonElement | null = null;
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (el === null) {
-    throw new Error(`界面元素缺失：#${id}`);
+    console.error(`界面元素缺失：#${id}`); // A4：技术细节只进 console（本错会经 revealBootFailure 直达面板）
+    throw new Error("界面资源未就绪，请重启墨读");
   }
   return el as T;
 }

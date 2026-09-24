@@ -71,12 +71,12 @@ describe("openEachMd（串行逐开）", () => {
 
   it("串行：前一个 open 未 resolve 前不启动下一个", async () => {
     const order: string[] = [];
-    let release: (() => void) | null = null;
+    const gate: { release: (() => void) | null } = { release: null };
     const open = async (path: string, _activate: boolean): Promise<void> => {
       order.push(`start:${path}`);
       if (path === "a.md") {
         await new Promise<void>((resolve) => {
-          release = resolve;
+          gate.release = resolve;
         });
       }
       order.push(`end:${path}`);
@@ -84,7 +84,7 @@ describe("openEachMd（串行逐开）", () => {
     const pending = openEachMd(["a.md", "b.md"], open);
     await Promise.resolve();
     expect(order).toEqual(["start:a.md"]);
-    release?.();
+    gate.release?.();
     await pending;
     expect(order).toEqual(["start:a.md", "end:a.md", "start:b.md", "end:b.md"]);
   });

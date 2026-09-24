@@ -75,8 +75,9 @@ export function resolveRelativeImages(container: HTMLElement, docPath: string): 
         img.src = convertFileSrc(abs);
       }
     })
-    .catch(() => {
-      // 授权失败不改 src（避免必然 404 的空转），按既有失败文案提示使用者
+    .catch((error: unknown) => {
+      // 授权失败不改 src（避免必然 404 的空转），按既有失败文案提示使用者；A4：错误本体只进 console
+      console.error(`图片资源授权失败（${pending.length} 张，文档：${docPath}）`, error);
       for (const { img } of pending) {
         img.title = LOAD_FAIL_TITLE;
       }

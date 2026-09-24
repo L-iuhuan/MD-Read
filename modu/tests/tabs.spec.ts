@@ -106,7 +106,8 @@ function activeEl(): HTMLElement | null {
   return document.querySelector<HTMLElement>("#tab-list .tab.active");
 }
 function barHidden(): boolean {
-  return (document.getElementById("tabbar") as HTMLElement).hidden;
+  // lib.dom 的 HTMLElement.hidden 是 boolean | "until-found"，此处只关心「是否隐藏」
+  return Boolean((document.getElementById("tabbar") as HTMLElement).hidden);
 }
 function loadingOn(): boolean {
   return (document.getElementById("content") as HTMLElement).classList.contains("content-loading");

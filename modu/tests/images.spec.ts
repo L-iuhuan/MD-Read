@@ -111,6 +111,7 @@ describe("resolveRelativeImages：容器批处理", () => {
 
   it("P0-3：invoke 拒绝时不赋 src，补同一中文失败 title", async () => {
     mocks.invoke.mockImplementation(() => Promise.reject(new Error("scope denied")));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {}); // A4：错误不再静默丢弃
     const container = mount('<img src="./missing.png"><img src="https://a/ok.png">');
     resolveRelativeImages(container, "E:/docs/a.md");
     await settle();
@@ -119,6 +120,11 @@ describe("resolveRelativeImages：容器批处理", () => {
     expect(rel.title).toBe("图片加载失败：文件不存在或不可读");
     expect(rel.getAttribute("src")).toBe("./missing.png"); // 未改写成必然 404 的 asset URL
     expect(remote.title).toBe(""); // 直载图不在授权清单内，也不挂提示
+    // A4：中文日志里能拿到失败原因（授权被拒）
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain("图片资源授权失败");
+    expect(errorSpy.mock.calls[0]?.[1]).toBeInstanceOf(Error);
+    errorSpy.mockRestore();
   });
 
   it("幂等：重复调用跳过已处理元素，不重复转换", async () => {

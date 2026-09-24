@@ -185,7 +185,8 @@ function whenPainted(run: () => void): void {
 export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabManager {
   const list = bar.querySelector<HTMLElement>("#tab-list");
   if (list === null) {
-    throw new Error("界面元素缺失：#tab-list");
+    console.error("界面元素缺失：#tab-list"); // A4：技术细节只进 console，使用者只看下一行
+    throw new Error("界面资源未就绪，请重启墨读");
   }
   const tabList: HTMLElement = list; // 闭包内保住非空类型
   const tabs: Tab[] = [];

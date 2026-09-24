@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check": "tsc --noEmit && vitest run"
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && eslint . && vitest run"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.1",
@@ -40,8 +40,12 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/markdown-it": "^14.2.0",
+    "@types/node": "^26.6.2",
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
     "jsdom": "^30.1.0",
     "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
     "vite": "^8.0.16",
     "vitest": "^5.0.1"
   }
