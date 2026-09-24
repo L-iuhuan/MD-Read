@@ -1,15 +1,18 @@
 /**
  * 「Aa」设置面板（M2 波3，用户反馈：字体是否考虑可以切换或者设置）。
  *
- * 五件事：
+ * 七件事：
  * ① 字号步进 14–20px：改 --fs-body（cjk.css 认定的唯一作用点），
  *   localStorage modu-fs 持久化、启动恢复；
- * ② 字体族四预设（微软雅黑/宋体/楷体/黑体，西文回落不变）：
- *   modu-font 持久化——取代「衬」按钮的职能（顶栏按钮并存，布局波4 定）。
- *   serif 走既有 #doc[data-face] 契约（cjk.css --font-serif 栈）；
- *   kai/hei 在 typography 冻结期落内联 font-family，不开新 CSS 钩子；
- *   旧键 modu-face=serif 作存量迁移回退，写入新键后退役。
+ * ② 字体（D-02 第二步起换血）：**推荐列表按语义分三组 + 常显「实际生效字体」**，
+ *   实现全部在 ui/font-picker.ts（目录来自 tokens.css，探测判据见 ui/font-detect.ts）。
+ *   本文件只保留接线：modu-font 持久化、旧 modu-face=serif 存量迁移回退、
+ *   字体变化后回调 onFontChange 重算排版。
+ *   ⚠ 旧「四预设 sans/serif/kai/hei」仍可读：resolvePick 会迁到对应新选项，
+ *     旧值不会被丢成默认值。
  * ③ 主题三档（亮/暗/自动）入面板：状态机在 ui/theme.ts，此处只接下拉；
+ *    D-01 批次再加一行「配色」下拉（5 套主题），与 ③ 正交组合出 10 组调色板；
+ *    持久化键 modu-palette（无记录回退靛蓝），读写与回显同样在 ui/theme.ts；
  * ④（波5）syncSettingsPanel：面板外改状态后刷新面板回显，面板打开时自调；
  * ⑤（用户反馈批次）自动保存开关：modu-autosave 持久化、默认开；
  * ⑥（用户反馈批次·语义纠正）行宽步进 40–60em 步进 2（默认 46）：写 --me-width，
@@ -21,37 +24,42 @@
  * DOM 结构与 id 就位、样式最简（app.css），波4 美化；禁 any、函数 ≤50 行。
  */
 import {
+  applyPalettePref,
   applyThemePref,
+  isPalettePref,
   isThemePref,
+  readPalettePref,
   readThemePref,
 } from "./theme";
+import {
+  mountFontPicker,
+  readFontPref,
+  refreshEffective,
+  setFontPref as applyFontPick,
+  type FontPickerHooks,
+} from "./font-picker";
 
 const FS_MIN = 14;
 const FS_MAX = 20;
 const FS_DEFAULT = 16; // 与 tokens.css --fs-body 默认同值
 const FS_KEY = "modu-fs";
-const FONT_KEY = "modu-font";
-const LEGACY_FACE_KEY = "modu-face"; // M2 波2 起的旧键：serif 存量迁移回退
 const WIDTH_MIN = 40; // em；步进 2，默认 46（与 tokens.css --measure 旧固定值同源）
 const WIDTH_MAX = 60;
 const WIDTH_DEFAULT = 46;
 const WIDTH_KEY = "modu-width";
 const AUTOSAVE_KEY = "modu-autosave";
 
-/** kai/hei 预设字体栈（sans=清内联回默认栈，serif=--font-serif 栈；西文回落沿用衬线/无衬线既有搭配） */
-const FONT_STACKS: Readonly<Record<"kai" | "hei", string>> = {
-  kai: '"KaiTi", "楷体", "STKaiti", "TW-Kai", Georgia, "Times New Roman", serif',
-  hei: '"SimHei", "黑体", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif',
-};
-
-export type FontPref = "sans" | "serif" | "kai" | "hei";
-
 export interface SettingsHooks {
   /** 取正文容器 #doc（字体预设的落点） */
   getDoc(): HTMLElement | null;
   /** 字体/字号变化后重算排版（壳层接 refitView：字体度量变了，断行与公式缩放要重跑） */
   onFontChange(): void;
+  /** 测试用的量器注入点（生产不传，走真实 canvas；见 font-picker 的 FontPickerHooks.measure） */
+  measure?: FontPickerHooks["measure"];
 }
+
+/** 字体面板需要的那两个钩子（与 SettingsHooks 同形；为避免重复声明只做结构复用） */
+export type SettingsFontHooks = FontPickerHooks;
 
 function req<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -67,6 +75,18 @@ let hooks: SettingsHooks = {
   getDoc: () => null,
   onFontChange: () => {},
 };
+
+/** 传给字体面板的钩子：getDoc / onFontChange 随时取当前值（#doc 可能被重建），
+ *  measure 原样透传（生产为 undefined） */
+function fontHooks(): FontPickerHooks {
+  const measure = hooks.measure;
+  return {
+    getDoc: () => hooks.getDoc(),
+    onFontChange: () => hooks.onFontChange(),
+    ...(measure === undefined ? {} : { measure }),
+  };
+}
+
 
 /** 字号钳制到 [14, 20] 并取整 px */
 export function clampFs(px: number): number {
@@ -88,48 +108,19 @@ function writeFs(px: number): void {
   localStorage.setItem(FS_KEY, String(v));
 }
 
-/** 读字体预设：modu-font 优先，无则回退旧 modu-face（serif 存量） */
-export function readFontPref(): FontPref {
-  const font = localStorage.getItem(FONT_KEY);
-  if (font === "sans" || font === "serif" || font === "kai" || font === "hei") {
-    return font;
-  }
-  return localStorage.getItem(LEGACY_FACE_KEY) === "serif" ? "serif" : "sans";
-}
+/** 字体选择（D-02）：目录/探测/「实际生效字体」全在 ui/font-picker.ts */
+export { readFontPref, refreshEffective };
 
-/** 应用字体预设到 #doc：serif 走 data-face 契约，kai/hei 内联栈，sans 全清 */
-export function applyFontPref(font: FontPref): void {
-  const doc = hooks.getDoc();
-  if (doc === null) return;
-  if (font === "serif") {
-    doc.style.removeProperty("font-family");
-    doc.dataset.face = "serif";
-  } else if (font === "kai" || font === "hei") {
-    delete doc.dataset.face;
-    doc.style.fontFamily = FONT_STACKS[font];
-  } else {
-    delete doc.dataset.face;
-    doc.style.removeProperty("font-family");
-  }
-}
-
-function isFontPref(v: string): v is FontPref {
-  return v === "sans" || v === "serif" || v === "kai" || v === "hei";
+/** 统一入口（对外保留旧名 setFontPref）：应用 + 持久化 + 回显 + 刷新读数。
+ *  旧值 sans/serif/kai/hei 由 font-picker 的 resolvePick 迁移到对应新选项。 */
+export function setFontPref(font: string): void {
+  applyFontPick(font, fontHooks());
 }
 
 /** 自动保存开关（用户反馈批次）：默认开——只有显式 off 才关，坏值也当开
  *  （editor.ts 的 EditSessionDeps.isAutosaveEnabled 接此函数） */
 export function readAutosavePref(): boolean {
   return localStorage.getItem(AUTOSAVE_KEY) !== "off";
-}
-
-/** 统一入口：应用 + 持久化 + 同步面板下拉（「衬」按钮与设置面板共用同一状态源） */
-export function setFontPref(font: FontPref): void {
-  applyFontPref(font);
-  localStorage.setItem(FONT_KEY, font);
-  localStorage.removeItem(LEGACY_FACE_KEY); // 双源归一，旧键退役
-  req<HTMLSelectElement>("set-font").value = font;
-  hooks.onFontChange();
 }
 
 /** 行宽钳制到 [40, 60] 并吸附到 2 的倍数（步进 2） */
@@ -177,6 +168,10 @@ export function syncSettingsPanel(): void {
   if (theme !== null) {
     theme.value = readThemePref(); // 回显三档偏好（非解析值）
   }
+  const palette = document.getElementById("set-palette") as HTMLSelectElement | null;
+  if (palette !== null) {
+    palette.value = readPalettePref(); // 回显 5 套配色（D-01）
+  }
   const fsVal = document.getElementById("set-fs-val");
   if (fsVal !== null) {
     fsVal.textContent = String(currentFs());
@@ -189,6 +184,7 @@ export function syncSettingsPanel(): void {
   if (font !== null) {
     font.value = readFontPref();
   }
+  refreshEffective(fontHooks()); // 「实际生效字体」与选择同批刷新（换主题/字号都可能改变命中）
   const autosave = document.getElementById("set-autosave") as HTMLInputElement | null;
   if (autosave !== null) {
     autosave.checked = readAutosavePref();
@@ -197,17 +193,19 @@ export function syncSettingsPanel(): void {
 
 function wireFontSize(): void {
   writeFs(readFsPref()); // 启动恢复 + 回显
-  req<HTMLButtonElement>("set-fs-dec").addEventListener("click", () => writeFs(readFsPref() - 1));
-  req<HTMLButtonElement>("set-fs-inc").addEventListener("click", () => writeFs(readFsPref() + 1));
+  req<HTMLButtonElement>("set-fs-dec").addEventListener("click", () => {
+    writeFs(readFsPref() - 1);
+    refreshEffective(fontHooks()); // 字号变了排版要重算，读数同批刷新
+  });
+  req<HTMLButtonElement>("set-fs-inc").addEventListener("click", () => {
+    writeFs(readFsPref() + 1);
+    refreshEffective(fontHooks());
+  });
 }
 
+/** 字体面板接线（D-02）：填目录 → 恢复选择 → change → 亮出「实际生效字体」 */
 function wireFontSelect(): void {
-  const select = req<HTMLSelectElement>("set-font");
-  select.value = readFontPref();
-  applyFontPref(readFontPref()); // 启动恢复：#doc 常驻 index.html，落容器上即可
-  select.addEventListener("change", () => {
-    if (isFontPref(select.value)) setFontPref(select.value);
-  });
+  mountFontPicker(fontHooks());
 }
 
 function wireThemeSelect(): void {
@@ -216,6 +214,18 @@ function wireThemeSelect(): void {
   select.addEventListener("change", () => {
     if (isThemePref(select.value)) {
       applyThemePref(select.value); // 三档状态机（含自动档）在 ui/theme.ts
+    }
+  });
+}
+
+/** 配色下拉（D-01）：5 套主题与亮暗正交；启动恢复 + 持久化都在 ui/theme.ts */
+function wirePaletteSelect(): void {
+  const select = req<HTMLSelectElement>("set-palette");
+  select.value = readPalettePref();
+  applyPalettePref(readPalettePref()); // 启动恢复：把持久化配色落到 data-palette
+  select.addEventListener("change", () => {
+    if (isPalettePref(select.value)) {
+      applyPalettePref(select.value);
     }
   });
 }
@@ -267,13 +277,14 @@ function wireAutosaveToggle(): void {
   });
 }
 
-/** boot 时调用一次：恢复字号/行宽/字体/主题并接好全部面板交互 */
+/** boot 时调用一次：恢复字号/行宽/字体/主题/配色并接好全部面板交互 */
 export function setupSettings(deps: SettingsHooks): void {
   hooks = deps;
   wireFontSize();
   wireWidth();
   wireFontSelect();
   wireThemeSelect();
+  wirePaletteSelect();
   wireAutosaveToggle();
   wireToggle();
   wireClickOutside(req<HTMLElement>("settings-panel"));

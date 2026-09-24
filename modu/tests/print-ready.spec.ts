@@ -103,7 +103,10 @@ describe("print.css 宪法锚（fs 直读）", () => {
     expect(css).toMatch(
       /#doc\s*\{[^}]*max-inline-size:\s*none[^}]*margin:\s*0[^}]*padding:\s*0/s,
     );
+    // D-05：旧两层壳（#titlebar + .topbar）已并成同一条 <header>，两个选择器都指它；
+    // 打印退场名单保持两条不变即可覆盖（不新增选择器、不改规则）
     expect(css).toMatch(/#titlebar[^{]*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/\.topbar[^{]*\{[^}]*display:\s*none/);
   });
 
   it("宪法红线（反向断言）：无 @page margin-box、无 counter(page)、无整表 avoid", () => {

@@ -102,6 +102,9 @@ function docHtml(): string {
 function tabEls(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>("#tab-list .tab"));
 }
+function sepEls(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>("#tab-list .tab-sep"));
+}
 function activeEl(): HTMLElement | null {
   return document.querySelector<HTMLElement>("#tab-list .tab.active");
 }
@@ -279,6 +282,81 @@ describe("dirty 标记（M3 启用，渲染先就绪）", () => {
     await open(h, "a.md", "AAA");
     await close(h, "a.md");
     expect(h.manager.count()).toBe(0);
+  });
+});
+
+/* ---- D-05 S1 标签：分隔线 / 脏点与 ✕ 互斥 / 批量关闭 ---- */
+
+describe("D-05 标签条（分隔线 + 互斥标记 + 批量关闭）", () => {
+  it("分隔线只画在标签之间（n 个标签 → n-1 条），两端不画", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    expect(sepEls()).toHaveLength(0);
+    await open(h, "b.md", "BBB");
+    expect(sepEls()).toHaveLength(1);
+    await open(h, "c.md", "CCC");
+    expect(sepEls()).toHaveLength(2);
+    await close(h, "c.md");
+    expect(sepEls()).toHaveLength(1);
+  });
+
+  it("分隔线是 aria-hidden 的纯装饰元素（不进无障碍树）", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    expect(sepEls()[0]?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("脏点 ● 与 ✕ 同格互斥：脏标签的 ● 可见，干净标签的 ● 隐藏", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    h.manager.setDirty("a.md", true);
+    const [a, b] = tabEls();
+    const dotOf = (el: HTMLElement): HTMLElement | null => el.querySelector(".tab-dirty");
+    expect(dotOf(a as HTMLElement)?.hidden).toBe(false); // 脏：● 显示
+    expect(dotOf(b as HTMLElement)?.hidden).toBe(true); // 干净：● 隐藏（格位让给 ✕）
+    expect(dotOf(a as HTMLElement)?.textContent).toBe("●");
+    // 两枚标签都恒有 ✕ 元素（宽度常驻，标题不因悬停重排），显隐由 CSS 的
+    // 「仅活动常驻 + hover/focus 浮现」与「hover 时 ● 隐身」共同承担
+    expect(a?.querySelector(".tab-close")?.textContent).toBe("✕");
+    expect(b?.querySelector(".tab-close")).not.toBeNull();
+  });
+});
+
+describe("D-05 批量关闭（▾ / ⋯ 菜单用）", () => {
+  it("closeOthers：只留活动标签，正文不受影响", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    await open(h, "c.md", "CCC"); // 活动是 c
+    h.manager.closeOthers();
+    await flushed();
+    expect(h.manager.paths()).toEqual(["c.md"]);
+    expect(h.manager.activeTab()?.path).toBe("c.md");
+    expect(docHtml()).toBe("<p>CCC</p>");
+  });
+
+  it("closeAll：全关 → onEmpty + tabbar 隐藏", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    h.manager.closeAll();
+    await flushed();
+    expect(h.manager.count()).toBe(0);
+    expect(h.onEmpty).toHaveBeenCalledTimes(1);
+    expect(barHidden()).toBe(true);
+  });
+
+  it("脏标签在批量关闭里逐个走确认：拒绝者留下，其余照关", async () => {
+    const h = setup(false); // confirm 恒 false
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    await open(h, "c.md", "CCC");
+    h.manager.setDirty("a.md", true); // 非活动且脏
+    h.manager.closeOthers(); // 想关 a、b 两个
+    await flushed();
+    expect(h.manager.paths()).toEqual(["a.md", "c.md"]); // a 被拒留下，b 关掉
   });
 });
 

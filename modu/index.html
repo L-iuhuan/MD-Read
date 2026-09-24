@@ -12,23 +12,142 @@
   </head>
   <body>
     <div id="app">
-      <!-- 自定义标题栏（M2 波3 反馈⑤：无边框轻盈感，tauri decorations:false）
-           波5 反馈③：标签行并入本行，浏览器式排布 —— [标签起始居左][弹性留白][三窗钮]；
-           拖拽区语义保留：标签行（含标签之间的空隙）与弹性留白都可拖。
-           ⚠ 拖拽区只写在 .titlebar-drag / #tabbar / #tab-list 上，不写 #titlebar：
-             双击最大化由 main.ts 绑在 .titlebar-drag 上，若父层再声明一次会双触发。
-           用户反馈批次：「墨读」文字已删——弹性留白保留为空拖拽垫片
-           （.titlebar-drag + data-tauri-drag-region），拖拽/双击能力不丢。 -->
-      <header id="titlebar" class="titlebar" aria-label="窗口标题栏">
+      <!-- 单栏合并顶栏（D-05 · T1「单栏合并」，实测高 48px = --h-chrome）——
+           旧「标题栏(36px) + 顶栏(40px)」两层合并为一条，省出 32px 正文高度。
+           排布：[☰ 大纲][标签 chip 组 + ＋][‹ › ▾ 导航组][动作区][窗口三钮]。
+           中间那个「与标签重复的文件名」已去（文档名改由窗口标题承担）。
+           拖拽区语义：data-tauri-drag-region **只写在标签条容器上**（与合并前一致）。
+           ⚠ 故意不写在本 <header> 上：该属性会把元素的**按下即拖拽**接管掉，写在
+             容器上会与子元素（标签 / 动作按钮 / 三窗钮）抢手势——标签条空档本来
+             就是整条栏里最大的一块热区，够用。
+           双击最大化由 main.ts 绑在 header 上并按事件目标排除控件（见 setupWindowControls）。
+           窗口三钮：内联 SVG —— 统一 16×16 视觉盒，盒内自绘 10px 线条（1px 发丝、居中），
+           三枚同色同尺寸，只有 close 的热区更宽（54px，图标仍居中）。颜色走 currentColor。
+           max 钮双态（用户反馈批次）：单框=最大化 / 双框=向下还原，main.ts 依
+           isMaximized 切换（onResized 监听），title/aria 同步。 -->
+      <header id="titlebar" class="topbar" aria-label="窗口标题栏与工具栏">
+        <!-- ☰ 大纲折叠（P5 批2）：toggle body.outline-off，态存 localStorage modu-outline -->
+        <button id="btn-outline" type="button" title="显示/隐藏大纲" aria-label="显示或隐藏大纲">☰</button>
+        <!-- 标签条：占满整条栏高（align-self: stretch 由 CSS 给 —— 不 stretch 会让下划线与
+             分隔线错位 10~20px，见 app.css §3 的实测值）。标签之间 1px×14px 细分隔线；
+             ‹ › ▾ 导航组只在「标签确有溢出」时出现；＋ 新建钉在可视区右端（sticky）。
+             非活动标签与「关闭其他/全部标签」经 ⋯ / ▾ 菜单可达，键盘焦点不会被单行滚动藏掉。 -->
         <div id="tabbar" class="tabbar" data-tauri-drag-region hidden>
           <div id="tab-list" class="tab-list" role="tablist" data-tauri-drag-region></div>
-          <button id="btn-newtab" type="button" title="打开文件（新标签）">+</button>
+          <button id="btn-newtab" type="button" title="打开文件（新标签）" aria-label="打开文件（新标签）">＋</button>
         </div>
-        <div class="titlebar-drag" data-tauri-drag-region></div>
-        <!-- 窗口三钮：内联 SVG —— 统一 16×16 视觉盒，盒内自绘 10px 线条（1px 发丝、居中），
-             三枚同色同尺寸，只有 close 的热区更宽（54px，图标仍居中）。颜色走 currentColor。
-             max 钮双态（用户反馈批次）：单框=最大化 / 双框=向下还原，main.ts 依
-             isMaximized 切换（onResized 监听），title/aria 同步。 -->
+        <div id="tabs-nav" class="tabs-nav" hidden>
+          <button id="tabs-prev" type="button" title="向左滚动标签（左侧还有标签）" aria-label="向左滚动标签条" disabled>‹</button>
+          <button id="tabs-next" type="button" title="向右滚动标签（右侧还有标签）" aria-label="向右滚动标签条" disabled>›</button>
+          <button id="tabs-list" type="button" class="tabs-list-btn" title="全部标签" aria-label="列出全部标签" aria-haspopup="menu" aria-expanded="false">▾</button>
+          <div id="tabs-menu" class="tabs-menu" role="menu" aria-label="全部标签" hidden></div>
+        </div>
+        <span id="act-sep" class="act-sep"></span>
+        <div id="actions" class="actions">
+          <!-- 强调按钮：全条唯一的软底主色按钮（其余动作都是纸面填充的发丝线按钮） -->
+          <button id="btn-edit" type="button" class="is-accent" title="编辑 / 阅读（Ctrl+E）" aria-label="切换编辑与阅读模式" disabled>编辑</button>
+          <!-- ⋯ 溢出菜单（D-05 新增功能）：拥挤时收进「打开… / 最近」与标签批量操作。
+               常显项（编辑 / Aa / ◐ / PDF）留在条上，保证任何时候都点得到。 -->
+          <div id="overflow-wrap" class="overflow-wrap">
+            <button id="btn-overflow" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
+            <div id="overflow-menu" class="overflow-menu" role="menu" aria-label="更多操作" hidden></div>
+          </div>
+          <button id="btn-open" type="button" title="打开 Markdown 文件">打开…</button>
+          <div id="recent-wrap" class="recent-wrap">
+            <button id="btn-recent" type="button" title="最近打开的文件">最近</button>
+            <div id="recent-menu" class="recent-menu" hidden></div>
+          </div>
+          <div class="settings-wrap">
+            <button id="btn-settings" type="button" title="字体与外观设置" aria-label="打开字体与外观设置面板">Aa</button>
+            <!-- 「Aa」设置面板（M2 波3 反馈⑥：字号/字体/主题；波4 起为卡片化浮层） -->
+            <div id="settings-panel" class="settings-panel" hidden aria-label="字体与外观设置">
+              <div class="settings-row">
+                <span class="settings-label" id="set-fs-label">字号</span>
+                <div class="settings-fs" role="group" aria-labelledby="set-fs-label">
+                  <button id="set-fs-dec" type="button" title="减小字号" aria-label="减小字号">−</button>
+                  <span id="set-fs-val">16</span>
+                  <button id="set-fs-inc" type="button" title="增大字号" aria-label="增大字号">＋</button>
+                </div>
+              </div>
+              <!-- 行宽（用户反馈批次·新功能）：40–60em 步进 2，写 --me-width（--measure 派生链） -->
+              <div class="settings-row">
+                <span class="settings-label" id="set-width-label">行宽</span>
+                <div class="settings-fs" role="group" aria-labelledby="set-width-label">
+                  <button id="set-width-dec" type="button" title="减小行宽" aria-label="减小行宽">−</button>
+                  <span id="set-width-val">46</span>
+                  <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
+                </div>
+              </div>
+              <!-- 字体（D-02）：推荐列表 = 中文正文 / 西文拉丁 / 代码 三组语义分组。
+                   这里只放「id + 中文名 + 它对应 tokens.css 里的哪个栈变量」；
+                   栈本身（完整回退链）与首选族名只写在 tokens.css 的 --font-pick-* 里，
+                   ui/font-catalog.ts 运行时读 CSSOM 取回，故 TS/CSS 逻辑文件零字体族名字面值。
+                   选项文案由 ui/font-picker.ts 按可用性补「（本机未安装）」标注。
+                   下面一行是本步最关键的常显项：**当前实际渲染出来的族名**，
+                   用拉丁串字宽在 400/700 两个字重上实测——「选了 A 实际是 B」由此直接暴露。 -->
+              <div class="settings-row settings-font">
+                <label class="settings-label" for="set-font">字体</label>
+                <select id="set-font" class="settings-select" title="正文字体" aria-label="正文字体">
+                  <optgroup label="中文正文" data-group="cjk">
+                    <option value="cjk-harmonyos" data-stack-var="--font-pick-cjk-harmonyos">HarmonyOS Sans SC</option>
+                    <option value="cjk-yahei" data-stack-var="--font-pick-cjk-yahei">微软雅黑</option>
+                    <option value="cjk-lxgw" data-stack-var="--font-pick-cjk-lxgw">霞鹜文楷 屏幕版</option>
+                    <option value="cjk-songti" data-stack-var="--font-pick-cjk-songti">宋体</option>
+                    <option value="cjk-notoserif" data-stack-var="--font-pick-cjk-notoserif">思源宋体（Noto Serif SC）</option>
+                  </optgroup>
+                  <optgroup label="西文拉丁" data-group="latin">
+                    <option value="latin-inter" data-stack-var="--font-pick-latin-inter">Inter</option>
+                    <option value="latin-segoe" data-stack-var="--font-pick-latin-segoe">Segoe UI Variable Text</option>
+                    <option value="latin-georgia" data-stack-var="--font-pick-latin-georgia">Georgia（衬线）</option>
+                    <option value="latin-times" data-stack-var="--font-pick-latin-times">Times New Roman（衬线）</option>
+                    <option value="latin-yaheiui" data-stack-var="--font-pick-latin-yaheiui">Microsoft YaHei UI</option>
+                  </optgroup>
+                  <optgroup label="代码" data-group="mono">
+                    <option value="mono-maple-nf" data-stack-var="--font-pick-mono-maple-nf">Maple Mono NF</option>
+                    <option value="mono-maple" data-stack-var="--font-pick-mono-maple">Maple Mono（变量版）</option>
+                    <option value="mono-cascadia" data-stack-var="--font-pick-mono-cascadia">Cascadia Mono</option>
+                    <option value="mono-consolas" data-stack-var="--font-pick-mono-consolas">Consolas</option>
+                    <option value="mono-maple-mix" data-stack-var="--font-pick-mono-maple-mix">Maple Mono NF（中文回雅黑）</option>
+                  </optgroup>
+                </select>
+              </div>
+              <div class="settings-row settings-effective">
+                <span class="settings-label">实际生效</span>
+                <code id="set-font-effective" data-role="font-effective" title="当前正文字体在 400 字重下实际渲染的字体族（拉丁串字宽探测）">检测中…</code>
+                <code id="set-font-effective-bold" data-role="font-effective-bold" title="加粗（700 字重）实际渲染的字体族；与 400 不同时会另有提示">检测中…</code>
+                <span id="set-font-hint" class="settings-effective-hint" data-role="font-effective-hint">正在探测本机字体…</span>
+              </div>
+              <div class="settings-row">
+                <label class="settings-label" for="set-theme">主题</label>
+                <select id="set-theme" title="界面主题" aria-label="界面主题">
+                  <option value="light">浅色</option>
+                  <option value="dark">深色</option>
+                  <option value="auto">自动（跟随系统）</option>
+                </select>
+              </div>
+              <!-- 配色（D-01）：5 套主题 × （上面的亮/暗/自动）= 10 组调色板；
+                   data-palette 是新维度，data-theme 语义不变（见 tokens.css 顶部契约）。 -->
+              <div class="settings-row">
+                <label class="settings-label" for="set-palette">配色</label>
+                <select id="set-palette" title="主题配色" aria-label="主题配色">
+                  <option value="dianlan">靛蓝</option>
+                  <option value="xuanzhi">宣纸</option>
+                  <option value="shimo">石墨</option>
+                  <option value="zidai">紫黛</option>
+                  <option value="qingmo">青墨</option>
+                </select>
+              </div>
+              <!-- 自动保存开关（用户反馈批次）：默认开，modu-autosave 持久化 -->
+              <div class="settings-row">
+                <label class="settings-label" for="set-autosave">自动保存</label>
+                <input id="set-autosave" type="checkbox" checked
+                       title="编辑时改动停顿 2 秒后自动保存" aria-label="编辑时自动保存" />
+              </div>
+            </div>
+          </div>
+          <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
+          <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>PDF</button>
+        </div>
         <button id="win-min" type="button" title="最小化" aria-label="最小化">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
                fill="none" stroke="currentColor" stroke-width="1" shape-rendering="crispEdges">
@@ -52,66 +171,6 @@
             <path d="M3.5 3.5 12.5 12.5M12.5 3.5 3.5 12.5" />
           </svg>
         </button>
-      </header>
-      <header class="topbar">
-        <!-- ☰ 大纲折叠（P5 批2）：toggle body.outline-off，态存 localStorage modu-outline -->
-        <button id="btn-outline" type="button" title="显示/隐藏大纲" aria-label="显示或隐藏大纲">☰</button>
-        <button id="btn-open" type="button" title="打开 Markdown 文件">打开…</button>
-        <span id="doc-title" class="doc-title" title="当前文件">未打开文件</span>
-        <div id="recent-wrap" class="recent-wrap">
-          <button id="btn-recent" type="button" title="最近打开的文件">最近</button>
-          <div id="recent-menu" class="recent-menu" hidden></div>
-        </div>
-        <span class="topbar-spacer"></span>
-        <div class="settings-wrap">
-          <button id="btn-settings" type="button" title="字体与外观设置" aria-label="打开字体与外观设置面板">Aa</button>
-          <!-- 「Aa」设置面板（M2 波3 反馈⑥：字号/字体/主题；波4 起为卡片化浮层） -->
-          <div id="settings-panel" class="settings-panel" hidden aria-label="字体与外观设置">
-            <div class="settings-row">
-              <span class="settings-label" id="set-fs-label">字号</span>
-              <div class="settings-fs" role="group" aria-labelledby="set-fs-label">
-                <button id="set-fs-dec" type="button" title="减小字号" aria-label="减小字号">−</button>
-                <span id="set-fs-val">16</span>
-                <button id="set-fs-inc" type="button" title="增大字号" aria-label="增大字号">＋</button>
-              </div>
-            </div>
-            <!-- 行宽（用户反馈批次·新功能）：40–60em 步进 2，写 --me-width（--measure 派生链） -->
-            <div class="settings-row">
-              <span class="settings-label" id="set-width-label">行宽</span>
-              <div class="settings-fs" role="group" aria-labelledby="set-width-label">
-                <button id="set-width-dec" type="button" title="减小行宽" aria-label="减小行宽">−</button>
-                <span id="set-width-val">46</span>
-                <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
-              </div>
-            </div>
-            <div class="settings-row">
-              <label class="settings-label" for="set-font">字体</label>
-              <select id="set-font" title="正文字体" aria-label="正文字体">
-                <option value="sans">微软雅黑</option>
-                <option value="serif">宋体（衬线）</option>
-                <option value="kai">楷体</option>
-                <option value="hei">黑体</option>
-              </select>
-            </div>
-            <div class="settings-row">
-              <label class="settings-label" for="set-theme">主题</label>
-              <select id="set-theme" title="界面主题" aria-label="界面主题">
-                <option value="light">浅色</option>
-                <option value="dark">深色</option>
-                <option value="auto">自动（跟随系统）</option>
-              </select>
-            </div>
-            <!-- 自动保存开关（用户反馈批次）：默认开，modu-autosave 持久化 -->
-            <div class="settings-row">
-              <label class="settings-label" for="set-autosave">自动保存</label>
-              <input id="set-autosave" type="checkbox" checked
-                     title="编辑时改动停顿 2 秒后自动保存" aria-label="编辑时自动保存" />
-            </div>
-          </div>
-        </div>
-        <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
-        <button id="btn-edit" type="button" title="编辑 / 阅读（Ctrl+E）" aria-label="切换编辑与阅读模式" disabled>✎ 编辑</button>
-        <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>⇩ PDF</button>
       </header>
       <div id="findbar" class="findbar" hidden>
         <input id="find-input" type="text" placeholder="查找…" aria-label="查找内容" />

@@ -8,6 +8,7 @@
  */
 import type { SavedEditorState } from "../editor/editor";
 import type { OutlineItem, RenderResult } from "../render/pipeline";
+import { createTabMenus, type TabMenus } from "../ui/tabs-menu";
 
 /** 标签状态。dirty/bom/crlf 由 M3 编辑器接线启用；editor 为编辑器态存档 */
 export interface Tab {
@@ -73,6 +74,10 @@ export interface TabManager {
   openTab(path: string, file: TabFile, activate?: boolean): void;
   activateTab(path: string): void;
   closeTab(path: string): void;
+  /** 关掉除活动项以外的全部标签（▾ / ⋯ 菜单「关闭其他标签」）。脏标签逐个走确认。 */
+  closeOthers(): void;
+  /** 关掉全部标签（菜单「关闭全部标签」）。脏标签逐个走确认。 */
+  closeAll(): void;
   activeTab(): Tab | null;
   setDirty(path: string, dirty: boolean): void;
   count(): number;
@@ -305,13 +310,107 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     return el;
   }
 
+  /** 标签之间的 1px × 14px 细分隔线（S1）。用真元素而非 ::before：
+   *  「活动/悬停标签两侧不画线」靠 CSS 的 `+` / `:has(+ …)` 兄弟选择器表达，
+   *  比在 JS 里维护「谁是相邻的」索引稳得多（也不怕拖拽重排）。 */
+  function buildSepEl(): HTMLElement {
+    const sep = document.createElement("span");
+    sep.className = "tab-sep";
+    sep.setAttribute("aria-hidden", "true");
+    return sep;
+  }
+
+  /** 把新激活的标签滚进可视区（用户定稿：切标签时自动滚）。同步调用——
+   *  renderBar 已重建 DOM，布局同步可得；`inline: "nearest"` 表示已经可见就不动。
+   *  `typeof` 守卫是为 jsdom：它不实现 scrollIntoView（测试环境没有布局引擎），
+   *  真机（WebView2）恒有。守卫让同一份代码在两侧都能跑，不必给测试打补丁。 */
+  function revealTab(path: string): void {
+    const el = tabList.querySelector<HTMLElement>(`.tab[data-path="${CSS.escape(path)}"]`);
+    if (el !== null && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }
+
   function renderBar(): void {
     tabList.textContent = "";
     for (const tab of tabs) {
       tabList.appendChild(buildTabEl(tab, tab.path === activePath));
+      if (tab !== tabs[tabs.length - 1]) {
+        tabList.appendChild(buildSepEl()); // 分隔线只画在标签之间，两端不画
+      }
     }
     bar.hidden = tabs.length === 0;
+    // syncNav 里会读 scrollWidth/clientWidth 与 scrollLeft —— 必须在节点已入 DOM 之后
+    syncNav();
+    if (activePath !== null) {
+      revealTab(activePath);
+    }
   }
+
+  /* ---- 标签条滚动：‹ › 可用性 / 滚轮横滚 / ▾ ⋯ 菜单 ---- */
+
+  const prevBtn = document.getElementById("tabs-prev");
+  const nextBtn = document.getElementById("tabs-next");
+
+  /** ‹ › 的可用性判据是「**该侧确实还有标签**」，不是「方向」（用户定稿）：
+   *  scrollLeft > 0 ⇒ 左侧还有被滚出去的标签；未到右端 ⇒ 右侧还有。 */
+  function syncScrollButtons(): void {
+    const max = tabList.scrollWidth - tabList.clientWidth;
+    if (prevBtn instanceof HTMLButtonElement) {
+      prevBtn.disabled = tabList.scrollLeft <= 0;
+    }
+    if (nextBtn instanceof HTMLButtonElement) {
+      nextBtn.disabled = tabList.scrollLeft >= max - 1;
+    }
+  }
+
+  /** 一次滚动约「一个可视宽的一半」，最少一枚标签的宽度 */
+  function navStep(): number {
+    return Math.max(80, Math.round(tabList.clientWidth / 2));
+  }
+
+  function syncNav(): void {
+    syncScrollButtons();
+    menus?.sync();
+  }
+
+  const menus: TabMenus | null = createTabMenus({
+    bar,
+    getTabs: () => tabs,
+    activePath: () => activePath,
+    activate: activateTab,
+    closeTab,
+    closeOthers,
+    closeAll,
+  });
+
+  prevBtn?.addEventListener("click", () => {
+    tabList.scrollBy({ left: -navStep(), behavior: "smooth" });
+  });
+  nextBtn?.addEventListener("click", () => {
+    tabList.scrollBy({ left: navStep(), behavior: "smooth" });
+  });
+  tabList.addEventListener("scroll", syncScrollButtons, { passive: true });
+  /* 滚轮在标签条上 → 横向滚动（用户定稿）。Chrome 对 overflow-x:auto + overflow-y:hidden
+     的容器**已经**支持纵向滚轮横滚，但触控板横向手势与 Shift+滚轮仍会落到纵向分量上，
+     这里统一归一化：把 deltaY 翻成 scrollLeft，deltaX 原样叠加。
+     preventDefault 是必要的 —— 否则页面/正文会跟着滚（内容区就在正下方）。 */
+  tabList.addEventListener(
+    "wheel",
+    (event) => {
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (delta === 0) {
+        return;
+      }
+      const max = tabList.scrollWidth - tabList.clientWidth;
+      if (max <= 0) {
+        return; // 无溢出：不拦滚轮，交给祖先（滚动条只在真有溢出时才「吃」滚轮）
+      }
+      event.preventDefault();
+      tabList.scrollLeft += delta;
+    },
+    { passive: false }
+  );
 
   /** 拖拽排序（用户反馈批次）：HTML5 DnD——dragstart 记源并半透明（.dragging），
    *  dragover preventDefault + 按命中标签中点实时挪 DOM 插入位，drop/dragend
@@ -441,10 +540,31 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     }
   }
 
+  /** 关闭一批标签（▾ / ⋯ 菜单的批量关闭）。逐个走 closeTab —— dirty 标签照常弹确认，
+   *  用户取消的那一个就留下（批量操作不做「全有或全无」，与单个关闭的语义一致）。
+   *  ⚠ 快照路径再遍历：closeTab 会改 tabs 数组，直接迭代 live 数组会跳项。 */
+  function closeMany(paths: string[]): void {
+    for (const path of [...paths]) {
+      if (find(path) !== null) {
+        closeTab(path);
+      }
+    }
+  }
+
+  function closeOthers(): void {
+    closeMany(tabs.filter((tab) => tab.path !== activePath).map((tab) => tab.path));
+  }
+
+  function closeAll(): void {
+    closeMany(tabs.map((tab) => tab.path));
+  }
+
   return {
     openTab,
     activateTab,
     closeTab,
+    closeOthers,
+    closeAll,
     activeTab: () => find(activePath ?? ""),
     setDirty(path: string, dirty: boolean): void {
       const tab = find(path);

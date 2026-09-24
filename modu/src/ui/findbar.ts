@@ -14,8 +14,9 @@ export interface Findbar {
 }
 
 /**
- * Esc 统一关浮层（P5 批2）：依序 findbar → 设置面板 → 最近菜单，一次只关
- * 最上层一个（都开着也只关一个）；返回是否关掉了东西。
+ * Esc 统一关浮层（P5 批2）：依序 findbar → 设置面板 → 最近菜单 → 全部标签列表（▾）
+ * → 溢出菜单（⋯），一次只关最上层一个（都开着也只关一个）；返回是否关掉了东西。
+ * D-05 追加后两者：新菜单与旧浮层共用同一个仲裁，不各自绑 Esc（否则一次 Esc 关两层）。
  * ⚠ main.ts 的全局 Esc 监听须先于 setupFindbar 注册，保证统一仲裁抢在
  * findbar 自有的 Esc 之前定夺（否则一次 Esc 会连关两层）。
  */
@@ -24,15 +25,18 @@ export function closeTopmostOverlay(findbar: Findbar | null): boolean {
     findbar.close();
     return true;
   }
-  const panel = document.getElementById("settings-panel");
-  if (panel !== null && !panel.hidden) {
-    panel.hidden = true;
-    return true;
-  }
-  const menu = document.getElementById("recent-menu");
-  if (menu !== null && !menu.hidden) {
-    menu.hidden = true;
-    return true;
+  const overlayIds = ["settings-panel", "recent-menu", "tabs-menu", "overflow-menu"];
+  for (const id of overlayIds) {
+    const el = document.getElementById(id);
+    if (el !== null && !el.hidden) {
+      el.hidden = true;
+      // ▾ / ⋯ 的按钮点灯态同步复位（aria-expanded 是它的可见回显）
+      const btn = id === "tabs-menu" ? "tabs-list" : id === "overflow-menu" ? "btn-overflow" : null;
+      if (btn !== null) {
+        document.getElementById(btn)?.setAttribute("aria-expanded", "false");
+      }
+      return true;
+    }
   }
   return false;
 }

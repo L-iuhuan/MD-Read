@@ -7,8 +7,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  applyPalettePref,
   applyThemePref,
   nextThemePref,
+  readPalettePref,
   readThemePref,
   resolvedTheme,
   setupThemeEngine,
@@ -22,12 +24,20 @@ function mountChrome(): void {
       <option value="light">浅色</option>
       <option value="dark">深色</option>
       <option value="auto">自动（跟随系统）</option>
+    </select>
+    <select id="set-palette">
+      <option value="dianlan">靛蓝</option>
+      <option value="xuanzhi">宣纸</option>
+      <option value="shimo">石墨</option>
+      <option value="zidai">紫黛</option>
+      <option value="qingmo">青墨</option>
     </select>`;
 }
 
 beforeEach(() => {
   localStorage.clear();
   delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.palette;
   mountChrome();
 });
 
@@ -83,6 +93,48 @@ describe("applyThemePref（应用 + 持久化 + 回显 + 钩子）", () => {
     applyThemePref("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.getElementById("btn-theme")?.title).toContain("深色");
+  });
+});
+
+describe("配色（D-01：5 套主题，与 data-theme 正交）", () => {
+  it("readPalettePref：无记录/坏值回退 dianlan；五套合法值原样读回", () => {
+    expect(readPalettePref()).toBe("dianlan");
+    localStorage.setItem("modu-palette", "乱码");
+    expect(readPalettePref()).toBe("dianlan");
+    for (const pref of ["dianlan", "xuanzhi", "shimo", "zidai", "qingmo"] as const) {
+      localStorage.setItem("modu-palette", pref);
+      expect(readPalettePref()).toBe(pref);
+    }
+  });
+
+  it("applyPalettePref：data-palette=键 + modu-palette 持久化 + 下拉回显 + 钩子收解析亮暗", () => {
+    const hook = vi.fn();
+    setupThemeEngine(hook);
+    applyThemePref("dark");
+    applyPalettePref("zidai");
+    expect(document.documentElement.dataset.palette).toBe("zidai");
+    expect(localStorage.getItem("modu-palette")).toBe("zidai");
+    expect((document.getElementById("set-palette") as HTMLSelectElement).value).toBe("zidai");
+    expect(hook).toHaveBeenLastCalledWith("dark"); // Mermaid 重画收解析值
+  });
+
+  it("两维度互不干涉：改亮暗不动 data-palette，改配色不动 data-theme", () => {
+    applyPalettePref("qingmo");
+    applyThemePref("dark");
+    expect(document.documentElement.dataset.palette).toBe("qingmo");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    applyPalettePref("shimo");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    applyThemePref("light");
+    expect(document.documentElement.dataset.palette).toBe("shimo");
+  });
+
+  it("◐ 钮 title 同时回显亮暗档与配色（元素缺席时不抛错）", () => {
+    applyPalettePref("xuanzhi");
+    applyThemePref("light");
+    const title = document.getElementById("btn-theme")?.title ?? "";
+    expect(title).toContain("浅色");
+    expect(title).toContain("宣纸");
   });
 });
 

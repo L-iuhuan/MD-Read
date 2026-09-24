@@ -1,5 +1,5 @@
 /**
- * 主题引擎（用户反馈批次·跟随系统主题）：亮 / 暗 / 自动 三档。
+ * 主题引擎（用户反馈批次·跟随系统主题；D-01 批次加「配色」维度）。
  *
  * - 「自动」= matchMedia('(prefers-color-scheme: dark)') 即时解析：系统切换
  *   主题的瞬间跟随（watchSystemTheme 的 change 监听），亮/暗档是用户显式
@@ -8,19 +8,35 @@
  * - data-theme 恒写**解析值**（light/dark）——tokens.css 的暗色块只认这两个值，
  *   面板下拉与 ◐ 按钮则回显三档偏好本身；
  * - ◐ 按钮循环三态：亮 → 暗 → 自动 → 亮（nextThemePref）。
+ * - D-01（5 套主题 × 亮暗 = 10 组调色板）：新增**正交**维度 data-palette，
+ *   与 data-theme 互不干涉（data-theme 语义一字未改，既有测试与代码依赖不变）。
+ *   data-palette 只取 dianlan / xuanzhi / shimo / zidai / qingmo；持久化键
+ *   modu-palette，无记录/坏值回退 "dianlan"（默认主题，与 tokens.css 的
+ *   :root 组同值）。若属性缺失，CSS 由 :root 兜底成靛蓝亮，不会掉样式。
  * 从 settings.ts 拆出（该文件管面板 DOM 接线，本文件管主题状态机），
  * main.ts 经 setupThemeEngine 接 refreshMermaidTheme。
  */
 
 export type ThemePref = "light" | "dark" | "auto";
 export type ResolvedTheme = "light" | "dark";
+/** D-01 五套配色（亮暗由 ThemePref 决定，两者正交组合出 10 组调色板） */
+export type PalettePref = "dianlan" | "xuanzhi" | "shimo" | "zidai" | "qingmo";
 
 const THEME_KEY = "modu-theme";
+const PALETTE_KEY = "modu-palette";
 
 const PREF_LABELS: Readonly<Record<ThemePref, string>> = {
   light: "浅色",
   dark: "深色",
   auto: "自动",
+};
+
+const PALETTE_LABELS: Readonly<Record<PalettePref, string>> = {
+  dianlan: "靛蓝",
+  xuanzhi: "宣纸",
+  shimo: "石墨",
+  zidai: "紫黛",
+  qingmo: "青墨",
 };
 
 /** 主题变更钩子（收到的是解析值；boot 前为无害默认） */
@@ -38,6 +54,31 @@ export function isThemePref(v: string): v is ThemePref {
 export function readThemePref(): ThemePref {
   const raw = localStorage.getItem(THEME_KEY);
   return raw !== null && isThemePref(raw) ? raw : "light";
+}
+
+export function isPalettePref(v: string): v is PalettePref {
+  return v === "dianlan" || v === "xuanzhi" || v === "shimo" || v === "zidai" || v === "qingmo";
+}
+
+/** 读配色偏好；无记录/坏值回退 dianlan（默认主题，与 tokens.css :root 同值） */
+export function readPalettePref(): PalettePref {
+  const raw = localStorage.getItem(PALETTE_KEY);
+  return raw !== null && isPalettePref(raw) ? raw : "dianlan";
+}
+
+/** 应用配色：data-palette + 持久化 + 面板下拉回显 + 钩子（Mermaid 重画） */
+export function applyPalettePref(pref: PalettePref): void {
+  document.documentElement.dataset.palette = pref;
+  localStorage.setItem(PALETTE_KEY, pref);
+  const select = document.getElementById("set-palette");
+  if (select instanceof HTMLSelectElement) {
+    select.value = pref;
+  }
+  const btn = document.getElementById("btn-theme");
+  if (btn !== null) {
+    btn.title = themeButtonTitle(readThemePref());
+  }
+  changeHook(resolvedTheme(readThemePref()));
 }
 
 /** 系统当前是否偏好深色（matchMedia 缺席——如 jsdom——按亮色） */
@@ -60,6 +101,11 @@ export function nextThemePref(cur: ThemePref): ThemePref {
   return cur === "light" ? "dark" : cur === "dark" ? "auto" : "light";
 }
 
+/** ◐ 按钮 title：亮暗偏好 + 当前配色（两维度都在同一个回显点） */
+function themeButtonTitle(pref: ThemePref): string {
+  return `主题：${PREF_LABELS[pref]} · 配色：${PALETTE_LABELS[readPalettePref()]}（点击切换）`;
+}
+
 /** 应用主题：data-theme=解析值 + 持久化 + 面板下拉/◐ 钮回显 + 钩子 */
 export function applyThemePref(pref: ThemePref): void {
   document.documentElement.dataset.theme = resolvedTheme(pref);
@@ -70,7 +116,7 @@ export function applyThemePref(pref: ThemePref): void {
   }
   const btn = document.getElementById("btn-theme");
   if (btn !== null) {
-    btn.title = `主题：${PREF_LABELS[pref]}（点击切换）`;
+    btn.title = themeButtonTitle(pref);
   }
   changeHook(resolvedTheme(pref));
 }

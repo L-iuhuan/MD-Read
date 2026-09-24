@@ -33,11 +33,13 @@ describe("M2 波3 CSS 修复锚点（波4 归位后）", () => {
     expect(cjk).toMatch(/\.math-fallback--display\s*\{[^}]*text-align:\s*center/);
   });
 
-  it("反馈⑤：标题栏刻度在 tokens，查找条定位计入标题栏高度（防回归重叠）", () => {
-    expect(tokens).toMatch(/--h-titlebar:\s*36px/);
+  it("反馈⑤：顶栏刻度在 tokens，查找条定位计入顶栏高度（防回归重叠）", () => {
+    // D-05 起顶栏只剩一层（--h-chrome = 48px），旧两层刻度（--h-titlebar/--h-topbar）已删
+    expect(tokens).toMatch(/--h-chrome:\s*48px/);
+    expect(tokens).not.toMatch(/--h-titlebar/);
     const offsets = app.match(/\.findbar\s*\{[^}]*inset-block-start:[^}]*/g) ?? [];
-    const withTitlebar = offsets.filter((rule) => rule.includes("--h-titlebar"));
-    expect(withTitlebar.length).toBeGreaterThanOrEqual(1);
+    const withChrome = offsets.filter((rule) => rule.includes("--h-chrome"));
+    expect(withChrome.length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -118,13 +120,18 @@ describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () 
   it("标签：拖拽半透明反馈 + ✕ 瘦身 18px + 焦点在标签上可见", () => {
     expect(app).toMatch(/\.tab\.dragging\s*\{[^}]*opacity/);
     expect(app).toMatch(/\.tab-close\s*\{[^}]*inline-size:\s*18px/);
-    expect(app).toMatch(/\.tab:focus-within \.tab-close\s*,?[^{]*\{\s*opacity:\s*1/);
+    expect(app).toMatch(/\.tab:hover \.tab-close, \.tab:focus-within \.tab-close\s*\{\s*opacity:\s*1/);
   });
 
-  it("标题栏：「墨读」文字已删（titlebar-title 不复现），拖拽垫片保留", () => {
+  it("顶栏：「墨读」文字与空拖拽垫片均已去（D-05 单栏合并，拖拽区改挂 header）", () => {
     expect(html).not.toMatch(/titlebar-title/);
     expect(app).not.toMatch(/titlebar-title/);
-    expect(html).toMatch(/class="titlebar-drag" data-tauri-drag-region/);
+    // 空垫片 .titlebar-drag 已删：标签条自己吃掉剩余宽度（见 app.css §1）
+    expect(html).not.toMatch(/titlebar-drag/);
+    expect(app).not.toMatch(/\.titlebar-drag\s*\{/);
+    // 拖拽区语义保留在本条栏里：data-tauri-drag-region 只写在标签条容器上
+    expect(html).toMatch(/<div id="tabbar" class="tabbar" data-tauri-drag-region/);
+    expect(html).toMatch(/<div id="tab-list" class="tab-list" role="tablist" data-tauri-drag-region/);
   });
 
   it("最大化双态图标：#ic-max 单框 / #ic-restore 双框（还原态预置 hidden）", () => {
@@ -133,8 +140,9 @@ describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () 
   });
 
   it("CM 查找卡：勾选行 flex 对齐 + 右内边距为关闭钮留位", () => {
+    // P2 起这一组选择器放宽到 `:is(.cm-search, .cm-dialog)`（跳转行对话框共用同一套皮）
     expect(app).toMatch(
-      /#editor-pane \.cm-search label\s*\{[^}]*display:\s*inline-flex[^}]*align-items:\s*center/s,
+      /#editor-pane :is\(\.cm-search, \.cm-dialog\) label\s*\{[^}]*display:\s*inline-flex[^}]*align-items:\s*center/s,
     );
     expect(app).toMatch(
       /#editor-pane \.cm-panel\.cm-search\s*\{[^}]*padding:[^}]*calc\(var\(--size-3\) \+ 32px\)/s,

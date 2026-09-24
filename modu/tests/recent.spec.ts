@@ -3,7 +3,7 @@
  * 下拉菜单点击行为（jsdom localStorage 可用）。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadRecent, pushRecent, setupRecentMenu } from "../src/app/recent";
+import { dirName, loadRecent, pushRecent, setupRecentMenu } from "../src/app/recent";
 
 beforeEach(() => {
   localStorage.clear();
@@ -69,11 +69,31 @@ describe("recent 菜单", () => {
     setupRecentMenu(onPick);
     btn.click();
     expect(menu.hidden).toBe(false);
-    const item = menu.querySelector(".recent-item") as HTMLElement;
-    expect(item.textContent).toBe("a.md"); // 显示文件名
+    const item = menu.querySelector(".menu-item") as HTMLElement;
+    expect(item.querySelector(".menu-name")?.textContent).toBe("a.md"); // 第一行：文件名
     item.click();
     expect(onPick).toHaveBeenCalledWith("D:\\docs\\a.md");
     expect(menu.hidden).toBe(true);
+  });
+
+  it("两行式：第二行是弱化目录（S-5），无目录的路径不渲染第二行", () => {
+    pushRecent("D:\\docs\\sub\\a.md");
+    pushRecent("b.md"); // 无目录
+    const { btn, menu } = mountMenu();
+    setupRecentMenu(vi.fn());
+    btn.click();
+    const items = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item"));
+    expect(items).toHaveLength(2);
+    expect(items[0]?.querySelector(".menu-name")?.textContent).toBe("b.md");
+    expect(items[0]?.querySelector(".menu-path")).toBeNull(); // 无目录 → 不渲染第二行
+    expect(items[1]?.querySelector(".menu-name")?.textContent).toBe("a.md");
+    expect(items[1]?.querySelector(".menu-path")?.textContent).toBe("D:\\docs\\sub");
+  });
+
+  it("dirName：去掉文件名与末尾分隔符；无目录返回空串", () => {
+    expect(dirName("D:\\docs\\sub\\a.md")).toBe("D:\\docs\\sub");
+    expect(dirName("/home/u/a.md")).toBe("/home/u");
+    expect(dirName("b.md")).toBe("");
   });
 
   it("再次点击按钮收起", () => {

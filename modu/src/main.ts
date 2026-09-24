@@ -33,8 +33,10 @@ import { askCloseChoice } from "./ui/close-confirm";
 import { installBootWatchdog, revealBootFailure } from "./ui/boot-error";
 import { setupSettings, readAutosavePref } from "./ui/settings";
 import {
+  applyPalettePref,
   applyThemePref,
   nextThemePref,
+  readPalettePref,
   readThemePref,
   setupThemeEngine,
   watchSystemTheme,
@@ -74,16 +76,11 @@ function $<T extends HTMLElement>(id: string): T {
 }
 
 /** 打开失败（P5 批2·错误通道统一）：不清正文、不顶标签——当前标签内容保持，
- *  状态栏红字闪错（多文件拖放单个失败同走此道，不中断其余）；
- *  doc-title 若指向失败文件则复位为当前活动标签名。 */
-function showError(path: string, error: unknown): void {
+ *  状态栏红字闪错（多文件拖放单个失败同走此道，不中断其余）。
+ *  D-05 起中间那个「与标签重复的文件名」已从顶栏删除，故这里不再需要复位标题；
+ *  当前文档名改由窗口标题承担（见 mountRendered）。 */
+function showError(error: unknown): void {
   flashStatus(`打开失败：${String(error)}`, "error");
-  const failedName = path.split(/[\\/]/).pop() ?? path;
-  const title = $("doc-title");
-  if (title.textContent === failedName) {
-    const active = activeTabs?.activeTab() ?? null;
-    title.textContent = active !== null ? active.title : "未打开文件";
-  }
 }
 
 /* ---- 大纲 ---- */
@@ -201,7 +198,7 @@ function resetToWelcome(): void {
   mountOutline([]);
   followObserver?.disconnect();
   visibleHeadings.clear();
-  $("doc-title").textContent = "未打开文件";
+  document.title = "墨读 MoDu"; // 窗口标题（D-05 起它是文档名的唯一去处）
   $("st-encoding").textContent = "—";
   $("st-progress").textContent = "0%";
   $("st-line").hidden = true;
@@ -254,7 +251,7 @@ async function openPath(tabs: TabManager, path: string, activate = true): Promis
     tabs.openTab(path, file, activate);
     pushRecent(path);
   } catch (error) {
-    showError(path, error);
+    showError(error);
   }
 }
 
@@ -432,14 +429,67 @@ function setupWindowControls(): void {
   $("win-min").addEventListener("click", () => void win.minimize());
   $("win-max").addEventListener("click", () => void win.toggleMaximize());
   $("win-close").addEventListener("click", () => void win.close());
-  // 双击拖拽区 = 最大化/还原（Windows 标题栏惯例；原生按钮均带 title/aria，可 Tab 聚焦）
-  document.querySelector<HTMLElement>(".titlebar-drag")?.addEventListener("dblclick", () => {
+  // 双击顶栏空白 = 最大化/还原（Windows 标题栏惯例）。
+  // D-05：拖拽垫片 .titlebar-drag 已删，双击改绑在 <header> 本体上；
+  // 因此必须按事件目标排除控件——否则双击标签/按钮会连带最大化（旧实现绑在垫片上，
+  // 那时不需要这层判断，现在结构变了，这层判断就是正确性的一部分）。
+  const header = $("titlebar");
+  header.addEventListener("dblclick", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest("button, .tab, input, select, a") !== null) {
+      return; // 控件上的双击归控件自己（标签双击不该最大化窗口）
+    }
     void win.toggleMaximize();
   });
   void syncMaxState(win); // 启动对齐（可能是系统记住的最大化态）
   void win.onResized(() => void syncMaxState(win)); // 最大化/还原随尺寸变化即时切图标
   // 关闭守卫（P0-7）：标题栏 ✕ 的 close() 与 Alt+F4 都发 close-requested，同一入口
   void win.onCloseRequested((event) => closeGuard(event));
+}
+
+/* ---- 顶栏拥挤态（D-05 定稿）----
+   判据：**标签条的可分宽度**（不是标签内容宽度）。低于 --w-tabs-min(420px) 时
+   顶栏收成「编辑 + ⋯」，被收起的「打开… / 最近」进 ⋯ 菜单（ui/tabs-menu.ts）。
+   滞回：收在 420、放到 min + TABS_EXPAND_MARGIN。**余量要大于「收起动作组实际让出的
+   宽度」，不是大于两个动作组的宽度差**——后者是错的（旧注释写「约 8px」，那是动作组
+   自身宽度，不是让出量）。本项实测：收起后标签条恒 +130px（900px 窗口展开 258 → 收起
+   388；1100px 窗口展开 458 → 收起 588；另扫 4 个宽度，全部 130px）。
+   余量 48（旧值）时展开判据是 strip > 468：1000~1060px 窗口下展开态 358~418 会收起、
+   收起态 488~548 又 > 468 → 立刻重开 → 2.2~2.5Hz 自激（实测 13~15 次翻转 / 3s×30）。
+   140 > 130 之后：展开判据变成 strip > 560，等效于「展开态 > 430」，而收起判据是
+   「展开态 < 420」，两判据之间留出 10px 死区 → 900~1100px 全区间实测零翻转。
+   观察对象是 **#tab-list**：顶栏与标签条的宽度都由 flex 算法定，「标签条被挤窄」
+   既可能来自窗口变窄，也可能来自标签变多/导航组出现；而 #tab-list 的宽度在
+   这些情况下都会变，且**不受 .overflow 类本身的宽窄影响**（这是关键：
+   观察一个会因自身判定而变宽变窄的元素会自激）。初值也现算一次——
+   ResizeObserver 的首次回调是异步的，而窗口很窄时启动的第一帧就应该已经是收起态。 */
+const TABS_MIN_DEFAULT = 420;
+const TABS_EXPAND_MARGIN = 140;
+
+function tabsMinWidth(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--w-tabs-min");
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : TABS_MIN_DEFAULT;
+}
+
+function setupShellOverflow(): void {
+  const header = $("titlebar");
+  const bar = $("tabbar");
+  const list = $("tab-list");
+  const min = tabsMinWidth();
+  const update = (): void => {
+    if (bar.hidden || bar.clientWidth === 0) {
+      return; // 无标签：不参与拥挤判定（此时 header 里没有标签条）
+    }
+    const strip = bar.clientWidth;
+    if (!header.classList.contains("overflow") && strip < min) {
+      header.classList.add("overflow");
+    } else if (header.classList.contains("overflow") && strip > min + TABS_EXPAND_MARGIN) {
+      header.classList.remove("overflow");
+    }
+  };
+  new ResizeObserver(update).observe(list);
+  update(); // 初值现算（首次回调异步，窄窗启动时第一帧就要是对的）
 }
 
 /* ---- 关闭守卫（P0-7）：窗口关闭请求前拦一道——有未保存改动就问
@@ -520,6 +570,7 @@ const closeGuard = createCloseGuard({
 
 function applyPrefs(): void {
   applyThemePref(readThemePref()); // 三档主题（含自动：解析系统偏好后落 data-theme）
+  applyPalettePref(readPalettePref()); // D-01 配色（5 套；落 data-palette，缺失即靛蓝）
   if (localStorage.getItem("modu-outline") === "off") {
     document.body.classList.add("outline-off"); // 大纲折叠态恢复（P5 批2）
   }
@@ -598,7 +649,8 @@ async function boot(): Promise<void> {
   applyPrefs(); // 内含 applyThemePref（自动档按系统解析落 data-theme）
   document.documentElement.classList.add("app-ready"); // FOUC 放行：主题偏好已应用，配合 index.html 内联防闪样式
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
-  setupWindowControls(); // 无边框标题栏三钮 + 最大化/还原图标切换（反馈⑤）
+  setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
+  setupShellOverflow(); // D-05：顶栏拥挤态（标签条 < 420px → 收成「编辑 + ⋯」）
   setupOutlineToggle(); // ☰ 大纲折叠（P5 批2）
   // 「Aa」设置面板（反馈⑥）：恢复字号/行宽/字体 + 面板接线；钩子接排版重算
   setupSettings({
@@ -626,7 +678,7 @@ async function boot(): Promise<void> {
     enhanceView(doc); // 增强幂等：缓存直挂与重渲两路径都走（mermaid 懒观察在此重挂）
     attachCodeCopyButtons(doc); // 代码块复制钮（用户反馈批次）：幂等，缓存重挂不双挂
     findbar.close(); // 正文已换，旧命中作废，避免残留陈旧 mark
-    $("doc-title").textContent = ctx.tab.title;
+    document.title = `${ctx.tab.title} — 墨读`; // 文档名（顶栏那份已按 D-05 删除）
     $("st-encoding").textContent = ctx.tab.encoding;
     $<HTMLButtonElement>("btn-edit").disabled = false;
     if (exportButton !== null) {
@@ -678,6 +730,18 @@ async function boot(): Promise<void> {
   const pending = await invoke<string[]>("take_pending_files");
   if (pending.length > 0) {
     await openEachMd(pending, (path, activate) => openPath(tabs, path, activate));
+  }
+  // 开发期真机探针入口（D-05 多标签验收用）。为什么不复用既有入口：
+  // 开第二个及以后的标签必须**真的走 read_file**（受控语料的自动保存会写回原文件），
+  // 所以不能靠上次的渲染缓存或拖放伪造；而磁盘上的草稿副本只能经这条真实读文件链进来。
+  // 只在 vite dev（DEV 为真）挂载，生产构建里恒 undefined；不引入 any，不做错误静默。
+  if (import.meta.env.DEV) {
+    window.__moduDev = {
+      openFile: (path: string) => openPath(tabs, path),
+      openFileInBackground: (path: string) => openPath(tabs, path, false),
+      closeAllTabs: () => tabs.closeAll(),
+      tabCount: () => tabs.count(),
+    };
   }
 }
 

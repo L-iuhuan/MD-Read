@@ -167,6 +167,15 @@
   tab-size: 4;
 }
 
+/* D-02 实测补口：**栈要写在真正承载文字的元素上**。
+   `<pre>` 上写了 --font-mono，但里面的 `<code>`（管线固定生成 pre > code）在
+   Chromium 里仍算到 `monospace`（用户代理样式），深层 `<span class="hljs-*">` 从
+   `<code>` 继承同样的 monospace —— 于是「代码字体选 Maple Mono NF」在屏幕上毫无
+   差别，导出的 PDF 里代码字形也来自系统等宽回退（实测 /BaseFont 出现 NSimSun，
+   即 fenced 代码块的中文/符号落在宋体）。本规则只补这一处继承缺口，不动 code 的
+   字号与底色（行内 code 的样式见 §「行内代码」）。 */
+.mdc pre > code { font-family: var(--font-mono); }
+
 /* --- 代码块复制钮（用户反馈批次·新功能）：右上角 hover 浮现 ---
    定位锚点化 pre；钮落在语言标签条（hljs.css 的 ::before 横带）同一水平带，
    与左上角语言名分居两端，不遮代码行。按钮由 render/codecopy.ts 挂载，
@@ -185,6 +194,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
+  box-shadow: var(--shadow-ctl);   /* P6：微浮控件与壳层控件同一档轻投影（审计 I-6）*/
   cursor: pointer;
   opacity: 0;                    /* hover 该代码块 / 键盘聚焦才浮现 */
   z-index: 1;

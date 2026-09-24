@@ -1,6 +1,9 @@
 /**
  * 最近文件（M2 波1，F5）：localStorage("modu-recent") 存路径数组，
- * 去重、最新在前、上限 10。下拉结构就位，hover 展开等样式留给波2 designer。
+ * 去重、最新在前、上限 10。
+ * D-05（审计 S-5）：条目由单行文件名改为**两行式**（文件名 + 弱化目录），
+ * 目录部分走 .menu-path（--fg-dim）；结构与「全部标签列表 / ⋯ 溢出菜单」共用
+ * .menu-item 那一套列表项语言（app.css §6），三处菜单外观因此天然一致。
  */
 const STORAGE_KEY = "modu-recent";
 const RECENT_LIMIT = 10;
@@ -16,6 +19,12 @@ function req<T extends HTMLElement>(id: string): T {
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
+}
+
+/** 目录部分（去掉文件名与末尾分隔符）；无目录时返回空串 → 不渲染第二行 */
+export function dirName(path: string): string {
+  const cut = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+  return cut <= 0 ? "" : path.slice(0, cut);
 }
 
 /** 读取最近列表；存储缺失/损坏一律回退为空，不致命 */
@@ -51,6 +60,33 @@ export function setupRecentMenu(onPick: (path: string) => void): void {
   const btn = req<HTMLButtonElement>("btn-recent");
   const menu = req<HTMLElement>("recent-menu");
 
+  /** 两行式条目：第一行文件名（正文色），第二行弱化目录（--fg-dim） */
+  function buildItem(path: string): HTMLButtonElement {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "menu-item";
+    item.title = path;
+    const box = document.createElement("span");
+    box.className = "menu-text";
+    const name = document.createElement("span");
+    name.className = "menu-name";
+    name.textContent = fileName(path);
+    box.appendChild(name);
+    const dir = dirName(path);
+    if (dir !== "") {
+      const line = document.createElement("span");
+      line.className = "menu-path";
+      line.textContent = dir;
+      box.appendChild(line);
+    }
+    item.appendChild(box);
+    item.addEventListener("click", () => {
+      menu.hidden = true;
+      onPick(path);
+    });
+    return item;
+  }
+
   function renderMenu(): void {
     menu.textContent = "";
     const paths = loadRecent();
@@ -62,16 +98,7 @@ export function setupRecentMenu(onPick: (path: string) => void): void {
       return;
     }
     for (const path of paths) {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "recent-item";
-      item.textContent = fileName(path);
-      item.title = path;
-      item.addEventListener("click", () => {
-        menu.hidden = true;
-        onPick(path);
-      });
-      menu.appendChild(item);
+      menu.appendChild(buildItem(path));
     }
   }
 

@@ -7,7 +7,7 @@
    四条纪律（规格 §3.3 + 设计协议五铁律）：
    1. 色值只用既有 Radix 阶数/语义映射；
    2. 装饰最小化：层次靠字号、间距、颜色深度，不靠边框堆砌、不靠渐变，
-      圆角 ≤9px，浮层一档阴影；
+      圆角只用 --radius-1/2/3 三档（7/8/10px），浮层一档阴影；
    3. 动效 ≤250ms（全部走 --duration-1/.1s、--duration-2/.2s），
       focus-visible 全控件可见，prefers-reduced-motion 降级；
    4. 深色是一等公民：亮暗只由 tokens.css 的阶数变量切换，
@@ -33,6 +33,50 @@
    · 工具条沉浸淡出（§11）：只在这里写「淡出态」与四条豁免，切换类的接线在 main.ts；
    · 最近菜单条目补按压态与悬停色条（§6），提高可点性。
    本文件因此只描述当前状态，不含任何待办标记。
+
+   D-01 主题 token 化批次（本文件只动尺寸，色/圆角/投影一字未改）：
+   · 控件高统一：原先散落的字面 28px（按钮/输入框/查找钮/步进钮/CM 输入框与按钮）
+     与关窗浮层按钮由 padding 撑出的 31px，全部改走 tokens.css 的 --h-ctl；
+   · 圆角/描边/投影/强调色的新刻度只在 tokens.css 落地，本文件继续零改动消费语义变量。
+
+   P2 第二步 · 面板/浮层 UI 统一批次（审计 docs/tasks/Phase2-面板UI一致性审计-2026-09-23.md）：
+   · P1 顶栏按钮规则由后代选择器 `.topbar button` 收窄为「顶栏直属三层结构」——
+     原写法穿透进 #recent-menu，用 (0,1,1) 压过 .recent-item(0,1,0)，把最近下拉
+     整列渲染成「一排小按钮」，并用 border-color 简写盖掉条目的左侧 accent 色条；
+   · P2 CM6 跳转行对话框的内部控件纳入重皮范围（`.cm-search` → `:is(.cm-search, .cm-dialog)`），
+     并给 .cm-dialog 补上与 .cm-search 同宽的关闭钮车道；
+   · P3 焦点规则不再改写 border-radius（它只管 outline；圆角一律由控件自身定义），
+     修掉「同一输入框聚焦 7px、失焦 8px」的同控件两种圆角；
+   · P4 关窗浮层主按钮由「全站唯一实心强调填充」改为「软底 + accent 描边 + 软底文字」，
+     修掉宣纸·亮 4.39:1（<4.5）；高度复核为 --h-ctl=28px；
+   · P5 CM 查找卡与 #findbar 的位置差异改为**如实注释**（见 §10，不再声称「同一件东西」）；
+   · P6 --border-chrome 回到壳层分隔语义（--line），控件/卡片描边改走 --border；
+     接线 --shadow-ctl（有描边的控件）/ --shadow-seg（步进组选中值）/ --on-accent-soft（主按钮）；
+   · P7 hljs 函数名红改 red.11×red.12 混色（tokens 侧新增 --red-12）；
+     三级文字 --fg-dim/--text-dim 由装饰档（2.54~2.67:1）改成可读档（5.10~5.56:1）并接线到空态。
+   本批同样零字面色值、零 TS 改动（除注释），全部实测量值见报告 §4。
+
+   P2 第四步 · D-05 壳层视觉施工批次（T1 顶栏 + S1 标签 + B2 轻分层）：
+   · T1 单栏合并：旧 .titlebar(36px) + .topbar(40px) 两层并成一条 --h-chrome=48px，
+     省出约 32px 正文高度；删掉与标签重复的中间文件名（#doc-title）、.topbar-spacer、
+     .titlebar-drag 三块；<header> 同时挂 id="titlebar" 与 class="topbar"，
+     print.css 的退场名单与 chrome-dim 的淡出名单因此零改动即继续生效；
+   · S1 底部下划线标签：平标签、align-self: stretch（下划线贴栏底、分隔线居中于文字，
+     实测数值见报告 §5）、标签之间 1px×14px 细分隔线（活动/悬停两侧不画）、
+     活动 = 字重 600 + 底部 2px 主色线（左右各内缩 6px）、脏点 ● 与 ✕ 互斥；
+   · ‹ › ▾ 导航组（只在标签溢出时出现）+ ＋ 钉在可视区右端（sticky）；
+   · 新增 ⋯ 溢出菜单与 ▾ 全部标签列表（TS 在 ui/tabs-menu.ts）：
+     两行式条目（文件名 + 弱化目录）、当前项浅主色底、底部「关闭其他/全部标签」；
+   · 拥挤态（.topbar.overflow）：标签条可分宽度 < --w-tabs-min(420px) 时收成「编辑 + ⋯」，
+     判据与滞回接线在 main.ts 的 setupShellOverflow（滞回余量 TABS_EXPAND_MARGIN = 140，
+     必须大于收起实际让出的 130px，否则自激）；
+   · 大纲活动项由「左侧 3px 硬色条」改为「浅主色底圆角矩形 + 主色文字 + 600 字重」，
+     层级只用缩进 + 字重/字号；
+   · 状态栏 11.5px（--fs-status）+ 上沿改 --hair；
+   · B2 轻分层：三级表面（chrome/card/paper）全走 token，暗色三档分离，
+     分层靠 1px 线 + 卡片投影，不靠明度差；
+   · 顺带清理：D-02 落在 tokens.css 的面板控件样式（25 行非 :root 规则）迁回本文件 §7b。
+   本批同样零字面色值、零字面字体族名（仍只以 var(--font-*) 消费）。
    ========================================================================== */
 
 /* [hidden] 兜底：下面会给 #tabbar / #findbar / #recent-menu / #settings-panel /
@@ -55,237 +99,161 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 }
 #app *, #app *::before, #app *::after { box-sizing: border-box; }
 
-/* 全控件焦点态（正文区内的焦点态由 cjk.css 自理）*/
+/* 全控件焦点态（正文区内的焦点态由 cjk.css 自理）
+   ⚠ 本规则**只管 outline，不碰 border-radius**（P3）：原先这里还写了
+   `border-radius: var(--radius-1)`，本意只是想给聚焦控件一圈描边，实际却因为
+   本规则 (1,1,0) 压过 #find-input(1,0,0) 的 --radius-2，让同一个输入框
+   聚焦 7px、失焦 8px —— 一个控件两种圆角。圆角归控件自己定义。 */
 #app :where(button, input, a, select, [tabindex]):focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
-  border-radius: var(--radius-1);
 }
 
 /* ==========================================================================
-   1. 自定义标题栏（decorations:false）—— 标签行 + 拖拽区 + 窗口三钮，同一条 36px 行
-   浏览器式排布：[#tabbar 起始居左][弹性留白（拖拽区）][三窗钮]。
-   用户反馈批次：「墨读」文字已删——弹性留白保留为空拖拽垫片，标签左置后它仍是
-   整条栏里最大的一块热区，双击最大化照常绑在它身上（main.ts）。
-   ========================================================================== */
-.titlebar {
-  display: flex;
-  align-items: stretch;      /* 按钮撑满标题栏高度＝标准窗口控件手感 */
-  flex: none;
-  height: var(--h-titlebar);
-  background: var(--bg-chrome);
-  border-bottom: 1px solid var(--border-chrome);   /* 标签行与工具行的分界 */
-  user-select: none;
-}
-/* 窗口三钮：内联 SVG（10px 线条 / 16×16 视觉盒），三枚同色同尺寸，只有 close 热区更宽。
-   SVG 用 currentColor，hover/按压换色即整枚图标换色，不必写两套图形。 */
-.titlebar button {
-  flex: none;
-  display: grid;
-  place-items: center;
-  inline-size: var(--w-winbtn);
-  font: inherit;
-  line-height: 1;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  transition: background-color var(--duration-1) var(--ease-1),
-              color var(--duration-1) var(--ease-1);
-}
-.titlebar button svg { display: block; }
-.titlebar button:hover { background: var(--bg-hover); color: var(--text); }
-.titlebar button:active { background: var(--bg-active); }
-/* close 热区 +8px（Windows 习惯：关闭总是最宽的一枚），图标仍居中 —— 靠 grid 居中，
-   不补内边距，故三枚图标的视觉重心各自落在自己的按钮里。 */
-#win-close { inline-size: calc(var(--w-winbtn) + 8px); }
-/* 关闭钮用语义红（Windows 习惯），不新增色值；按压态用实心反白，反馈明确 */
-#win-close:hover { background: var(--danger-bg); color: var(--danger-text); }
-#win-close:active { background: var(--danger-text); color: var(--bg-app); }
-
-/* --- 弹性留白 = 拖拽垫片（「墨读」文字已删，拖拽能力不丢）---
-   flex:1 1 auto 让它独吞剩余空间；flex-basis 走内容（auto）而非 0，是为了在标签很多时
-   让「标签先缩、垫片后缩」（收缩量按 base×shrink 分配，标签 base 大者先让位）。 */
-.titlebar-drag {
-  flex: 1 1 auto;
-  min-inline-size: 4rem;     /* 拖拽热区永不归零的底线（再窄就轮到标签行横向滚动）*/
-  overflow: hidden;
-}
-
-/* ==========================================================================
-   2. 顶栏 —— 左组（打开…｜最近）+ 中段标题（居中弱化）+ 右组（Aa｜◐｜⇩PDF）
-   DOM 顺序是 打开…/标题/最近/…，这里用 order 把「最近」提到标题左侧（反馈①），
-   一个元素的顺序都不动。所有子项显式给 order，否则默认 0 会排到 order:1 前面。
-   波5：顶栏下移一行（标签行已并入标题栏），位置不变的是它「左组—中标题—右组」的骨架。
+   1. 单栏合并顶栏（D-05 · T1「单栏合并」，实测高 48px = --h-chrome）
+   旧结构是「.titlebar 36px（标签行）+ .topbar 40px（工具行）」两层，合计 76~80px；
+   现在合并为**一条 48px**，#app 的上下布局少一层 → 正文净增约 32px 高度。
+   DOM 契约：<header id="titlebar" class="topbar"> 同时吃到两个类名——
+   print.css 的退场名单与 chrome-dim 的淡出名单都按这两个旧名走，故两处零改动即生效。
+   排布（左右两组 + 标签条吃掉全部剩余宽度）：
+     [☰][#tabbar 弹性 1/0.5][.tabs-nav 按需][.act-sep][.actions][三窗钮]
+   拖拽区：data-tauri-drag-region 写在 header 与标签条空档；双击最大化绑在 header 上，
+   但按事件目标排除控件（.topbar button / .tab）——旧实现绑在 .titlebar-drag 垫片上，
+   本批那个垫片已去（标签条要吃掉剩余宽度，不再留弹性留白）。
    ========================================================================== */
 .topbar {
   display: flex;
   align-items: center;
   flex: none;
-  gap: var(--size-2);            /* 波4：4 → 8px，组间距拉开一档 */
-  height: var(--h-topbar);
-  padding: 0 var(--size-2);
+  gap: var(--size-1);
+  height: var(--h-chrome);
+  padding-inline: var(--size-1);
   background: var(--bg-chrome);
-  border-bottom: 1px solid var(--border-chrome);
-  position: relative;
-  /* 顶栏要盖住内容区浮层：下拉/面板是顶栏的子元素，会被困在顶栏的层叠上下文里，
+  border-bottom: 1px solid var(--border-chrome);   /* B2：分层靠这条 1px 发丝线 */
+  user-select: none;
+  position: relative;      /* 下拉/面板/溢出菜单的定位上下文 */
+  /* 顶栏要盖住内容区浮层：下拉/面板是顶栏的后代，会被困在它的层叠上下文里，
      顶栏自身的 z 必须高于查找条（--z-float），否则浮层会被查找条压住。 */
   z-index: calc(var(--z-float) + 10);
 }
-.topbar > #btn-open { order: 1; }
-.topbar > .recent-wrap { order: 2; }
-.topbar > #doc-title { order: 3; }
-.topbar > .settings-wrap { order: 4; margin-inline-start: var(--size-2); }
-.topbar > #btn-theme { order: 5; }
-.topbar > #btn-export { order: 6; }
-/* 撑开件必须排在左组之后、右组之前（order 默认 0 会跑到最前面，
-   把「打开…/最近」一起顶到右边去——视觉复核抓到的坑）*/
-.topbar-spacer { order: 3; flex: 1; }
-/* 「衬」按钮已删（P5 批2·des-2 遗留三处同批：HTML 节点 + main.ts 引用 + 本规则）。 */
 
-.topbar button {
-  flex: none;
-  height: 28px;                  /* 点击热区 */
-  padding: 0 var(--size-3);
-  font: inherit;
-  font-size: var(--fs-chrome);   /* 13px：壳层文字的可读下限 */
-  color: var(--text-muted);
-  /* 波5：默认态从「全透明」改为「纸面阶填充 + 发丝线」——用户复验「按钮看不出」。
-     波6 壳层提亮后重核：填充（纸面 #fff）对壳层只有 1.05:1，但描边升到 6 阶后对壳层
-     是 1.34:1（波5 是填充 1.11 + 描边 1.15）——按钮的定义从「面」移交给「线」，
-     总辨识度不降，且与浮层卡片同一套描边语言。 */
-  background: var(--bg-surface);
-  border: 1px solid var(--border-chrome);
-  border-radius: var(--radius-2);
-  cursor: pointer;
-  transition: background-color var(--duration-1) var(--ease-1),
-              border-color var(--duration-1) var(--ease-1),
-              color var(--duration-1) var(--ease-1);
-}
-.topbar button:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-.topbar button:active:not(:disabled) { background: var(--bg-active); }
-/* 禁用态：压暗 + 不回显 hover（M4 前 PDF 导出恒禁用）*/
-.topbar button:disabled { opacity: .45; cursor: default; }
-
-/* 标题：按「窗口」精确居中并弱化。
-   为什么不留在流内居中：flex:1 的中间盒两端受左右两组宽度差影响，实测 1264px 窗口下
-   文本中心落在 608 而窗口中心是 632——偏左 24px，一眼能看出没对齐。故改为绝对定位
-   （脱离流）让左右各留等量护栏，文字盒中点即窗口中点；空出来的横向空间交给
-   .topbar-spacer 撑开，把右侧按钮组顶到最右。
-   波5：标题栏里的「墨读」已改为贴右水印（不再居中），两层不再有对齐关系，
-   本层独立按窗口居中，无需跟着调。
-   按钮在 DOM 顺序上晚于标题，绘制与命中都在上层，所以标题不会挡住点击。 */
-.doc-title {
-  position: absolute;
-  inset-block: 0;
-  inset-inline: 0;
-  /* 修复（用户实测按钮点不动）：absolute 全宽层绘制在 in-flow 按钮之上，
-     L194 注释"DOM 顺序晚的按钮命中在上层"的假设错误——absolute 与 in-flow
-     的绘制顺序由定位决定，与 DOM 序无关。标题是纯标签，禁收指针即可，
-     命中穿透到下层按钮。 */
-  pointer-events: none;
-  padding-inline: 180px;         /* 护栏：文字永不压到左右两组按钮 */
-  line-height: var(--h-topbar);  /* 单行文本靠行高在整条顶栏内垂直居中 */
-  text-align: center;
-  font-size: var(--fs-chrome);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* 撑开件的声明在 §2 子项排序处（order: 3 + flex: 1），此处只留指引不重复声明：
-   标题脱离流后，左右两组全靠它分开。*/
-
-/* 开关状态回显（主题态挂在 <html data-theme> 上，既有契约直接读）。
-   Aa 面板打开时按钮同样点灯：这是状态回显，不是装饰。填充与描边一起换，
-   否则白底按钮配蓝底会露出原先的灰发丝线。
-   文字用 blue.12 于 blue.3：亮 11.26:1 / 暗 11.37:1（实测）。 */
-html[data-theme="dark"] #btn-theme,
-html:has(#settings-panel:not([hidden])) #btn-settings {
-  background: var(--accent-tint);
-  border-color: var(--accent-tint-border);
-  color: var(--accent-text-hover);
-}
-
-/* ==========================================================================
-   3. 标签行 —— 已并入标题栏（波5），这里只管标签条自身的形态与滚动
-   标签是标题栏里的一枚枚胶囊：默认透明、hover 起底、活动 = 纸面色（与正文同色 →
-   暗色下也一眼看出「这就是正在读的那份」）。波4 的 2px accent 底边指示线随独立
-   标签行一起取消：那条线原本压在栏的分割线上、靠「与纸面接缝重合」表意，
-   并入标题栏后下面接着的是顶栏而不是纸面，线就失去所指；活动态改由填充承担。
-   滚动条隐藏（--h-titlebar 36px 里塞 6px 滚动条会啃掉标签高度）：Chrome 对
-   overflow-x:auto + overflow-y:hidden 的容器支持纵向滚轮横滚，滚动路径仍在。
-   ========================================================================== */
+/* 标签条：占满整条栏高（align-self: stretch）——这是本批最关键的一条。
+   不 stretch（例如写成 align-items: center 后再给标签 28px 高）时，活动标签的
+   2px 下划线会浮在栏底上方约 10px 处、与栏底分割线错开，且 1px×14px 细分隔线
+   相对文字不再居中（设计阶段实测缺陷）。所以容器与标签**都**是 stretch。
+   ⚠ min-width 必须写**物理属性**：本批实测（WebView2 Edg/153）写成
+   `min-inline-size: 0` 时 flex 项仍按自动最小尺寸（= min-content）参与收缩，
+   标签条被卡在 min-content 上、整条顶栏横向溢出（实测 header scrollWidth 1541
+   对 clientWidth 820，▾ 按钮被挤出视口、`elementFromPoint` 取不到 → 点不开）。
+   ⚠ flex-basis 必须写 **0**（不是 auto）：`flex: 1 .5 auto` 时基数是标签条的
+   max-content（1602px），收缩只按 shrink 比例摊一次就停——实测停在 903px，
+   右侧窗口三钮被顶出 721px。改成 `flex: 1 1 0` 后，基数 0 + grow 吃满剩余，
+   窗口变窄时标签条一路收到 0（标签自己用省略号变窄），顶栏永不溢出。 */
 .tabbar {
   display: flex;
-  align-items: center;
-  flex: 0 1 auto;            /* 空间不够时让位给右侧（标签先缩，见 §1 说明）*/
-  min-inline-size: 0;
-  gap: var(--size-1);
-  padding-inline: var(--size-2);
+  align-items: stretch;
+  align-self: stretch;
+  flex: 1 1 0;               /* 弹性中列：基数 0 + 独占剩余；收缩到底也不顶破顶栏 */
+  min-width: 0;
 }
+
+/* 标签滚动条：单行、永不折行；hidden 的滚动条由 JS 横滚接管。
+   `scroll-behavior` 不给 smooth——切标签的「自动滚进可视区」用显式 behavior，
+   滚轮要的是即时跟手（smooth 会让滚轮有拖影）。 */
 .tab-list {
   display: flex;
-  align-items: center;
-  gap: 2px;
-  flex: 0 1 auto;
-  min-inline-size: 0;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;             /* 同上：物理属性，逻辑属性不参与自动最小尺寸的钳位 */
+  gap: 0;                   /* 间距交给 .tab-sep 的 1px × 14px 细分隔线 */
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  white-space: nowrap;
 }
 .tab-list::-webkit-scrollbar { display: none; }
 
+/* --- S1 底部下划线式标签 ---
+   平标签、无浮起白卡：默认透明、hover 起底；活动 = 文字加重 + 底部 2px 主色线
+   （左右各内缩 6px），**不给**圆角白卡（那是被本批否掉的旧形态）。 */
 .tab {
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   gap: var(--size-1);
-  flex: none;
+  align-self: stretch;      /* 与容器一起 stretch：下划线因此贴住栏底 */
+  flex: 0 0 auto;           /* **禁收缩**：标签保持自己的宽度（上限 200px），
+                               空间不够时由 .tab-list 横向滚动，而不是把标签压成小方块。
+                               本批实测：写成 `flex: 0 1 auto` 会与「标签条可用宽度」
+                               形成循环依赖（标签先被压窄 → 标签条 max-content 随之变小
+                               → 标签条拿不到剩余宽度），8 个标签时实测只剩 57~70px 宽、
+                              且 scrollWidth == clientWidth（滚轮/‹ › 全部失效）。 */
   max-inline-size: 200px;
-  height: 28px;
   padding: 0 var(--size-1) 0 var(--size-2);
+  font-size: var(--fs-chrome);
   color: var(--text-muted);
   background: transparent;
-  border-radius: var(--radius-2);
+  border: 0;
   cursor: pointer;
   user-select: none;
   transition: background-color var(--duration-1) var(--ease-1),
               color var(--duration-1) var(--ease-1);
 }
 .tab:hover { background: var(--bg-hover); color: var(--text); }
-/* 拖拽排序中（用户反馈批次）：被拖标签半透明，落点更可读 */
 .tab.dragging { opacity: .5; }
-/* 活动标签：纸面填充 + 一圈内描边（inset 阴影，不占盒尺寸 → 切换标签时零位移）。
-   为什么需要那圈线：波6 标题栏提亮到 2 阶后，纸面填充与栏底只差 1.05:1，
-   单靠填充钉不住「我在读这份」；描边对栏底 1.34:1，与顶栏按钮同一套「填充+发丝线」语言。 */
-.tab.active {
-  background: var(--bg-surface);
-  box-shadow: inset 0 0 0 1px var(--border-chrome);
-  color: var(--text);
+/* 活动标签：文字加重 + 底部 2px 主色线；底线左右内缩 6px（设计稿的 left/right: 6px）。
+   用 ::after 而非 border-bottom：border 会改盒高，::after 绝对定位不动布局。 */
+.tab.active { color: var(--text); font-weight: 600; }
+.tab.active::after {
+  content: "";
+  position: absolute;
+  inset-inline: 6px;
+  inset-block-end: 0;
+  block-size: 2px;
+  background: var(--accent-solid);
+  border-radius: 2px 2px 0 0;
+  pointer-events: none;
 }
+/* 标签之间 1px × 14px 细分隔线（--hair）。分隔线是**真元素**而不是 ::before：
+   1px 宽的元素在 200% 缩放下仍是一物理像素的观感，且能独立 align-self: center
+   （分隔线要居中于文字而不是撑满栏高 —— 撑满就成了分栏线，不是分隔线）。 */
+.tab-sep {
+  flex: 0 0 auto;
+  align-self: center;
+  inline-size: 1px;
+  block-size: 14px;
+  background: var(--hair);
+}
+/* 活动/悬停/键盘焦点标签的**两侧**不画线（:has 精确表达，不用 JS 维护索引） */
+.tab-list > .tab.active + .tab-sep,
+.tab-list > .tab:has(+ .tab.active) + .tab-sep,
+.tab-list > .tab:hover + .tab-sep,
+.tab-list > .tab:has(+ .tab:hover) + .tab-sep,
+.tab-list > .tab:focus-within + .tab-sep,
+.tab-list > .tab:has(+ .tab:focus-within) + .tab-sep,
+.tab-list > .tab.dragging + .tab-sep,
+.tab-list > .tab:has(+ .tab.dragging) + .tab-sep { background: transparent; }
+
 .tab-title {
   min-inline-size: 0;        /* flex 项默认 min-width:auto 会挡住省略号（长文件名会顶破标签）*/
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 脏点 ● 与 ✕ 互斥（同一格）：有改动显 ●，悬停/键盘聚焦换 ✕。
+   不用 display:none 切换（tabs.ts 用 hidden 属性，全局 [hidden] 兜底已覆盖）。 */
 .tab-dirty {
   flex: none;
   font-size: 9px;
   line-height: 1;
   color: var(--accent-solid);   /* 未保存圆点用强调色（非错误语义，不占红/黄）*/
 }
+/* 脏标签与活动标签常驻 ✕；其余标签的 ✕ 留位（宽度恒在 → 标题不因悬停重排）只换透明度。
+   脏标签在悬停时 ✕ 盖住 ● ——「有改动」与「可关闭」共用一个格位。 */
 .tab-close {
   flex: none;
   display: grid;
   place-items: center;
-  /* 用户反馈批次·✕ 瘦身：22 → 18px（标签 28px 内四留 5px 呼吸），标题可用宽度
-     相应让出 4px；常驻占位不变（宽度恒在，标题不因 hover 重排），
-     label 里的 ✕ 由 tabs.ts 直出文本节点，不改成 SVG。 */
   inline-size: 18px;
   block-size: 18px;
   font: inherit;
@@ -296,55 +264,217 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   border: 0;
   border-radius: var(--radius-1);
   cursor: pointer;
-  opacity: 0;                   /* hover / 活动标签 / 键盘聚焦才现；不可见时仍可聚焦 */
+  opacity: 0;               /* 仅活动标签常驻（下面一条），其余 hover/聚焦浮现 */
   transition: opacity var(--duration-1) var(--ease-1),
               background-color var(--duration-1) var(--ease-1),
               color var(--duration-1) var(--ease-1);
 }
-/* 键盘/触屏可达：焦点落在标签上（含 ✕ 自身）即浮现——:focus-within 覆盖
-   Tab 聚焦 .tab 与聚焦 .tab-close 两种路径，点击聚焦同样命中（可接受） */
-.tab:hover .tab-close, .tab.active .tab-close, .tab:focus-within .tab-close { opacity: 1; }
+.tab.active .tab-close { opacity: 1; }
+.tab:hover .tab-close, .tab:focus-within .tab-close { opacity: 1; }
+.tab:hover .tab-dirty, .tab:focus-within .tab-dirty { visibility: hidden; }  /* 悬停换 ✕ */
 .tab-close:hover { background: var(--bg-active); color: var(--text); }
-/* 键盘可达性：tabs.ts 已给 .tab 落 role="tab" / tabindex / Enter·Space 激活，
-   故这条 :focus-visible 是生效路径（不再只是「先就位」）。 */
 .tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
+/* ＋ 新建：钉在可视区右端（sticky），标签从它背后滑过 —— 设计稿里它紧跟末标签，
+   但标签一多就必须永远可点，故用 sticky 固定在滚动条右沿。 */
 #btn-newtab {
   flex: none;
   align-self: center;
+  position: sticky;
+  inset-inline-end: 0;
   inline-size: 26px;
   block-size: 26px;
   font: inherit;
   font-size: 15px;
   line-height: 1;
   color: var(--text-muted);
-  background: transparent;
+  background: var(--bg-chrome);   /* 不透明底：滑过来的标签不许从加号上透出来 */
   border: 0;
   border-radius: var(--radius-2);
   cursor: pointer;
   transition: background-color var(--duration-1) var(--ease-1),
               color var(--duration-1) var(--ease-1);
 }
-/* accent 轻点缀之一：新建标签的悬停用强调色反馈（唯一会「长出新纸面」的动作）*/
 #btn-newtab:hover { background: var(--accent-tint); color: var(--accent-text-hover); }
 #btn-newtab:active { background: var(--accent-tint-hover); }
 
+
+/* ==========================================================================
+   2. 标签导航组（‹ › ▾）与动作区
+   ‹ › 只在「该侧确实还有标签」时可用（scrollLeft > 0 / 未到右端），不是按方向；
+   ▾ 打开「全部标签」列表（两行式，见 §7c）。整组只在标签确有溢出时出现
+   （tabs.ts 切 #tabs-nav 的 hidden），没有溢出时不占位。
+   ========================================================================== */
+.tabs-nav {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  align-self: center;
+  position: relative;      /* #tabs-menu 的定位上下文 */
+}
+.tabs-nav > button {
+  inline-size: var(--h-scroll-btn);
+  block-size: var(--h-scroll-btn);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.tabs-nav > button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+/* 不可用（该侧没有标签）仍占位、变淡并 disabled —— 位置跳动比置灰更烦人 */
+.tabs-nav > button:disabled { color: var(--fg-dim); opacity: .5; cursor: default; }
+/* ▾ 打开时点灯（与 Aa 面板打开时的状态回显同一手法） */
+#tabs-list[aria-expanded="true"] { background: var(--accent-tint); color: var(--accent-text-hover); }
+
+/* .act-sep：导航组与动作组之间的竖线（1px × 20px，比标签分隔线高一档）。
+   .actions 内部各按钮自带描边，不再互相画线。 */
+.act-sep {
+  flex: none;
+  align-self: center;
+  inline-size: 1px;
+  block-size: 20px;
+  background: var(--line-2);
+}
+.actions { display: flex; align-items: center; gap: var(--size-1); flex: none; }
+
+/* 动作按钮：纸面填充 + 1px --border 定形（与浮层卡片同一套描边语言）。
+   P1 纪律保留：选择器只认**本段结构**，绝不写 `.topbar button` 这类后代选择器——
+   那会穿透进 #recent-menu / #overflow-menu / #tabs-menu 的条目，把它们渲染成小按钮。 */
+.actions > button,
+.actions > .recent-wrap > button,
+.actions > .settings-wrap > button,
+.actions > .overflow-wrap > button {
+  flex: none;
+  height: var(--h-ctl);
+  padding: 0 var(--size-3);
+  font: inherit;
+  font-size: var(--fs-chrome);
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              border-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.actions > button:hover:not(:disabled),
+.actions > .recent-wrap > button:hover:not(:disabled),
+.actions > .settings-wrap > button:hover:not(:disabled),
+.actions > .overflow-wrap > button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.actions > button:active:not(:disabled),
+.actions > .recent-wrap > button:active:not(:disabled),
+.actions > .settings-wrap > button:active:not(:disabled),
+.actions > .overflow-wrap > button:active:not(:disabled) { background: var(--bg-active); }
+/* 禁用态：压暗 + 不回显 hover（M4 前 PDF 导出恒禁用）*/
+.actions > button:disabled,
+.actions > .recent-wrap > button:disabled,
+.actions > .settings-wrap > button:disabled,
+.actions > .overflow-wrap > button:disabled { opacity: .45; cursor: default; }
+
+/* ⋯ 按钮：图标钮，方形（与 ‹ › 同尺寸感，但在动作组里给 28px 控件高） */
+.actions > #btn-overflow { padding: 0; inline-size: var(--h-ctl); }
+
+/* 强调按钮 = 编辑（全条唯一的主色软底）：软底 + 主色文字 + 600 字重。
+   实心主色填充被否（宣纸·亮上白字只有 4.39:1）；软底文字实测 5.76~9.86:1。
+   写在基础规则**之后**，靠顺序压过同为 (0,2,0) 的 .actions > button；
+   且 :not(:disabled) 让它压不过 (0,2,1) 的禁用态（禁用时要如实变灰）。 */
+.actions > button.is-accent:not(:disabled) {
+  color: var(--accent-text-hover);
+  background: var(--accent-tint);
+  border-color: var(--accent-tint-border);
+  font-weight: 600;
+}
+.actions > button.is-accent:hover:not(:disabled) { background: var(--accent-tint-hover); }
+
+/* --- 拥挤态：标签条可用宽度低于 --w-tabs-min(420px) 时收成「编辑 + ⋯」---
+   由 main.ts 的 ResizeObserver 在 header 上切 .overflow 类（带 140px 滞回，防抖动）。
+   滞回余量必须**大于收起动作组实际让出的宽度（实测恒 130px）**，否则收起→重开无限循环；
+   48px 的旧余量在 1000~1060px 窗口下实测 2.2~2.5Hz 自激。
+   常显项（编辑 / Aa / ◐ / PDF）留在条上不动 —— 它们是任何宽度下都必须点得到的；
+   被收起的是「打开… / 最近」与标签批量操作，它们进 ⋯ 菜单（见 §7c）。 */
+.topbar.overflow #act-sep { display: none; }
+.topbar.overflow #btn-open,
+.topbar.overflow .recent-wrap { display: none; }
+
+/* 开关状态回显（主题态挂在 <html data-theme> 上，既有契约直接读）。
+   Aa 面板打开时按钮同样点灯：这是状态回显，不是装饰。填充与描边一起换，
+   否则白底按钮配蓝底会露原先的灰发丝线。 */
+html[data-theme="dark"] #btn-theme,
+html:has(#settings-panel:not([hidden])) #btn-settings {
+  background: var(--accent-tint);
+  border-color: var(--accent-tint-border);
+  color: var(--accent-text-hover);
+}
+
+/* --- 窗口三钮：内联 SVG（10px 线条 / 16×16 视觉盒），三枚同色同尺寸，只有 close 热区更宽。
+   SVG 用 currentColor，hover/按压换色即整枚图标换色，不必写两套图形。
+   ⚠ 选择器用「顶栏直属 id」写法，不用 `.titlebar button`——后者已随 .titlebar 消失，
+   且越窄的选择器越不会误伤动作按钮。 --- */
+.topbar > #win-min,
+.topbar > #win-max,
+.topbar > #win-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  inline-size: var(--w-winbtn);
+  font: inherit;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.topbar > #win-min svg,
+.topbar > #win-max svg,
+.topbar > #win-close svg { display: block; }
+.topbar > #win-min:hover,
+.topbar > #win-max:hover { background: var(--bg-hover); color: var(--text); }
+.topbar > #win-min:active,
+.topbar > #win-max:active { background: var(--bg-active); }
+/* close 热区 +8px（Windows 习惯：关闭总是最宽的一枚），图标仍居中 —— 靠 grid 居中，
+   不补内边距，故三枚图标的视觉重心各自落在自己的按钮里。 */
+.topbar > #win-close { inline-size: calc(var(--w-winbtn) + 8px); }
+/* 关闭钮用语义红（Windows 习惯），不新增色值；按压态用实心反白，反馈明确 */
+#win-close:hover { background: var(--danger-bg); color: var(--danger-text); }
+#win-close:active { background: var(--danger-text); color: var(--bg-app); }
+
+/* --- 历史说明（防回归）：旧版这里有 #doc-title（居中文件名）、.topbar-spacer、
+   .titlebar-drag 三块。D-05 全部删除：文件名与标签重复（用户点名要去掉），
+   另两块垫片的职责（把右侧按钮组顶到最右）现在由标签条的 flex 承担（见 §1）。
+   拖拽/双击最大化的接线改在 main.ts 的 setupWindowControls，按事件目标排除控件。 --- */
+
 /* ==========================================================================
    4. 查找条 —— 浮于内容区顶部右侧（不占流、不随正文滚动）
-   —— 浮层卡片语言之一（另两处：§6 最近下拉、§7 Aa 面板，§10 CM 查找卡）——
+   —— 浮层卡片语言之一（另几处：§6 最近下拉、§7 Aa 面板、§7c 两个菜单、§10 CM 查找卡）——
    四件套固定：background: --bg-surface（纸面阶，全应用最亮）/ border: 1px --border /
    border-radius: --radius-3 / box-shadow: --shadow-2（波6 由 1 档回到 2 档：
    壳层提亮后色差只剩 1.05~1.10:1，「浮起」改由阴影承担）。
-   命中分色只用 accent 族两阶：find-hit = blue.3，find-current = blue.7。
+   命中分色只用 accent 族两阶：find-hit = accent-tint，find-current = blue-7。
    两种底色都不含 padding/border/字重变化 —— mark 只包字符不增删一字，
    加内边距会让正文在搜索期间重排（M1 复制保真红线）。
-   定位单处书写（含标题栏高度）。波5：标签行并入标题栏后不再多占一行，
-   原先那条 `body:has(.tabbar:not([hidden]))` 的下移规则随之删除。
-   ========================================================================== */
+   定位单处书写（含顶栏高度）：D-05 起顶栏只剩一层 --h-chrome。 */
 .findbar {
   position: absolute;
   z-index: var(--z-float);
-  inset-block-start: calc(var(--h-titlebar) + var(--h-topbar) + var(--size-2));
+  inset-block-start: calc(var(--h-chrome) + var(--size-2));
   inset-inline-end: var(--size-4);
   display: flex;
   align-items: center;
@@ -358,13 +488,14 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
 
 #find-input {
   inline-size: 184px;
-  height: 28px;                  /* 波4：24 → 28px，输入区同样放大 */
+  height: var(--h-ctl);          /* 波4：24 → 28px；D-01 起走控件高 token */
   padding: 0 var(--size-2);
   font: inherit;
   color: var(--text);
   background: var(--bg-app);     /* 白底输入框落在浮层卡面上，靠 1px 线定形，不靠灰 */
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
+  box-shadow: var(--shadow-ctl);   /* P6：控件轻投影只给「有描边的控件」——凹感来自线+影 */
   transition: border-color var(--duration-1) var(--ease-1);
 }
 #find-input::placeholder { color: var(--text-muted); }
@@ -382,8 +513,8 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   flex: none;
   display: grid;
   place-items: center;
-  inline-size: 28px;
-  block-size: 28px;
+  inline-size: var(--h-ctl);
+  block-size: var(--h-ctl);
   font: inherit;
   font-size: 11px;
   line-height: 1;
@@ -413,20 +544,18 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
 /* ==========================================================================
    5. 大纲侧栏 —— 条目紧凑、层级缩进由 main.ts 内联 paddingLeft 提供
    ⚠ 禁止覆盖 padding-left：缩进是 (level-1)*12px 的内联值，覆盖会毁掉层级。
-   蓝条与文字的间距只能用 text-indent 补（左内边距已被内联值占用）——这是
-   波4 反馈④「小蓝条与文字间距」的正解；text-indent 只影响首行，而条目恒为
-   nowrap 单行，等价于给蓝条后补一段留白。
-   活动态（波5 换专用 token，波6 随壳层提亮复核）：3px 色条 + 纸面纯白底 + 字重 600 + 正文色。
-   亮色：底对侧栏 1.05:1 / 色条 blue.9 对底 3.26:1 / 字对底 16.39:1 —— 底色差随壳层提亮
-   收窄（波5 是 1.11:1），活动态改由「色条 + 字重 + 正文色」三件套承担，一眼仍分得出；
-   暗色：纸面再亮一档的底 + blue.11 浅蓝条（底 1.22:1 / 条 6.86:1 / 字 12.43:1）——
-   用户复验「深色大纲高亮看不出」，暗色两处都提亮后才读得出（数字按 WCAG 公式计算）。
+   层级只用**缩进 + 字重/字号**表达，不引入额外颜色（D-05 定稿）。
+   活动项（D-05 定稿改动）：**浅主色底圆角矩形** + 主色文字 + 600 字重；
+   旧形态「左侧 3px 硬色条」已去——色条会把条目右边框和文字起始位错开，
+   而圆角软底与 ⋯ / ▾ 菜单里的 .is-current 是同一套「选中」语言，全站只此一种。
+   底与文字的对比：软底对纸面约 1.05:1（亮）/ 1.10:1（暗），承担辨识的是
+   「圆角软底 + 主色文字（5.76~9.86:1）+ 600 字重」三件套，色差不承担识别责任。
    ========================================================================== */
 .outline {
   inline-size: var(--w-outline);
   flex: none;
   overflow-y: auto;
-  padding: var(--size-3) var(--size-2) var(--size-4) 0;
+  padding: var(--size-3) var(--size-2) var(--size-4) var(--size-1);
   background: var(--bg-chrome);
   border-inline-end: 1px solid var(--border-chrome);
 }
@@ -434,15 +563,16 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   font-size: var(--fs-chrome-sm);
   letter-spacing: .08em;
   color: var(--text-muted);
-  padding: 0 var(--size-1) var(--size-2) var(--size-3);
+  padding: 0 var(--size-1) var(--size-2) var(--size-2);
 }
 .outline-list { display: block; }
 .outline-list a {
   display: block;
+  margin-inline-end: var(--size-1);
   padding-inline-end: var(--size-2);    /* 只给右内边距；左缩进留给内联值 */
   padding-block: 4px;
-  border-inline-start: 3px solid transparent;  /* 常驻占位：active 只换色，不挪位 */
-  text-indent: var(--size-2);           /* 蓝条与文字的间距，见本节顶部说明 */
+  /* 圆角软底常驻占位：active 只换底色/字重，不挪位（marker 换法的位移代价） */
+  border-radius: var(--radius-1);
   font-size: var(--fs-chrome);
   line-height: 1.5;
   color: var(--text-muted);
@@ -452,19 +582,13 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: background-color var(--duration-1) var(--ease-1),
-              color var(--duration-1) var(--ease-1),
-              border-color var(--duration-1) var(--ease-1);
+              color var(--duration-1) var(--ease-1);
 }
-/* accent 轻点缀之二：悬停时色条先亮到 blue.7，等于「预览激活态」*/
-.outline-list a:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-  border-inline-start-color: var(--accent-tint-border);
-}
+/* accent 轻点缀：悬停起底，等于「预览激活态」 */
+.outline-list a:hover { background: var(--bg-hover); color: var(--text); }
 .outline-list a.active {
-  border-inline-start-color: var(--outline-active-bar);
-  background: var(--outline-active-bg);
-  color: var(--text);
+  background: var(--accent-tint);
+  color: var(--accent-text-hover);
   font-weight: 600;
 }
 
@@ -481,6 +605,14 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
    波6 条目可点性（用户复验「文件卡片区别度没有」）：条目补按压态、悬停时左侧
    亮一条 3px accent 细条（与大纲活动态同语言，都表示「这一行现在归你点」），
    行高由 8px 内边距撑到 33px 左右，命中面积更像一条「牌」而不是一行字。
+   P1 修复：上面那条「色条」在波6 之后**一直没出现过**——`.topbar button`（后代选择器，
+   (0,1,1)）穿透进本菜单，既把条目的 border/圆角/高度/内边距逐项改写成顶栏按钮的样子
+   （实测 border 1px #d9d9e0、radius 5px、height 28px、padding 0 12px，整列渲染成
+   「一排小按钮」），又用 `.topbar button:hover` 的 `border-color` **简写**盖掉本节的
+   `border-inline-start-color`。现在顶栏皮已收窄到 `.topbar > …`（见 §2），本节条目
+   终于能落回自己的声明：**无描边的 7px 列表项**（--radius-1）+ hover 面 --bg-hover
+   + 左侧 3px accent 色条。本节的 `.recent-item` 一并升权到 `#recent-menu .recent-item`：
+   结构上已经没有穿透路径了，升权只是给未来的选择器改动上一道保险。
    ========================================================================== */
 .recent-wrap { position: relative; flex: none; }
 .recent-menu {
@@ -491,8 +623,11 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   display: flex;
   flex-direction: column;
   gap: 1px;
-  min-inline-size: 224px;
-  max-inline-size: min(360px, calc(100vw - var(--size-6)));
+  /* D-05（S-5/S-6）：宽度 240–420 自适应 —— 下限 240 保证两行式不至挤成一行，
+     上限 420 是设计定稿；实际宽度由内容（最长文件名）决定，内容更短也不会窄于 240。 */
+  inline-size: max-content;
+  min-inline-size: 240px;
+  max-inline-size: min(420px, calc(100vw - var(--size-6)));
   max-block-size: 56vh;
   overflow-y: auto;
   padding: var(--size-1);
@@ -502,36 +637,112 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   box-shadow: var(--shadow-2);
   animation: chrome-pop var(--duration-2) var(--ease-1);   /* 与 Aa 面板同一起场（见 §7 说明）*/
 }
-.recent-item {
-  display: block;
+
+/* --- 下拉条目：最近列表 / 全部标签 / ⋯ 溢出菜单三处共用同一套「列表项」语言 ---
+   7px 列表项、无描边、hover 起底（--bg-hover）、左侧 3px accent 色条；
+   两行式 = 文件名（正文色）+ 弱化目录（--fg-dim，第三级文字档）。 */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
   inline-size: 100%;
-  padding: var(--size-2) var(--size-2);
+  padding: var(--size-2);
   font: inherit;
+  font-size: var(--fs-chrome);
   text-align: start;
   color: var(--text);
   background: transparent;
   border: 0;
-  /* 悬停色条常驻占位（transparent），active 只换色不挪位 —— 与大纲条目同手法 */
+  /* 悬停色条常驻占位（transparent），hover 只换色不挪位 —— 与大纲条目同手法 */
   border-inline-start: 3px solid transparent;
-  border-radius: 0 var(--radius-2) var(--radius-2) 0;
+  border-radius: var(--radius-1);   /* 列表项档 7px：与「一排小按钮」的分界就在这里 */
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   transition: background-color var(--duration-1) var(--ease-1),
               border-color var(--duration-1) var(--ease-1);
 }
-.recent-item:hover {
-  background: var(--bg-hover);
-  border-inline-start-color: var(--accent-solid);
+.menu-item:hover { background: var(--bg-hover); border-inline-start-color: var(--accent-solid); }
+.menu-item:active { background: var(--bg-active); }
+/* 第二行（弱化目录）与文件名共享一个纵向列 */
+.menu-item .menu-text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  flex: 1;
 }
-.recent-item:active { background: var(--bg-active); }
-.recent-empty {
+.menu-item .menu-name,
+.menu-item .menu-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-item .menu-path {
+  margin-block-start: 1px;
+  font-size: var(--fs-chrome-sm);
+  color: var(--fg-dim);           /* 第三级文字档（P7 已改成可读档 5.10~5.56:1）*/
+}
+/* 当前项：浅主色底 + 主色 600 字重（与大纲活动项同一套「选中」语言） */
+.menu-item.is-current {
+  background: var(--accent-tint);
+  color: var(--accent-text-hover);
+  font-weight: 600;
+}
+/* 「动作」类条目（关闭其他/全部标签）：次级色，与文件条目区分 */
+.menu-item.is-action { color: var(--text-muted); }
+/* 菜单底部的细分隔线（1px --line，左右留 8px） */
+.menu-sep {
+  block-size: 1px;
+  margin: var(--size-1) var(--size-2);
+  background: var(--line);
+  flex: none;
+}
+/* 条目左侧的脏点（未保存）：与标签条上的 ● 同一颜色语义 */
+.menu-dot { flex: none; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--accent-solid); }
+.menu-dot[hidden] { display: none !important; }
+/* 菜单条目的按压缩进（.menu-item 已给 border-inline-start 占位） */
+.menu-item.is-current:hover { background: var(--accent-tint-hover); }
+/* 空态：见下方 .recent-empty（三者共用 --fg-dim） */
+.recent-menu .recent-empty,
+.tabs-menu .recent-empty,
+.overflow-menu .recent-empty {
   padding: var(--size-2) var(--size-1);
   font-size: var(--fs-chrome-sm);
   text-align: center;
-  color: var(--text-muted);             /* 空态文案弱化 */
+  /* P6/P7：空态是 --fg-dim 的第一个真实消费方。它原先是「已定义零消费」的装饰档
+     （调色板 --pal-dim，对纸面 2.54~2.67:1，做文本不达标），tokens 侧已改成可读档
+     mix(dim 60%, fg) = 5.10~5.56:1（亮）/ 6.81~7.02:1（暗），这里才敢把它用在文字上。 */
+  color: var(--fg-dim);
 }
+
+/* ==========================================================================
+   7c. 两个下拉菜单：▾ 全部标签列表 + ⋯ 溢出菜单（D-05 新增）
+   与最近下拉共用同一套四件套（纸面底 + 1px --border + radius-3 + --shadow-2）与
+   同一套条目语言（.menu-item）。两个菜单都是**常驻空容器**（HTML 里就位、默认 hidden），
+   打开时由 ui/tabs-menu.ts 现填内容，这样样式来源唯一、不靠动态注入 <style>。
+   ========================================================================== */
+.tabs-menu,
+.overflow-menu {
+  position: absolute;
+  z-index: var(--z-float);
+  inset-block-start: calc(100% + var(--size-2));
+  inset-inline-end: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  inline-size: max-content;
+  min-inline-size: 240px;                 /* S-5/S-6：240–420 自适应 */
+  max-inline-size: min(420px, calc(100vw - var(--size-6)));
+  max-block-size: 56vh;
+  overflow-y: auto;
+  padding: var(--size-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  animation: chrome-pop var(--duration-2) var(--ease-1);
+}
+/* 溢出菜单挂在自己的包装层上（.overflow-wrap 与 ⋯ 按钮同宽），
+   所以这里右对齐到按钮右沿 —— 与 Aa 面板同一套对齐方式。 */
+.overflow-wrap { position: relative; flex: none; display: flex; }
 
 /* ==========================================================================
    7. 「Aa」设置面板 —— 浮层卡片语言之三（纸面底 + 1px --border + radius-3 + --shadow-2）
@@ -581,7 +792,9 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   letter-spacing: .06em;
 }
 .settings-fs { display: flex; align-items: center; gap: var(--size-1); }
-/* 当前字号＝「选中值」：等宽数字 + 正文色 + 白底描边，读数一眼可辨 */
+/* 当前字号＝「选中值」：等宽数字 + 正文色 + 白底描边，读数一眼可辨。
+   圆角走 --radius-1（分段/列表项档 7px）——P3 之后这个 7px 不再被焦点规则改写成 2px。
+   P6：--shadow-seg 的第一位消费方就是它（「分组里的白底选中项」正是本 token 的语义位）。 */
 .settings-fs > span {
   min-inline-size: 2.6em;
   padding: 3px 0;
@@ -593,10 +806,11 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   background: var(--bg-app);
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
+  box-shadow: var(--shadow-seg);
 }
 .settings-fs button {
-  inline-size: 28px;
-  block-size: 28px;
+  inline-size: var(--h-ctl);
+  block-size: var(--h-ctl);
   display: grid;
   place-items: center;
   font: inherit;
@@ -622,6 +836,7 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   padding: 4px var(--size-4) 4px var(--size-2);
+  box-shadow: var(--shadow-ctl);       /* P6：有描边的控件配一档轻投影 */
   cursor: pointer;
   transition: border-color var(--duration-1) var(--ease-1);
 }
@@ -636,6 +851,76 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
 }
 /* 说明：下拉的箭头与展开列表由 UA/系统绘制（color-scheme 会跟随亮暗），
    纯 CSS 无法定制展开列表的选项行——要完全自定义需换自绘 listbox（属 TS 改动，越界）。*/
+
+/* ==========================================================================
+   7b. 字体面板控件的皮 —— D-02 批次曾落在 tokens.css，本批（D-05 顺带清理）迁回
+   为什么迁：上一批的约束是「字体栈只许出现在 tokens.css」，但**只有字体族名是「值」**；
+   面板控件的皮属壳层样式，放在 tokens.css 等于多一份「按壳层找却找不到」的 CSS。
+   现在 --font-pick-* 预设链留在 tokens.css（值层），选型与皮肤的规则回到本文件。
+   选择器写成 ≥(0,3,0)，可靠压过本文件 §7 的 `.settings-panel select`（(0,2,0)），
+   不依赖两个样式表的加载先后（main.ts 导入次序见文件头）。
+   ========================================================================== */
+.settings-panel .settings-font { inline-size: 100%; }
+
+/* 字体行与「实际生效」行是面板最宽的两行，标签不许折行（否则「字体」竖成两行） */
+.settings-panel .settings-font .settings-label,
+.settings-panel .settings-effective .settings-label { white-space: nowrap; }
+
+/* 字体下拉：把 §7 的 min-inline-size 拉满整行，长族名不折行 */
+.settings-panel .settings-select { min-inline-size: 100%; }
+
+/* 「实际生效字体」：面板最该读清的一行——等宽读数 + 正文色 + 白底描边 */
+.settings-panel .settings-effective {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: var(--size-1) var(--size-2);
+  min-block-size: 0;
+}
+.settings-panel .settings-effective code {
+  padding: 2px var(--size-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-chrome-sm);
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+}
+.settings-panel .settings-effective-hint {
+  flex: 1 1 100%;
+  color: var(--fg-dim);
+  font-size: var(--fs-chrome-sm);
+}
+/* 探测不到首选（多数是没装）→ 黄字提示「选了 A 实际是 B」，这是本面板存在的理由 */
+.settings-panel .settings-effective-hint[data-state="fallback"] { color: var(--warn-text); }
+.settings-panel .settings-effective-hint[data-state="serif"] { color: var(--text-muted); }
+
+/* 下拉展开态里每一项用自己那套字体渲染：选之前先看字形（原生 option 能吃到 font-family）。
+   ⚠ 字体族名只以 var(--font-pick-*) 形式出现，字面族名仍只住在 tokens.css。 */
+.settings-panel select option {
+  font-family: var(--font-pick-cjk-yahei);
+  font-size: var(--fs-chrome);
+  color: var(--text);
+}
+.settings-panel select option[value="cjk-harmonyos"] { font-family: var(--font-pick-cjk-harmonyos); }
+.settings-panel select option[value="cjk-yahei"] { font-family: var(--font-pick-cjk-yahei); }
+.settings-panel select option[value="cjk-lxgw"] { font-family: var(--font-pick-cjk-lxgw); }
+.settings-panel select option[value="cjk-songti"] { font-family: var(--font-pick-cjk-songti); }
+.settings-panel select option[value="cjk-notoserif"] { font-family: var(--font-pick-cjk-notoserif); }
+.settings-panel select option[value="latin-inter"] { font-family: var(--font-pick-latin-inter); }
+.settings-panel select option[value="latin-segoe"] { font-family: var(--font-pick-latin-segoe); }
+.settings-panel select option[value="latin-georgia"] { font-family: var(--font-pick-latin-georgia); }
+.settings-panel select option[value="latin-times"] { font-family: var(--font-pick-latin-times); }
+.settings-panel select option[value="latin-yaheiui"] { font-family: var(--font-pick-latin-yaheiui); }
+.settings-panel select option[value="mono-maple-nf"] { font-family: var(--font-pick-mono-maple-nf); }
+.settings-panel select option[value="mono-maple"] { font-family: var(--font-pick-mono-maple); }
+.settings-panel select option[value="mono-cascadia"] { font-family: var(--font-pick-mono-cascadia); }
+.settings-panel select option[value="mono-consolas"] { font-family: var(--font-pick-mono-consolas); }
+.settings-panel select option[value="mono-maple-mix"] { font-family: var(--font-pick-mono-maple-mix); }
+/* 首选未命中（多数是没装）：灰显并标注「本机未安装，将用兜底」，不做静默回退 */
+.settings-panel select option[data-unavailable="true"] {
+  color: var(--fg-dim);
+  font-family: var(--font-pick-cjk-yahei);
+}
 
 /* ==========================================================================
    8. 正文容器 —— 画布 + 整页纸（波5「Typora 式」；波6 换画布 token 与纸面提白）
@@ -704,8 +989,9 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
 }
 
 /* ==========================================================================
-   9. 状态栏 —— 低调一行；编码与进度用等宽体弱化，读数不跳字
-   高度 22px，分隔线用 --border-chrome（与顶栏同为壳层分界）。
+   9. 状态栏 —— 低调一行（D-05 定稿：11.5px / 次级色 / chrome 底 + 上沿 1px --hair）
+   高度 22px；上沿从 --border-chrome 改为 --hair —— 它要与正文纸面接壤，用的是
+   「同类细线」的语义（--rule/--hair 一族），比壳层分隔线更轻，不与顶栏下沿争。
    ========================================================================== */
 .statusbar {
   display: flex;
@@ -715,9 +1001,9 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   height: var(--h-status);
   padding: 0 var(--size-3);
   background: var(--bg-chrome);
-  border-top: 1px solid var(--border-chrome);
+  border-top: 1px solid var(--hair);
   color: var(--text-muted);
-  font-size: var(--fs-chrome-sm);
+  font-size: var(--fs-status);
 }
 .statusbar-spacer { flex: 1; }
 #st-encoding, #st-progress {
@@ -749,7 +1035,20 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
       （--bg-surface / --border / --text …）让主题自动跟随 —— 暗色下才不会留一块灰皮。
    布局沿用 CM 的 inline 流（第一行：查找 + 三个按钮 + 三个勾选项；<br> 后第二行：
    替换 + 两个按钮），只改皮不改流，避免动到 CM 自己的键位/焦点行为。
-   ========================================================================== */
+   P2 修复（插件的**其它**对话框没吃到这套皮）：输入框/按钮的选择器原先写死在
+   `.cm-search` 上，于是 @codemirror/search 的「跳转到行」对话框（`.cm-dialog`，
+   同样是 CM 生成的 .cm-panel）内部控件**整块落回 CM baseTheme**——实测 input
+   字号 7.7px / 圆角 2px / silver #c0c0c0 描边 / 107×14，按钮 9.1px / 圆角 1px /
+   灰底 #f0f0f0，白卡里嵌着一套「系统默认控件」。现在统一放宽到
+   `#editor-pane :is(.cm-search, .cm-dialog)`；`.cm-searchMatch` 等既有规则不受影响
+   （`.cm-search` 是整词类名匹配，不会命中 `.cm-searchMatch`）。
+   P5（位置语义，如实说明、不再含糊）：编辑态的查找卡在**编辑器底部**（.cm-panels-bottom，
+   由 @codemirror/search 的 showPanel 默认 bottom 决定），阅读态的 #findbar 在**内容区右上**。
+   两者位置**故意不同**，本节不再声称「同角落、同一件东西」：
+   CM 的面板容器是「贴在编辑器上/下沿的工具条」（要挪到右上角得自绘查找 UI，属另一批），
+   而 #findbar 是浮在正文纸面上的卡片，两者容器形态本就不同。
+   可以也**已经**统一的是「控件语言」：输入框同宽 184px / 同高 28px / 同 1px --border /
+   同 8px 圆角 / 同轻投影，按钮同高同皮，关闭钮同位同规格（24px 方钮 + 8px inset）。 */
 #editor-pane .cm-panels {
   background: none;                 /* 容器让位：卡片感交给内层 .cm-search */
   border: 0;                        /* CM 默认在容器上画 1px #ddd 分隔线 */
@@ -758,8 +1057,7 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
      但层级不靠 DOM 顺序兜底）；仍低于顶栏（--z-float + 10），不会被工具条反压 */
   z-index: calc(var(--z-float) + 1);
 }
-/* 卡片本体：与 §4/§6/§7 三处浮层同一套四件套，右上角起浮（与 findbar 同角落、
-   同 16px 右边距、同 8px 上边距，编辑/阅读两态的查找工具看起来是同一件东西）。
+/* 卡片本体：与 §4/§6/§7 三处浮层同一套四件套。
    用户反馈批次·布局留位：右内边距加宽 32px——关闭钮（绝对定位 24px 方钮 +
    8px inset）独占右上角车道，输入框/勾选项永不钻到它底下（z 序相同也不重叠）。 */
 #editor-pane .cm-panel.cm-search {
@@ -773,28 +1071,31 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   box-shadow: var(--shadow-2);
   font-size: var(--fs-chrome);
 }
-/* 输入框：与 findbar 的 #find-input 同款（纸面底 + 发丝线 + radius-2，184px 同宽） */
-#editor-pane .cm-search .cm-textfield {
+/* 输入框：与 findbar 的 #find-input 同款（纸面底 + 发丝线 + radius-2 + 轻投影，184px 同宽）。
+   选择器覆盖 .cm-search 与 .cm-dialog 两处 CM 面板（P2）。 */
+#editor-pane :is(.cm-search, .cm-dialog) .cm-textfield {
   font: inherit;
   font-size: var(--fs-chrome);
   inline-size: 184px;               /* 与 #find-input 同宽：两态查找工具尺寸一致 */
-  height: 28px;
+  height: var(--h-ctl);
   padding: 0 var(--size-2);
   color: var(--text);
   background: var(--bg-app);
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
+  box-shadow: var(--shadow-ctl);    /* P6：与 #find-input 同一档控件轻投影 */
   vertical-align: middle;
   transition: border-color var(--duration-1) var(--ease-1);
 }
-#editor-pane .cm-search .cm-textfield:focus { border-color: var(--accent-tint-border); }
-#editor-pane .cm-search .cm-textfield::placeholder { color: var(--text-muted); }
+#editor-pane :is(.cm-search, .cm-dialog) .cm-textfield:focus { border-color: var(--accent-tint-border); }
+#editor-pane :is(.cm-search, .cm-dialog) .cm-textfield::placeholder { color: var(--text-muted); }
 /* 按钮：与 findbar 的按钮同款（透明底 + hover 起底，28px 高，圆角 2 档）——
-   面板里没有主按钮，动作靠文字区分，不靠色块堆主次 */
-#editor-pane .cm-search .cm-button {
+   面板里没有主按钮，动作靠文字区分，不靠色块堆主次。
+   P2 起 .cm-dialog 的「跳转」按钮也在此列（它原本是 #f0f0f0 灰底 + 1px #888 的 CM 默认皮）。 */
+#editor-pane :is(.cm-search, .cm-dialog) .cm-button {
   font: inherit;
   font-size: var(--fs-chrome);
-  height: 28px;
+  height: var(--h-ctl);
   padding: 0 var(--size-2);
   color: var(--text-muted);
   background: transparent;
@@ -806,13 +1107,15 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   transition: background-color var(--duration-1) var(--ease-1),
               color var(--duration-1) var(--ease-1);
 }
-#editor-pane .cm-search .cm-button:hover { background: var(--bg-hover); color: var(--text); }
-#editor-pane .cm-search .cm-button:active { background: var(--bg-active); }
+#editor-pane :is(.cm-search, .cm-dialog) .cm-button:hover { background: var(--bg-hover); color: var(--text); }
+#editor-pane :is(.cm-search, .cm-dialog) .cm-button:active { background: var(--bg-active); }
 /* 勾选行：与 Aa 面板的分组标签同一档小字，勾选框走全站 accent 色。
    用户反馈批次·内部对齐：label 改 inline-flex + align-center + gap 一档——
    原生 inline 流里 checkbox 与文字基线不齐（CM 的 white-space:pre 更放大错位），
-   flex 居中后「区分大小写/正则/全字」三枚勾选行与文字同高同心。 */
-#editor-pane .cm-search label {
+   flex 居中后「区分大小写/正则/全字」三枚勾选行与文字同高同心。
+   P2 起 .cm-dialog 的「跳转到行:」标签也吃这条：它原先只有字号/颜色两条声明，
+   现在同样 flex 居中，与 28px 高的输入框同轴。 */
+#editor-pane :is(.cm-search, .cm-dialog) label {
   display: inline-flex;
   align-items: center;
   gap: var(--size-1);
@@ -820,7 +1123,7 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
   color: var(--text-muted);
   white-space: nowrap;
 }
-#editor-pane .cm-search label:hover { color: var(--text); }
+#editor-pane :is(.cm-search, .cm-dialog) label:hover { color: var(--text); }
 #editor-pane .cm-search input[type="checkbox"] { accent-color: var(--accent-solid); }
 /* 关闭钮：CM 给的是绝对定位的文字 ×，按 findbar 的关闭钮规格收成 24px 方形热区
    （.cm-dialog-close 是跳转行对话框的同位钮，一并收进来） */
@@ -850,30 +1153,35 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
 #editor-pane .cm-searchMatch { background: var(--accent-tint); }
 #editor-pane .cm-searchMatch-selected,
 #editor-pane .cm-searchMatch.cm-searchMatch-selected { background: var(--blue-7); }
-/* 跳转行对话框（.cm-dialog 也在 .cm-panels 里）：共用输入框/按钮皮，只补容器与字号 */
+/* 跳转行对话框（.cm-dialog 也在 .cm-panels 里）：与 .cm-search 同为浮层卡（四件套一致），
+   内部控件的皮由上面那组 :is(.cm-search, .cm-dialog) 规则提供。
+   P2 补的第二处：右内边距与 .cm-search 一样留 32px 关闭钮车道 —— 实测修前
+   关闭钮 rect(1055..1079) 与「跳转」按钮 rect(1033..1071) **横向重叠 16px**，
+   按钮右半被关闭钮压住（截图 06 可见）。 */
 #editor-pane .cm-dialog {
   margin: var(--size-2) var(--size-4) 0 auto;
   inline-size: fit-content;
-  padding: var(--size-2) var(--size-3);
+  padding: var(--size-2) calc(var(--size-3) + 32px) var(--size-2) var(--size-3);
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
   box-shadow: var(--shadow-2);
   font-size: var(--fs-chrome);
 }
-#editor-pane .cm-dialog label { font-size: var(--fs-chrome-sm); color: var(--text-muted); }
 
 /* ==========================================================================
    11. 工具条沉浸淡出（波6，M5 项）—— 纯 CSS 只做「态」与「豁免」
    ⚠ 接线不在本文件：滚动监听归 main.ts，见 setupProgress()。
    CSS 只管两件事：
-   ① 淡出态：body（或 html）.chrome-dim 时，标题栏 + 顶栏一起降到 --opacity-dim；
-   ② 四条豁免（任何一条命中就不淡出）：
-      悬停 :hover / 含焦点 :focus-within / 浮层开着（最近菜单、Aa 面板）/
+   ① 淡出态：body（或 html）.chrome-dim 时，顶栏降到 --opacity-dim；
+   ② 豁免（任何一条命中就不淡出）：
+      悬停 :hover / 含焦点 :focus-within / 浮层开着（最近菜单、Aa 面板、两个新菜单）/
       编辑态（#editor-pane 可见）。
    为什么豁免能覆盖淡出态：豁免规则的权重更高（带 id 的 :has() 与伪类各多一级），
    不靠书写顺序，JS 漏判其中任何一种也不会出现「浮层跟着一起淡掉」的破相。
    类挂 body 或 html 都认（:is()），接线侧写哪个都能生效。
+   D-05：旧「标题栏 + 顶栏」两层已并成一条，选择器仍同时写 .titlebar 与 .topbar，
+   因为 <header> 同时挂着这两个类名（兼容 print.css 的退场名单）。
    过渡 200ms ≤ 250ms；prefers-reduced-motion 由 §12 统一降级。
    ========================================================================== */
 .titlebar, .topbar { transition: opacity var(--duration-2) var(--ease-1); }
@@ -888,6 +1196,8 @@ body:has(#empty-hint:not([hidden])) .outline { display: none; }
 
 html:has(#recent-menu:not([hidden])) .topbar,
 html:has(#settings-panel:not([hidden])) .topbar,
+html:has(#tabs-menu:not([hidden])) .topbar,
+html:has(#overflow-menu:not([hidden])) .topbar,
 html:has(#editor-pane:not([hidden])) .titlebar,
 html:has(#editor-pane:not([hidden])) .topbar { opacity: 1; }
 
@@ -916,9 +1226,17 @@ html:has(#editor-pane:not([hidden])) .topbar { opacity: 1; }
    层级：与顶栏同档（--z-float + 10），且 #close-guard 挂在 body 末尾、晚于 #app
    绘制，同档也压得住顶栏；遮罩用 color-mix 半透明墨色，配色全走 tokens 变量，
    亮暗自动跟随（本文件不出现字面色值）。
-   注：本节的 #close-guard button 是 (1,1,1) 特异的按钮皮，故意不复用 .topbar button 那套
+   注：本节的 #close-guard button 是 (1,1,1) 特异的按钮皮，故意不复用 .topbar 那套
    （本浮层的按钮坐在纸面卡片上、尺寸更小），与迁移前的内联规则逐字一致。
-   ========================================================================== */
+   P4（本批）：主按钮「保存」原先用 --accent-solid 实心填充 + 纸面色文字，是全站
+   唯一的实心强调填充。实测白字对比：靛蓝·亮 6.70:1 ✔，但**宣纸·亮只有 4.39:1**
+   （该主题的 accent 是暖棕、纸面近白），13px 文字需 ≥4.5:1 才算达标；且实测该填充上
+   无论用纸面色（4.39）还是纯白（4.43）都到不了 4.5 —— **改文字色这条路走不通**
+   （改用深色正文更差，3.61:1）。故按审计 §I-5 的取向改走「软底 + 强调描边 + 软底文字」：
+     底 --accent-tint / 描边 --accent-solid / 字 --on-accent-soft
+   实测 10 组文字对比 5.76~9.86:1（最低宣纸·亮 5.76），描边对卡片 4.39~8.44:1（≥3:1），
+   与「强调色只做软底/文字，不做大色块填充」的整体语言一致。
+   高度复核：block-size 走 --h-ctl = 28px（D-01 已从 31px 落下，本批复测确认 28）。 */
 #close-guard {
   position: fixed;
   inset: 0;
@@ -941,7 +1259,8 @@ html:has(#editor-pane:not([hidden])) .topbar { opacity: 1; }
 #close-guard .close-guard-actions { display: flex; justify-content: flex-end; gap: var(--size-2); }
 #close-guard button {
   font: inherit;
-  padding: 5px var(--size-3);
+  block-size: var(--h-ctl);      /* D-01：由 padding 撑出的 31px 落回控件统一高 28px */
+  padding: 0 var(--size-3);
   color: var(--text);
   background: var(--bg-app);
   border: 1px solid var(--border);
@@ -949,8 +1268,16 @@ html:has(#editor-pane:not([hidden])) .topbar { opacity: 1; }
   cursor: pointer;
 }
 #close-guard button:hover { background: var(--bg-hover); }
+/* 主操作：软底 + 强调描边 + 软底文字（见本节说明）。
+   hover 单独抬一档（--accent-tint-hover）：主按钮在 :hover 上的特异性与本节
+   上面的 `#close-guard button:hover` 相同，靠「写在后面」取胜，不能省。 */
 #close-guard button.guard-primary {
-  color: var(--bg-app);
-  background: var(--accent-solid);
+  color: var(--on-accent-soft);
+  background: var(--accent-tint);
+  border-color: var(--accent-solid);
+}
+#close-guard button.guard-primary:hover {
+  color: var(--on-accent-soft);
+  background: var(--accent-tint-hover);
   border-color: var(--accent-solid);
 }

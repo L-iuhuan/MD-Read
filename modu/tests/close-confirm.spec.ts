@@ -236,7 +236,11 @@ describe("F · 样式已迁出 main.ts（真实 CSS，不再注入 <style>）", 
     expect(app).toMatch(/#close-guard \.close-guard-card\s*\{[^}]*border-radius:\s*var\(--radius-3\)/);
     expect(app).toMatch(/#close-guard \.close-guard-card\s*\{[^}]*box-shadow:\s*var\(--shadow-2\)/);
     expect(app).toMatch(/#close-guard \.close-guard-actions\s*\{[^}]*justify-content:\s*flex-end/);
-    expect(app).toMatch(/#close-guard button\.guard-primary\s*\{[^}]*background:\s*var\(--accent-solid\)/);
+    // P4：主按钮不再是实心强调填充（宣纸·亮白字 4.39:1 < 4.5），改「软底 + accent 描边
+    // + 软底文字」三件；此处锚的是新皮的三条声明，避免回退到实心填充。
+    expect(app).toMatch(/#close-guard button\.guard-primary\s*\{[^}]*background:\s*var\(--accent-tint\)/);
+    expect(app).toMatch(/#close-guard button\.guard-primary\s*\{[^}]*color:\s*var\(--on-accent-soft\)/);
+    expect(app).toMatch(/#close-guard button\.guard-primary\s*\{[^}]*border-color:\s*var\(--accent-solid\)/);
   });
 
   it("样式表纪律：外壳层不出现字面色值（色值只走 tokens）", () => {
