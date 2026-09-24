@@ -217,3 +217,76 @@ describe('⑨ P5 批3 fragment 路径（摘双重解析）', () => {
     expect(h1?.id).toBe(outline[0]?.id)
   })
 })
+
+/* P0-5：宽表/大图撑破纸面。CSS（cjk.css 的 .table-wrap 横向滚动）只有在渲染层
+   真的生成包裹层时才生效——本组就是「包裹层由管线产出」的正向锚。 */
+describe('⑩ 表格包裹层（P0-5）', () => {
+  it('语料表格：每个 table 都有 .table-wrap 父层（无裸 table 漏网）', () => {
+    const tables = [...doc.querySelectorAll('table')]
+    expect(tables.length).toBeGreaterThan(0)
+    for (const table of tables) {
+      expect(table.parentElement?.classList.contains('table-wrap')).toBe(true)
+    }
+    expect(doc.querySelectorAll('.table-wrap').length).toBe(tables.length)
+    expect(doc.querySelector('.table-wrap > table thead')).toBeTruthy()
+  })
+
+  it('HTML 字符串（挂载方实际拿到的形态）里 wrap 与 table 首尾相接', () => {
+    const wraps = doc.querySelectorAll('.table-wrap').length
+    expect(html).toMatch(/<div class="table-wrap"><table[\s>]/)
+    expect((html.match(/<div class="table-wrap"><table[\s>]/g) ?? []).length).toBe(wraps)
+    expect((html.match(/<\/table>\s*<\/div>/g) ?? []).length).toBe(wraps)
+    expect(html).not.toMatch(/<div class="table-wrap"><div class="table-wrap">/)
+  })
+
+  it('包裹层不吃掉块级定位：table 仍带 data-line', () => {
+    const table = doc.querySelector('.table-wrap > table')
+    const line = lineOf('| 科目 |')
+    expect(table?.getAttribute('data-line')).toBe(String(line))
+  })
+
+  it('多表：每张表各自成 wrap（不是只包第一张）', () => {
+    const multi = renderDocument(
+      [
+        '| A | B |', '| --- | --- |', '| 1 | 2 |',
+        '',
+        '中间段落。',
+        '',
+        '| C | D |', '| --- | --- |', '| 3 | 4 |',
+      ].join('\n'),
+    )
+    const box = parse(multi.html)
+    expect(box.querySelectorAll('table').length).toBe(2)
+    expect(box.querySelectorAll('.table-wrap').length).toBe(2)
+    for (const wrap of box.querySelectorAll('.table-wrap')) {
+      expect(wrap.querySelector('table')?.parentElement).toBe(wrap)
+      expect(wrap.querySelectorAll('table').length).toBe(1)
+    }
+  })
+
+  it('嵌套场景：引用块 / 列表内的表格同样被包裹（token 规则，非字符串 hack）', () => {
+    const nested = renderDocument(
+      [
+        '> | 引用列 | 值 |',
+        '> | --- | --- |',
+        '> | 甲 | 1 |',
+        '',
+        '- 列表项：',
+        '',
+        '  | 列表列 | 值 |',
+        '  | --- | --- |',
+        '  | 乙 | 2 |',
+      ].join('\n'),
+    )
+    const box = parse(nested.html)
+    expect(box.querySelectorAll('table').length).toBe(2)
+    expect(box.querySelector('blockquote .table-wrap > table')).toBeTruthy()
+    expect(box.querySelector('li .table-wrap > table')).toBeTruthy()
+    expect(box.querySelectorAll('blockquote table, li table').length).toBe(2)
+  })
+
+  it('fragment 路径同源：包裹层在挂载用的 fragment 里就已就位', () => {
+    const r = renderDocument('| A | B |\n| --- | --- |\n| 1 | 2 |')
+    expect(r.fragment.querySelectorAll('.table-wrap > table').length).toBe(1)
+  })
+})

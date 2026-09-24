@@ -7,18 +7,30 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow, type Window as TauriWindow } from "@tauri-apps/api/window";
+import {
+  getCurrentWindow,
+  type Window as TauriWindow,
+} from "@tauri-apps/api/window";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
 import { attachCodeCopyButtons } from "./render/codecopy";
 import { awaitPrintReady } from "./render/print-ready";
-import { createTabManager, type MountContext, type TabManager } from "./app/tabs";
+import {
+  createCloseGuard,
+  createTabManager,
+  type MountContext,
+  type Tab,
+  type TabManager,
+} from "./app/tabs";
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { openEachMd } from "./app/drop";
+import { mdExtensions } from "./app/md-ext";
 import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
 import { setupFindbar, closeTopmostOverlay, type Findbar } from "./ui/findbar";
+import { askCloseChoice } from "./ui/close-confirm";
+import { installBootWatchdog, revealBootFailure } from "./ui/boot-error";
 import { setupSettings, readAutosavePref } from "./ui/settings";
 import {
   applyThemePref,
@@ -245,16 +257,21 @@ async function openPath(tabs: TabManager, path: string, activate = true): Promis
   }
 }
 
+/** 打开对话框（P0-6）：filter 取共用扩展名清单（与关联注册/拖放/命令行同一份），
+ *  并允许多选——多选的路径与拖放同路径逐个开标签，仅末项激活渲染。 */
 async function onOpenClick(tabs: TabManager): Promise<void> {
   const picked = await openFileDialog({
     title: "打开 Markdown 文件",
-    multiple: false,
+    multiple: true,
     directory: false,
-    filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+    filters: [{ name: "Markdown", extensions: mdExtensions() }],
   });
-  if (typeof picked === "string") {
-    await openPath(tabs, picked);
+  // 泛型 OpenDialogReturn 依赖字面量 multiple/directory，这里按运行时形状收窄更直白
+  const pickedPaths: string[] = typeof picked === "string" ? [picked] : (picked ?? []);
+  if (pickedPaths.length === 0) {
+    return; // 用户取消：静默结束
   }
+  await openEachMd(pickedPaths, (path, activate) => openPath(tabs, path, activate));
 }
 
 /* ---- 导出 PDF（M4）：等待渲染完备 → 存路径 → PrintToPdf 直出 ---- */
@@ -384,7 +401,8 @@ function setupTabHotkeys(): void {
 function setupDragDrop(tabs: TabManager): void {
   void getCurrentWebview().onDragDropEvent((event) => {
     if (event.payload.type === "drop") {
-      // 多文件拖放（M2 波3 反馈①）：全部 .md 逐个开标签；仅末项渲染（P5 批2）
+      // 多文件拖放（M2 波3 反馈①）：全部 Markdown（md/markdown/mdx，共用清单见 app/md-ext.ts）
+      // 逐个开标签；仅末项渲染（P5 批2）
       void openEachMd(event.payload.paths, (path, activate) => openPath(tabs, path, activate));
     }
   });
@@ -419,7 +437,85 @@ function setupWindowControls(): void {
   });
   void syncMaxState(win); // 启动对齐（可能是系统记住的最大化态）
   void win.onResized(() => void syncMaxState(win)); // 最大化/还原随尺寸变化即时切图标
+  // 关闭守卫（P0-7）：标题栏 ✕ 的 close() 与 Alt+F4 都发 close-requested，同一入口
+  void win.onCloseRequested((event) => closeGuard(event));
 }
+
+/* ---- 关闭守卫（P0-7）：窗口关闭请求前拦一道——有未保存改动就问
+ *      保存 / 放弃 / 取消，别让防抖窗口里的编辑随窗口一起没。
+ *      判据/状态机在 app/tabs.ts（shouldGuardClose / resolveCloseAction /
+ *      createCloseGuard），浮层在 ui/close-confirm.ts（F 批抽出的三选一对话框，
+ *     样式在 app.css §13），本文件只负责接线。 ---- */
+
+/** 未落盘文本：活动标签以体内 source 为准（回阅读态时已同步，编辑器存档可能滞后），
+ *  非活动标签取切走时存的编辑器态（存档 sliceDoc 按行分隔符 join，CRLF 保真）。 */
+function unsavedText(tab: Tab, isActive: boolean): string {
+  const saved = tab.editor;
+  return isActive || saved === null ? tab.source : saved.state.sliceDoc();
+}
+
+/** 逐个落盘未保存标签（P0-7）：活动编辑标签走会话保存链（原编码/BOM 保真、
+ *  失败文案复用），其余按未落盘文本直存。任一失败返回 false（窗口不关）。 */
+async function saveDirtyTabs(tabs: TabManager): Promise<boolean> {
+  const active = tabs.activeTab();
+  let allSaved = true;
+  for (const tab of tabs.dirtyTabs()) {
+    const isActive = active !== null && tab.path === active.path;
+    const session = editorSession;
+    if (isActive && session !== null && session.isEditing()) {
+      await session.save(); // 失败自闪「保存失败：…」，成败按 dirty 回读判定
+      if (tab.dirty) {
+        allSaved = false;
+      }
+      continue;
+    }
+    const text = unsavedText(tab, isActive);
+    try {
+      await invoke<void>("save_file", {
+        path: tab.path,
+        text,
+        encoding: tab.encoding,
+        bom: tab.bom,
+      });
+      tab.source = text;
+      tabs.setDirty(tab.path, false);
+    } catch (error) {
+      flashStatus(`保存失败：${String(error)}`, "error");
+      allSaved = false;
+    }
+  }
+  return allSaved;
+}
+
+/** 关闭请求处理（P0-7）：Alt+F4 与标题栏 ✕ 在 Tauri 2 上是同一条 close-requested
+ *  事件（tao 的 WM_CLOSE → CloseRequested → 前端事件），故只此一处入口，不另设键位。
+ *
+ *  【P0-7 回归修复·2026-09-23 实机测量】旧版此处开头无条件 event.preventDefault()，
+ *  再由本函数自己调 win.destroy() 收尾，结果窗口再也关不掉。真正原因不是 destroy()
+ *  本身没效果，而是**没权限**：
+ *    1. `window.__TAURI__.window.getCurrentWindow().destroy()` 实测抛
+ *       `window.destroy not allowed. Permissions associated with this command:
+ *        core:window:allow-destroy`（capabilities 此前只授了 allow-close 等）；
+ *    2. @tauri-apps/api 2.11.1 的 onCloseRequested 是「先 await handler，再看
+ *       event.isPreventDefault()；没 prevent 就自己调一次 destroy()」——旧版无条件
+ *       prevent 把它这条自动收尾也一并掐掉了，于是两道 destroy 全废。
+ *  修法：守卫状态机搬进 app/tabs.ts 的 createCloseGuard（纯依赖注入，可单测）；
+ *  这里只接线。preventDefault 只在真要被拦的那一轮调，放行的一轮交给自动 destroy；
+ *  用户选「保存/放弃」后用 close() 重入一次（close 有 core:window:allow-close 权限）。
+ *  另注：capabilities/default.json 已补 core:window:allow-destroy —— 自动收尾走的正是
+ *  destroy，没这条权限干净态仍然关不掉；旧版把它一起挡住，所以先前只看到「destroy()
+ *  点了没用」，而非「destroy() 是坏 API」。 */
+const closeGuard = createCloseGuard({
+  // 关窗守卫接线：状态机在 app/tabs.ts 的 createCloseGuard（纯依赖注入，可单测）
+  hasDirty: () => activeTabs?.hasDirty() ?? false,
+  dirtyCount: () => activeTabs?.dirtyTabs().length ?? 0,
+  ask: (message) => askCloseChoice(message),
+  save: async () => {
+    const tabs = activeTabs;
+    return tabs === null ? true : saveDirtyTabs(tabs);
+  },
+  quit: () => getCurrentWindow().close(),
+});
 
 function applyPrefs(): void {
   applyThemePref(readThemePref()); // 三档主题（含自动：解析系统偏好后落 data-theme）
@@ -573,14 +669,33 @@ async function boot(): Promise<void> {
   setupToggles();
   setupDragDrop(tabs);
   setupProgress();
-  await listen<string>("open-file", (event) => void openPath(tabs, event.payload));
+  // 二次实例转发：载荷是筛过的 Markdown 路径列表（Rust 侧 md_paths），逐个开标签、仅末项渲染
   await listen<string[]>("second-instance", (event) => {
-    // 多文件二次实例参数与拖放同路径（M2 波3 反馈①）：全部 .md 逐个开标签，仅末项渲染
     void openEachMd(event.payload, (path, activate) => openPath(tabs, path, activate));
   });
-  const pending = await invoke<string | null>("take_pending_file");
-  if (pending !== null) {
-    await openPath(tabs, pending);
+  // 启动参数携带的待开文件（P0-6：列表——多文件启动每个都开，不再只开第一个）
+  const pending = await invoke<string[]>("take_pending_files");
+  if (pending.length > 0) {
+    await openEachMd(pending, (path, activate) => openPath(tabs, path, activate));
+  }
+}
+
+/** boot 的顶层收场（P1-7）：成功与失败都先摘掉 FOUC 隐藏，失败另画中文说明。
+ *  没有这层 catch，boot 里任何一次抛出都会让 `html:not(.app-ready) body`
+ *  永久 visibility:hidden —— 窗口一片空白，用户无从下手。 */
+async function startApp(): Promise<void> {
+  const stopWatchdog = installBootWatchdog(); // 兜底：boot 挂死不 resolve 也放行首帧
+  try {
+    await boot();
+  } catch (error) {
+    // revealBootFailure 自己先加 .app-ready 再画面板，故此处不必再放行首帧
+    revealBootFailure(error);
+    // 启动失败属使用者可见的异常，上报一条便于排查（失败只记控制台，不再阻断）
+    void invoke("spike_log", { msg: `boot: 启动失败 ${String(error)}` }).catch((logError: unknown) => {
+      console.warn("启动失败上报失败", logError);
+    });
+  } finally {
+    stopWatchdog(); // 走到这里首帧必已放行，看门狗不许再留一个待触发的定时器
   }
 }
 
@@ -589,5 +704,5 @@ window.addEventListener("DOMContentLoaded", () => {
   void invoke("spike_log", { msg: "boot: 应用壳启动" }).catch((e: unknown) => {
     console.warn("启动日志上报失败", e);
   });
-  void boot();
+  void startApp();
 });

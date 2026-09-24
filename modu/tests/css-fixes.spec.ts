@@ -72,6 +72,48 @@ describe("用户反馈批次：导出修复锚", () => {
   });
 });
 
+/* P0-5：宽表/大图撑破纸面 —— CSS 侧锚点。
+   .table-wrap 的横向滚动只有在渲染层真的生成包裹层时才生效（正向锚在 render.spec.ts）；
+   本组只锚「规则存在且打印红线未被破坏」。 */
+describe("P0-5 宽表/大图：纸面宽度红线锚", () => {
+  it(".table-wrap 提供横向滚动，且宽度上限不越出纸面（auto 宽 + max-inline-size）", () => {
+    expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*overflow-x:\s*auto/);
+    expect(cjk).toMatch(
+      /\.mdc \.table-wrap\s*\{[^}]*max-inline-size:\s*var\(--measure-wide\)/,
+    );
+    // 反向锚：禁止用固定 inline-size/width 把 wrap 撑到纸外（只有上限才安全）
+    expect(cjk).not.toMatch(/\.mdc \.table-wrap\s*\{[^}]*[^-]inline-size:\s*\d/);
+  });
+
+  it("大图限宽：.mdc img max-inline-size:100% + height:auto", () => {
+    expect(cjk).toMatch(/\.mdc img\s*\{[^}]*max-inline-size:\s*100%/);
+    expect(cjk).toMatch(/\.mdc img\s*\{[^}]*height:\s*auto/);
+  });
+
+  it("表格样式未被削弱：外框/圆角/末行线（无末行抑制规则）", () => {
+    expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border:\s*1px solid var\(--border\)/);
+    expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border-radius:\s*var\(--radius-2\)/);
+    expect(cjk).toMatch(/\.mdc th, \.mdc td\s*\{[^}]*border-bottom:\s*1px solid var\(--border\)/);
+    expect(cjk).not.toMatch(/tbody tr:last-child[^{]*\{[^}]*border-bottom:\s*0/);
+  });
+
+  it("打印分页红线未破：行级 tr avoid + thead 跨页重复，且无整表 avoid", () => {
+    expect(printCss).toMatch(/\btr\s*\{[^}]*break-inside:\s*avoid/);
+    expect(printCss).toMatch(/thead\s*\{[^}]*display:\s*table-header-group/);
+    expect(printCss).not.toMatch(/(^|[},\s])table\s*\{[^}]*break-inside:\s*avoid/);
+    // 屏显层（cjk.css）同两条规则也必须还在
+    expect(cjk).toMatch(/\.mdc tr\s*\{\s*break-inside:\s*avoid/);
+    expect(cjk).toMatch(/\.mdc thead\s*\{\s*display:\s*table-header-group/);
+  });
+
+  it("打印层还原滚动容器 + 清 wrap 限宽（滚动容器不可跨页分页，行级分页才作数）", () => {
+    expect(printCss).toMatch(/\.mdc \.table-wrap\s*\{[^}]*overflow:\s*visible/);
+    expect(printCss).toMatch(/\.mdc \.table-wrap\s*\{[^}]*max-inline-size:\s*none/);
+    // 唯一打印层红线：不得出现第三份打印样式表（cjk.css 不写 @media print）
+    expect(cjk).not.toMatch(/@media\s+print/);
+  });
+});
+
 describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () => {
   it("标签：拖拽半透明反馈 + ✕ 瘦身 18px + 焦点在标签上可见", () => {
     expect(app).toMatch(/\.tab\.dragging\s*\{[^}]*opacity/);

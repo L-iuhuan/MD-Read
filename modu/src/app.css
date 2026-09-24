@@ -906,3 +906,51 @@ html:has(#editor-pane:not([hidden])) .topbar { opacity: 1; }
     animation-duration: .01ms !important;
   }
 }
+
+/* ==========================================================================
+   13. 关窗三选一浮层（P0-7）—— F 批由 main.ts 的内联 <style> 迁来，规则字面照抄
+   为什么迁：壳层所有浮层都该在壳层样式表里可查（§4 查找条 / §6 最近 / §7 Aa 面板
+   三处四件套 + 本处的遮罩卡片），注入 <style> 等于多一份 grep 不到、改不动的 CSS。
+   运行时形态不变：节点 #close-guard 由 ui/close-confirm.ts 动态创建（index.html
+   里没有该节点），故本文件是它唯一的样式来源。
+   层级：与顶栏同档（--z-float + 10），且 #close-guard 挂在 body 末尾、晚于 #app
+   绘制，同档也压得住顶栏；遮罩用 color-mix 半透明墨色，配色全走 tokens 变量，
+   亮暗自动跟随（本文件不出现字面色值）。
+   注：本节的 #close-guard button 是 (1,1,1) 特异的按钮皮，故意不复用 .topbar button 那套
+   （本浮层的按钮坐在纸面卡片上、尺寸更小），与迁移前的内联规则逐字一致。
+   ========================================================================== */
+#close-guard {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-float) + 10);
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--text) 28%, transparent);
+}
+#close-guard .close-guard-card {
+  min-inline-size: 320px;
+  padding: var(--size-4);
+  color: var(--text);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  font-size: var(--fs-chrome);
+}
+#close-guard p { margin: 0 0 var(--size-3); line-height: 1.6; }
+#close-guard .close-guard-actions { display: flex; justify-content: flex-end; gap: var(--size-2); }
+#close-guard button {
+  font: inherit;
+  padding: 5px var(--size-3);
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+#close-guard button:hover { background: var(--bg-hover); }
+#close-guard button.guard-primary {
+  color: var(--bg-app);
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+}

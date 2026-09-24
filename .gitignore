@@ -16,3 +16,9 @@ Thumbs.db
 # 日志与临时
 *.log
 *.tmp
+
+# 验证产物（CDP/截图/性能报告，见交接文档 5.2）
+.verify/
+
+# pnpm 在项目所在盘符建的本地 store（Windows 多盘符环境）
+.pnpm-store/

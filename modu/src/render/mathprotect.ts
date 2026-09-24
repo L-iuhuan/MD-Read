@@ -53,6 +53,9 @@ function randomSalt(): string {
 
 /** 生成原文中不存在的前缀（含 GUARD_PREFIX，杜绝与正文撞车） */
 function makeBase(src: string): string {
+  // P1-5 快路径：固定前缀本身就不在原文里时，任意盐都不可能撞车——
+  // 省掉原来最多 16 次全文 includes（1.85MB 文档 = 最多 30MB 的无谓扫描）。
+  if (!src.includes(GUARD_PREFIX)) return GUARD_PREFIX + randomSalt()
   for (let i = 0; i < 16; i++) {
     const base = GUARD_PREFIX + randomSalt()
     if (!src.includes(base)) return base
@@ -60,13 +63,31 @@ function makeBase(src: string): string {
   throw new Error('数学占位符前缀生成失败：文档疑似包含保留字串，无法安全保护公式')
 }
 
-/** 找 from 之后的下一个起始定界符（`\(` 或 `\[`），返回位置与配对结束符 */
-function findOpen(src: string, from: number): { at: number; close: string } | null {
-  const paren = src.indexOf('\\(', from)
-  const bracket = src.indexOf('\\[', from)
-  if (paren === -1 && bracket === -1) return null
-  if (bracket === -1 || (paren !== -1 && paren < bracket)) return { at: paren, close: '\\)' }
-  return { at: bracket, close: '\\]' }
+/** 起始定界符位置及其配对结束符 */
+interface OpenMark {
+  at: number
+  close: string
+}
+
+/**
+ * 单遍扫出全部起始定界符位置并归并升序（O(n)）。
+ *
+ * P1-5 根因：原 `findOpen(src, from)` 每轮都要 `indexOf('\\(', from)` **和**
+ * `indexOf('\\[', from)`。文档里只有 `\(` 而没有 `\[` 时，后一次搜索每轮都要从
+ * from 一路扫到串尾才返回 -1 —— 于是整体退化成 O(k·n)。实测 1.85MB / 14317 个
+ * 片段要 2096.7ms（评审侧 8582 个片段约 650ms；片段更多时单位成本反而更高，
+ * 正是超线性特征）。先把位置各扫一遍再顺序推进，两处都回到线性。
+ */
+function openMarks(src: string): OpenMark[] {
+  const marks: OpenMark[] = []
+  for (let at = src.indexOf('\\('); at !== -1; at = src.indexOf('\\(', at + 1)) {
+    marks.push({ at, close: '\\)' })
+  }
+  for (let at = src.indexOf('\\['); at !== -1; at = src.indexOf('\\[', at + 1)) {
+    marks.push({ at, close: '\\]' })
+  }
+  marks.sort((a, b) => a.at - b.at)
+  return marks
 }
 
 /**
@@ -76,23 +97,26 @@ function findOpen(src: string, from: number): { at: number; close: string } | nu
 export function extractMath(src: string): MathGuards {
   const base = makeBase(src)
   const spans = new Map<string, string>()
-  let text = ''
+  // P1-5：片段先收进数组、最后 join 一次（原 `text += …` 逐段累加会反复在长串上拼接）。
+  const parts: string[] = []
+  const marks = openMarks(src)
   let cursor = 0
   let id = 0
-  for (;;) {
-    const open = findOpen(src, cursor)
-    if (open === null || id >= MAX_SPANS) break
-    const closeAt = src.indexOf(open.close, open.at + 2)
-    if (closeAt === -1) break
-    const end = closeAt + open.close.length
+  for (const mark of marks) {
+    if (id >= MAX_SPANS) break
+    if (mark.at < cursor) continue // 已被前一个片段整体吞掉（如公式内部的定界符）
+    const closeAt = src.indexOf(mark.close, mark.at + 2)
+    if (closeAt === -1) break // 与原实现一致：最早的开定界符未闭合即停止保护
+    const end = closeAt + mark.close.length
     const placeholder = base + String(id).padStart(ID_WIDTH, '0')
-    spans.set(placeholder, src.slice(open.at, end))
-    text += src.slice(cursor, open.at) + placeholder
+    spans.set(placeholder, src.slice(mark.at, end))
+    parts.push(src.slice(cursor, mark.at), placeholder)
     cursor = end
     id += 1
   }
+  parts.push(src.slice(cursor))
   return {
-    text: text + src.slice(cursor),
+    text: parts.join(''),
     spans,
     pattern: new RegExp(`${base}\\d{${ID_WIDTH}}`, 'g'),
   }

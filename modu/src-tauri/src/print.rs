@@ -3,6 +3,8 @@
 //! 正式入口：`pick_save_path`（Rust 侧保存对话框）→ `export_pdf`（A4 + 背景，直出用户路径）。
 //! spike 命令（spike_log / spike_print_pdf）保留作占位对照，勿删。
 
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 
 use tauri::Manager;
@@ -244,16 +246,87 @@ unsafe fn run_export_chain(
     }
 }
 
+/// 临时 PDF 路径计数器：同进程内并发/连续导出的去重因子（配合进程 id 与时钟纳秒）。
+static TEMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// 导出写入的临时文件路径：与目标**同目录**（同卷 → 收尾的改名才是原子替换，不跨卷复制）。
+/// 命名 `<主名>.tmp-<pid>-<纳秒>-<序号>.<扩展名>`：每次调用都不同（重复导出不互相覆盖），
+/// 扩展名沿用目标扩展名（缺省 pdf），故引擎仍按 PDF 落盘。
+fn temp_export_path(dest: &Path) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let seq = TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let stem = dest
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "export".to_string());
+    let ext = dest
+        .extension()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "pdf".to_string());
+    let name = format!("{stem}.tmp-{}-{nanos}-{seq}.{ext}", std::process::id());
+    dest.with_file_name(name)
+}
+
+/// 覆盖式改名（收尾提交）。查证结论（Windows / Rust 1.98.1，本机实测 + rust-src 源码核实）：
+/// `std::fs::rename` 底层为 `MoveFileExW(.., MOVEFILE_REPLACE_EXISTING)`，**可以覆盖已存在
+/// 的文件**（`std::fs::rename` 文档 Platform-specific behavior 对 Windows 亦如此说明），
+/// 语义与 `ReplaceFileW` 在本场景等价——故不需要 `ReplaceFileW`（其事务性/ACL 继承/
+/// 元数据保留语义此处用不上）。单测 `windows_rename_overwrites_existing_destination` 钉住该行为。
+fn replace_file(src: &Path, dest: &Path) -> std::io::Result<()> {
+    std::fs::rename(src, dest)
+}
+
+/// 删除导出残留的临时文件（失败路径只删自己的临时产物）。
+fn cleanup_temp(temp: &Path) {
+    let _ = std::fs::remove_file(temp);
+}
+
+/// 导出失败时的回滚：只清理临时文件，目标路径**一个字节都不动**（P0-8 数据丢失修复）。
+fn rollback_export(temp: &Path, err: String) -> Result<String, String> {
+    cleanup_temp(temp);
+    Err(format!("{err}（已保留原文件，未覆盖）"))
+}
+
+/// 临时产物收尾（可在无 WebView2 环境下直接测试）：
+/// - 提交后按目标真实大小返回结果；大小为 0 视为失败并回滚；
+/// - 打印失败/超时/取消/提交改名失败同样只清理临时文件，绝不删目标。
+fn finish_export(temp: &Path, dest: &Path, verdict: Result<(), String>) -> Result<String, String> {
+    if let Err(e) = verdict {
+        return rollback_export(temp, e);
+    }
+    let size = match std::fs::metadata(temp) {
+        Ok(m) => m.len(),
+        Err(e) => {
+            return rollback_export(temp, format!("导出失败：找不到打印结果：{e}"));
+        }
+    };
+    if size == 0 {
+        return rollback_export(temp, "导出失败：PDF 是空文件".into());
+    }
+    if let Err(e) = replace_file(temp, dest) {
+        let kept = temp.display().to_string();
+        eprintln!("[export] 替换目标失败（保留临时文件 {kept}）：{e}");
+        return Err(format!("导出失败：无法写入 {}（{e}）", dest.display()));
+    }
+    let kb = size.div_ceil(1024); // 向上取整，避免 1B 显示 0 KB
+    Ok(format!("已导出（{kb} KB）"))
+}
+
 /// 导出 PDF 到指定路径（pick_save_path 的产物）。成功返回中文结果（含字节数）。
+/// P0-8：**不再**先把目标文件删掉（旧实现失败即数据丢失）。改为打印到同目录临时文件，
+/// 成功才改名替换目标，失败只清理临时文件——原文件在任何失败/取消路径上都原样保留。
 #[tauri::command]
 pub async fn export_pdf(app: tauri::AppHandle, path: String) -> Result<String, String> {
     if path.trim().is_empty() {
         return Err("导出路径为空".into());
     }
-    let pdf = std::path::PathBuf::from(&path);
-    // 覆盖语义已由保存对话框确认；先清旧文件，避免引擎对已存在目标行为不定
-    let _ = std::fs::remove_file(&pdf);
-    let path16: Vec<u16> = std::os::windows::ffi::OsStrExt::encode_wide(pdf.as_os_str())
+    let dest = PathBuf::from(&path);
+    let temp = temp_export_path(&dest);
+    cleanup_temp(&temp); // 清掉同名的陈旧残留（正常不命中），确保从零开始写
+    let path16: Vec<u16> = std::os::windows::ffi::OsStrExt::encode_wide(temp.as_os_str())
         .chain(std::iter::once(0))
         .collect();
 
@@ -272,22 +345,20 @@ pub async fn export_pdf(app: tauri::AppHandle, path: String) -> Result<String, S
         })
         .map_err(|e| format!("进入 WebView 失败：{e}"))?;
 
-    let verdict = tauri::async_runtime::spawn_blocking(move || {
+    // 打印链的超时/join 失败同样汇成 Err 交给收尾：临时文件还没被引擎创建时清理是无害空操作，
+    // 若已创建则正好清掉残局，故这里用 `?` 提前返回不会绕过清理。
+    // 打印判定（内层 Result）不在这里 `?`，而是原样交给 finish_export 决定提交或回滚。
+    let waited = tauri::async_runtime::spawn_blocking(move || {
         rx.recv_timeout(std::time::Duration::from_secs(PRINT_TIMEOUT_SECS))
     })
     .await
-    .map_err(|e| format!("导出任务失败：{e}"))?
-    .map_err(|_| format!("导出超时：打印引擎 {PRINT_TIMEOUT_SECS} 秒内未返回"))?;
-    verdict?;
-
-    let size = std::fs::metadata(&pdf)
-        .map(|m| m.len())
-        .map_err(|e| format!("读取导出结果失败：{e}"))?;
-    if size == 0 {
-        return Err("导出失败：PDF 是空文件".into());
-    }
-    let kb = size.div_ceil(1024); // 向上取整，避免 1B 显示 0 KB
-    Ok(format!("已导出（{kb} KB）"))
+    .map_err(|e| format!("导出任务失败：{e}"))?;
+    let verdict = waited.unwrap_or_else(|_| {
+        Err(format!(
+            "导出超时：打印引擎 {PRINT_TIMEOUT_SECS} 秒内未返回"
+        ))
+    });
+    finish_export(&temp, &dest, verdict)
 }
 
 /// 系统保存对话框（Rust 侧）。返回 None = 用户取消。
@@ -321,3 +392,6 @@ pub async fn pick_save_path(
             .map(|p| p.to_string_lossy().into_owned())
     }))
 }
+
+#[cfg(test)]
+mod print_tests;

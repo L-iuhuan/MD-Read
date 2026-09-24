@@ -141,6 +141,25 @@ function installFenceRule(engine: MarkdownIt): void {
 }
 
 /**
+ * 表格包裹层（P0-5）：给每个 table 套 <div class="table-wrap">。
+ *
+ * 为什么必须由渲染层生成：cjk.css §4 的 .table-wrap 承担「超宽表在容器内横向滚动
+ * 且不撑破纸面」的职责，而 markdown-it 直出裸 <table>，那条规则从未匹配到任何元素
+ * ——7 列财务表实测溢出纸面 91px，#content 被撑出横向滚动条。
+ *
+ * 走 table_open/table_close 渲染规则而不是字符串后处理：token 流天然覆盖
+ * 多表 / 单元格内嵌内容 / 引用块与列表内的表格，且不再动任何正则。
+ * table_open 上的 data-line（installDataLineRule 落的块级定位）经 renderToken
+ * 原样输出，包裹层不吃掉它。
+ */
+function installTableWrapRule(engine: MarkdownIt): void {
+  engine.renderer.rules.table_open = (tokens, idx, options, _env, self) =>
+    `<div class="table-wrap">${self.renderToken(tokens, idx, options)}`
+  engine.renderer.rules.table_close = (tokens, idx, options, _env, self) =>
+    `${self.renderToken(tokens, idx, options)}</div>`
+}
+
+/**
  * 块级 data-line（D1 块级定位）：遍历顶层 token，给带 map 的 open token
  * 打上 1-based data-line（对齐编辑器行号），供大纲跳转与编辑切换定位。
  */
@@ -167,4 +186,5 @@ export const md: MarkdownIt = new MarkdownIt({
   .use(cjkFriendly)
 
 installFenceRule(md)
+installTableWrapRule(md)
 installDataLineRule(md)

@@ -55,6 +55,18 @@
     display: table-header-group;
   }
 
+  /* P0-5 配套（仍在本文件=唯一打印层内，未新开样式表）：屏显 .table-wrap 的
+     overflow-x:auto 在分页媒体里是毒药——滚动容器不是 fragmentation container，
+     Chromium 不会在其中断页，表会被裁在纸边、行级分页（上方 tr/thead 两条）整条失效。
+     打印媒体还原 visible，表格回到分页流，行不腰斩 + 表头跨页才作数。
+     限宽同时清零：cjk.css 的 `.mdc .table-wrap{max-inline-size:var(--measure-wide)}`
+     是 (0,2,0)，压过上方 `.mdc > *`（(0,1,0)）那条通用清零，必须在同一特异性上再清一次，
+     否则 wrap 的宽度上限会跟着 --measure-wide 走（当前 960px > A4 可印宽约 658px 才恰好无害）。 */
+  .mdc .table-wrap {
+    overflow: visible;
+    max-inline-size: none;
+  }
+
   /* KaTeX 鬼影根治（D2 ④）：MathML 不可见层在 PDF 里被复制/检索出重复文字 */
   .katex-mathml {
     display: none;
@@ -110,8 +122,9 @@
 
   /* PDF 裁边修复（P5 批1·P0 #3）：屏显 .mdc > * 限宽 var(--measure)（约 736px）居中，
       A4 减 18mm 边距后可印宽约 658px，每侧虚裁 39px。打印时清零限宽与行向外边距，
-      正文占满可印区。只动 max-inline-size 与 margin-inline——table-wrap 的滚动容器
-      与代码块规则（cjk.css）不受影响，长表仍由上方行级规则跨页。 */
+      正文占满可印区。只动 max-inline-size 与 margin-inline——代码块规则（cjk.css）
+      不受影响。长表由上方行级规则跨页；.table-wrap 自身是 (0,2,0) 特异的规则，
+      在下方 P0-5 配套里单独清零（本处够不着它）。 */
   .mdc > * {
     max-inline-size: none;
     margin-inline: 0;

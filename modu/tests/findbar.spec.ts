@@ -173,3 +173,113 @@ describe("键位与计数", () => {
     expect(marksInDoc().length).toBe(0);
   });
 });
+
+/**
+ * P0-4 回归（WSL 评审实测）：页面可见文字含「中文English混排」时搜 `中文English` 返回 0/0。
+ *
+ * 根因：旧实现逐个文本节点 indexOf，而 pangu 会在 CJK↔拉丁边界插入**空** `.cjk-gap`
+ * span 把文本节点切开；tok-break 的长 token 包裹、`strong`/`em` 内联元素同样会切开。
+ * 于是任何跨节点的可见连续文字都搜不到。
+ *
+ * 修复口径：按「最近的块级祖先」把块内文本节点拼成一串并建立
+ * 「字符偏移 → 文本节点」映射，在拼接串上匹配后再用 Range 跨节点包 mark；
+ * 空 span 不参与映射但也不阻断匹配。关闭/重搜后 textContent 仍须逐字节还原。
+ */
+describe("P0-4 跨节点匹配（pangu 空 span / tok-break / strong-em）", () => {
+  const SPLIT_CORPUS = [
+    // pangu：中西文边界被空 .cjk-gap span 切开（实测原始复现形态）
+    "<p id='s1'>中文<span class='cjk-gap'></span>English<span class='cjk-gap'></span>混排</p>",
+    // tok-break：长 token 被 span 包裹
+    "<p id='s2'>前缀 abcdefghij<span class='tokbreak'></span>klmnopqrst 后缀</p>",
+    // 内联元素切分
+    "<p id='s3'>甲<strong>乙</strong>丙<em>丁</em>戊</p>",
+    // 金额串跨空 span（`$` 必须纯文本，不能被当成公式）
+    "<p id='s4'>应付<span class='cjk-gap'></span>$1,000 与 $2,000。</p>",
+    // 块边界：两个相邻段落之间**不允许**跨块命中
+    "<p id='s5'>前段结束end</p><p id='s6'>start后段开始</p>",
+  ].join("");
+
+  function mountSplit(): void {
+    getDoc().innerHTML = SPLIT_CORPUS;
+  }
+
+  it("跨 pangu 空 span：搜「中文English」命中（旧实现 0/0）", () => {
+    mountSplit();
+    const before = getDoc().textContent;
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("中文English");
+    expect(marksInDoc().length).toBe(1);
+    expect(marksInDoc()[0].textContent).toBe("中文English");
+    findbar.close();
+    expect(getDoc().textContent).toBe(before); // 复制保真红线
+  });
+
+  it("跨 pangu 空 span：搜「English混排」命中", () => {
+    mountSplit();
+    const before = getDoc().textContent;
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("English混排");
+    expect(marksInDoc().length).toBe(1);
+    findbar.close();
+    expect(getDoc().textContent).toBe(before);
+  });
+
+  it("跨 tok-break span：搜整个长 token 命中", () => {
+    mountSplit();
+    const before = getDoc().textContent;
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("abcdefghijklmnopqrst");
+    expect(marksInDoc().length).toBe(1);
+    expect(marksInDoc()[0].textContent).toBe("abcdefghijklmnopqrst");
+    findbar.close();
+    expect(getDoc().textContent).toBe(before);
+  });
+
+  it("跨 strong/em：搜「甲乙丙丁戊」命中", () => {
+    mountSplit();
+    const before = getDoc().textContent;
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("甲乙丙丁戊");
+    expect(marksInDoc().length).toBe(1);
+    findbar.close();
+    expect(getDoc().textContent).toBe(before);
+  });
+
+  it("金额串跨空 span：搜「$1,000」命中且关闭后原样", () => {
+    mountSplit();
+    const before = getDoc().textContent;
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("$1,000");
+    expect(marksInDoc().length).toBe(1);
+    expect(marksInDoc()[0].textContent).toBe("$1,000");
+    findbar.close();
+    expect(getDoc().textContent).toBe(before);
+    expect(getDoc().textContent).toContain("$1,000 与 $2,000。");
+  });
+
+  it("不跨块：两个相邻段落之间的字串不得命中", () => {
+    mountSplit();
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("endstart");
+    expect(marksInDoc().length).toBe(0);
+  });
+
+  it("跨节点命中多次 + 重搜清旧 mark 后 textContent 仍逐字节还原", () => {
+    mountSplit();
+    const before = getDoc().textContent;
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("中文English"); // 1 处跨节点
+    expect(marksInDoc().length).toBe(1);
+    typeIn("English"); // 重搜：清旧 mark 后同一文本节点内命中
+    expect(marksInDoc().length).toBe(1);
+    findbar.close();
+    expect(getDoc().textContent).toBe(before);
+  });
+});

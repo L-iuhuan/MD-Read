@@ -72,8 +72,16 @@ function degradeNode(doc: Document, node: Text): void {
       cursor = span.end
       continue
     }
-    if (frag === null) frag = doc.createDocumentFragment()
-    frag.append(doc.createTextNode(text.slice(cursor, span.start)))
+    if (frag === null) {
+      // 首次建 fragment 时起点必须是**文本开头**，不能用 cursor（P0-1 修复）：
+      // 此前可能已跳过若干个拉丁公式片段，而那时 frag 仍为 null、只推进了 cursor，
+      // 于是 slice(cursor, …) 会把「开头 → 首个 CJK 公式」之间的正文连同拉丁公式
+      // 一并静默删除（实测 '甲 \(x\) 乙 \(中文公式\) 丙' → " 乙 中文公式 丙"）。
+      frag = doc.createDocumentFragment()
+      frag.append(doc.createTextNode(text.slice(0, span.start)))
+    } else {
+      frag.append(doc.createTextNode(text.slice(cursor, span.start)))
+    }
     const el = doc.createElement('span')
     // 块级用 span 而非 div：$$ 公式躺在 <p> 里，div 会在 innerHTML 重解析时劈开段落
     //（.math-fallback--display 由 app.css 置 display:block + 居中，视觉即块级）

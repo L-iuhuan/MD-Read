@@ -202,12 +202,19 @@
 
 /* ==========================================================================
    4. 表格（7 列财务明细场景，§3.3；打印友好规则来自规格 §4 D2）
+   P0-5 起 .table-wrap 真的存在了：渲染层 markdown.ts 的 installTableWrapRule
+   用 table_open/table_close 渲染规则给每个 table 套上这一层。此前该层只写在
+   CSS 里、无人生成，规则全部落空（超宽表溢出纸面 91px 的根因）。
    ========================================================================== */
 .mdc .table-wrap {
   margin-block: 0 1.2em;
   max-inline-size: var(--measure-wide);   /* 宽表带出，避免 7 列财务表腰斩 */
   margin-inline: auto;
-  overflow-x: auto;
+  overflow-x: auto;   /* P0-5：超宽表在容器内横向滚动 —— 溢出被关进本层，
+                         纸面（#doc）不再被撑宽，外层 #content 也不再出横向滚动条。
+                         注意：width 为 auto 时本层宽度 = min(可用宽, --measure-wide)，
+                         所以它永远不越出纸面；滚动只发生在表格比容器更宽时。
+                         打印媒体的还原见 print.css（滚动容器不可跨页分页）。 */
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
 }
@@ -217,11 +224,13 @@
   font-size: .8125em;
   line-height: 1.65;
   font-variant-numeric: tabular-nums;
-  /* 表后段距（波4 归位，原 app.css §9 临时规则）：渲染管线直出裸 table，
-     不生成 .table-wrap 容器（markdown-it 行为），所以 .table-wrap 上的
-     margin-block: 0 1.2em 全部落空；而 .mdc p 只给 margin-block-end，
-     表与后续段落间距为 0。按 .table-wrap 同值补在 table 自身。 */
-  margin-block: 0 1.2em;
+  /* 表后段距（波4 归位，原 app.css §9 临时规则；P0-5 起归位给 wrap）：
+     当时管线直出裸 table、没有 .table-wrap，只好把 .table-wrap 的
+     margin-block: 0 1.2em 复制一份到 table 自身。现在 wrap 存在，间距归 wrap；
+     留在 table 上反而有害——table 的外边距与 wrap 边框之间不会折叠（wrap 是
+     滚动容器 = BFC），圆角框内会多出一条 1.2em 空白带，把末行下边线推离外框。
+     故此处归零：间距由 wrap 承担，末行线由 th/td 边框承担，各归其位。 */
+  margin-block: 0;
 }
 .mdc caption {
   text-align: start;
@@ -246,9 +255,23 @@
 .mdc tbody tr:hover { background: var(--bg-hover); }
 /* 末行下边线保留（波4 归位，原 app.css §9 临时规则的反向修法）。
    此前这里写的是 `border-bottom: 0`，指望 .table-wrap 的外框补位——
-   但渲染管线不生成 .table-wrap，框不存在 → 末行下边线彻底消失（用户反馈③）。
-   按「补生成 wrap 容器」之外的另一个选项处理：直接留着末行线，规则删除。 */
+   但当时渲染管线不生成 .table-wrap，框不存在 → 末行下边线彻底消失（用户反馈③）。
+   P0-5 起 wrap 真的存在了，但结论不变：末行线由 th/td 的 border-bottom 独自承担，
+   本文件不得再出现任何「末行抑制」规则（tests/css-fixes.spec.ts 有反向锚）。 */
 .mdc .doc-note { font-size: .8125em; color: var(--text-muted); }
+
+/* --------------------------------------------------------------------------
+   P0-5：图片限宽（正文纸面红线）
+   管线直出 <img>（markdown ![]() → <p><img></p>，app/images.ts 只改 src 不做盒子），
+   此前 cjk.css 没有任何 img 尺寸规则：2000px 宽的图按固有宽度铺开，右边缘冲到
+   2264.5 而纸面右边缘只有 1048.5 —— 纸面被撑破，外层 #content 连带出横向滚动条。
+   max-inline-size: 100% 以「包含块宽度」为上限等比收缩（只有上限、没有 width，
+   小图一律不放大）；height: auto 显式保纵横比，不依赖浏览器默认行为。
+   -------------------------------------------------------------------------- */
+.mdc img {
+  max-inline-size: 100%;
+  height: auto;
+}
 
 /* ==========================================================================
    5. 块级公式（§4 D2：块级 $$…$$，行内 \(…\)，禁裸 $…$）

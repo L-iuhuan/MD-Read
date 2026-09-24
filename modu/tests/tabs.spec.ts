@@ -8,7 +8,11 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  createCloseGuard,
   createTabManager,
+  resolveCloseAction,
+  shouldGuardClose,
+  type CloseChoice,
   type MountContext,
   type Tab,
   type TabManager,
@@ -274,6 +278,198 @@ describe("dirty 标记（M3 启用，渲染先就绪）", () => {
     await open(h, "a.md", "AAA");
     await close(h, "a.md");
     expect(h.manager.count()).toBe(0);
+  });
+});
+
+/* ---- 关闭守卫（P0-7）：窗口关闭前的判据与决策纯函数 ---- */
+
+describe("hasDirty / dirtyTabs（P0-7 关窗口的判据）", () => {
+  it("无标签：hasDirty 为假、dirtyTabs 为空", () => {
+    const h = setup();
+    expect(h.manager.hasDirty()).toBe(false);
+    expect(h.manager.dirtyTabs()).toEqual([]);
+  });
+
+  it("干净标签不算脏；任一标签置脏即为真，清脏后回落", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    expect(h.manager.hasDirty()).toBe(false); // 新开标签恒为干净
+    h.manager.setDirty("a.md", true); // 非活动标签同样计入
+    expect(h.manager.hasDirty()).toBe(true);
+    expect(h.manager.dirtyTabs().map((tab) => tab.path)).toEqual(["a.md"]);
+    h.manager.setDirty("b.md", true);
+    expect(h.manager.dirtyTabs().map((tab) => tab.path)).toEqual(["a.md", "b.md"]);
+    h.manager.setDirty("a.md", false);
+    h.manager.setDirty("b.md", false);
+    expect(h.manager.hasDirty()).toBe(false);
+  });
+});
+
+describe("resolveCloseAction / shouldGuardClose（P0-7 关闭决策，纯函数）", () => {
+  it("干净：直接关（不弹询问，choice=null）", () => {
+    expect(resolveCloseAction(false, null)).toBe("close");
+  });
+
+  it("脏 + 保存：先存后关", () => {
+    expect(resolveCloseAction(true, "save")).toBe("save-then-close");
+  });
+
+  it("脏 + 放弃：不保存直接关", () => {
+    expect(resolveCloseAction(true, "discard")).toBe("close");
+  });
+
+  it("脏 + 取消 / 浮层未作答：留在窗口", () => {
+    expect(resolveCloseAction(true, "cancel")).toBe("stay");
+    expect(resolveCloseAction(true, null)).toBe("stay");
+  });
+
+  it("脏 + 保存但落盘失败：留在窗口（防丢改动）", () => {
+    expect(resolveCloseAction(true, "save", true)).toBe("stay");
+    expect(resolveCloseAction(true, "save", false)).toBe("save-then-close");
+  });
+
+  it("shouldGuardClose：干净态一律不拦（回归根因：拦了就关不掉窗口）", () => {
+    expect(shouldGuardClose(false)).toBe(false);
+    expect(shouldGuardClose(true)).toBe(true);
+  });
+});
+
+/* ---- 关窗守卫状态机（P0-7 回归修复）：2026-09-23 实机测量结论——
+ * 无条件 preventDefault 会把 @tauri-apps/api 自己的 destroy() 收尾掐死，
+ * 而手动 destroy() 又被 ACL 拒（core:window:allow-destroy 未授），窗口于是
+ * 永远关不掉、取消之后也不再弹窗。下面把「哪一轮才 preventDefault」逐条钉死。 ---- */
+
+interface GuardHarness {
+  /** 模拟一次 close-requested，返回这一轮有没有被 prevent */
+  fire(): Promise<boolean>;
+  ask: ReturnType<typeof vi.fn>;
+  save: ReturnType<typeof vi.fn>;
+  quit: ReturnType<typeof vi.fn>;
+}
+
+/** 造一个守卫：choices 是浮层依次给出的答案（返回值即 CloseChoice） */
+function guardHarness(options: {
+  dirty: boolean;
+  count?: number;
+  waiters?: Array<(choice: CloseChoice) => void>;
+  saveResult?: boolean;
+}): GuardHarness {
+  const waiters = options.waiters ?? [];
+  const ask = vi.fn(
+    () => new Promise<CloseChoice>((resolve) => waiters.push(resolve))
+  );
+  const save = vi.fn(async () => options.saveResult ?? true);
+  const quit = vi.fn(async () => {});
+  const guard = createCloseGuard({
+    hasDirty: () => options.dirty,
+    dirtyCount: () => options.count ?? 1,
+    ask,
+    save,
+    quit,
+  });
+  return {
+    ask,
+    save,
+    quit,
+    async fire(): Promise<boolean> {
+      let prevented = false;
+      await guard({ preventDefault: () => { prevented = true; } });
+      return prevented;
+    },
+  };
+}
+
+describe("createCloseGuard（P0-7 回归修复：preventDefault 只在该拦的那一轮调）", () => {
+  it("干净态：不 preventDefault、不询问、不保存、不主动 quit（交给自动 destroy）", async () => {
+    const h = guardHarness({ dirty: false });
+    expect(await h.fire()).toBe(false);
+    expect(h.ask).not.toHaveBeenCalled();
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.quit).not.toHaveBeenCalled();
+  });
+
+  it("脏态：先 preventDefault 留住窗口，再弹浮层问人", async () => {
+    const waiters: Array<(c: CloseChoice) => void> = [];
+    const h = guardHarness({ dirty: true, waiters });
+    const pending = h.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.ask).toHaveBeenCalledTimes(1);
+    const message = String(h.ask.mock.calls[0]?.[0] ?? "");
+    expect(message).toContain("1 个文件尚未保存");
+    waiters.forEach((resolve) => resolve("discard"));
+    expect(await pending).toBe(true);
+    expect(h.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it("取消：窗口留在原地，且下一轮 ✕ 会重新弹窗（本轮回归的另一半）", async () => {
+    const waiters: Array<(c: CloseChoice) => void> = [];
+    const h = guardHarness({ dirty: true, waiters });
+    const first = h.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.ask).toHaveBeenCalledTimes(1);
+    waiters[0]?.("cancel");
+    expect(await first).toBe(true); // 拦住了
+    expect(h.quit).not.toHaveBeenCalled();
+
+    // 第二次点 ✕：必须重新问，且仍然拦得住
+    const second = h.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.ask).toHaveBeenCalledTimes(2);
+    waiters[1]?.("discard");
+    expect(await second).toBe(true);
+    expect(h.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it("保存成功：落盘后触发关窗；重入的那一轮不 preventDefault、不再问（不无限循环）", async () => {
+    const waiters: Array<(c: CloseChoice) => void> = [];
+    const h = guardHarness({ dirty: true, waiters, saveResult: true });
+    const pending = h.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    waiters[0]?.("save");
+    expect(await pending).toBe(true);
+    expect(h.save).toHaveBeenCalledTimes(1);
+    expect(h.quit).toHaveBeenCalledTimes(1);
+    // quit()（close()）会再发一次 close-requested：那一轮必须放行
+    expect(await h.fire()).toBe(false);
+    expect(h.ask).toHaveBeenCalledTimes(1); // 没有二次询问
+    expect(h.quit).toHaveBeenCalledTimes(1); // 也没有二次 quit
+  });
+
+  it("保存失败：不关窗、不 quit，且下一次 ✕ 还能再弹窗", async () => {
+    const waiters: Array<(c: CloseChoice) => void> = [];
+    const h = guardHarness({ dirty: true, waiters, saveResult: false });
+    const pending = h.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    waiters[0]?.("save");
+    expect(await pending).toBe(true);
+    expect(h.save).toHaveBeenCalledTimes(1);
+    expect(h.quit).not.toHaveBeenCalled();
+
+    const again = h.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.ask).toHaveBeenCalledTimes(2);
+    waiters[1]?.("discard");
+    expect(await again).toBe(true);
+  });
+
+  it("问询在飞时连点 ✕：忽略第二发，不重复弹窗", async () => {
+    const waiters: Array<(c: CloseChoice) => void> = [];
+    const h = guardHarness({ dirty: true, waiters });
+    const first = h.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.ask).toHaveBeenCalledTimes(1);
+    expect(await h.fire()).toBe(false); // 连点那发不拦（问询仍在飞，窗口不会关）
+    expect(h.ask).toHaveBeenCalledTimes(1);
+    waiters.forEach((resolve) => resolve("discard"));
+    expect(await first).toBe(true);
   });
 });
 

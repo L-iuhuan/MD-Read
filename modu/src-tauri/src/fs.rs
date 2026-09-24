@@ -93,3 +93,58 @@ pub fn save_file(path: String, text: String, encoding: String, bom: bool) -> Res
     out.extend_from_slice(encoded.as_ref());
     std::fs::write(&path, out).map_err(|e| format!("无法写入文件：{path}（{e}）"))
 }
+
+/// 安全收口的配置回归锁（P1-6 子项 1/2）。放在 fs.rs 而非 lib.rs：lib.rs 由其它车道持有，
+/// 且本组断言的主题正是「渲染层可触达面」——fs 命令所在模块顺手看守最省。
+/// 断言对象是**随包发布的** `tauri.conf.json` 原文（不是合并后的运行时配置）：
+///   1. `withGlobalTauri` 必须为 false —— 关掉 window.__TAURI__，渲染层只能走
+///      `@tauri-apps/api` 模块导入（与 src/ 现状一致，已全量 grep 核实无 __TAURI__ 引用）；
+///   2. CSP 里不得再出现 `localhost:1420` —— 开发期 ws/http 只活在 `.verify/dev/` 的
+///      dev overlay 里，随包配置不带 dev 端点。
+/// 这是防"手滑改回去"的静态锁，不替代实机 CDP 验收。
+#[cfg(test)]
+mod shipped_config_guard {
+    /// 随包配置原文。
+    fn shipped_config() -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
+        std::fs::read_to_string(&path).expect("随包 tauri.conf.json 应可读")
+    }
+
+    #[test]
+    fn global_tauri_is_off_in_shipped_config() {
+        let text = shipped_config();
+        assert!(
+            text.contains("\"withGlobalTauri\": false"),
+            "随包配置必须显式关掉 withGlobalTauri（渲染层不应拿到 window.__TAURI__）"
+        );
+        assert!(
+            !text.contains("\"withGlobalTauri\": true"),
+            "随包配置不得重新打开 withGlobalTauri"
+        );
+    }
+
+    #[test]
+    fn shipped_csp_has_no_dev_endpoints() {
+        let text = shipped_config();
+        // 只锁 CSP 这一串（不能用「全文不含 localhost:1420」——`build.devUrl` 本来就是
+        // http://localhost:1420，那是开发期地址，与安全策略无关）。
+        const EXPECTED_CSP: &str = concat!(
+            "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; ",
+            "img-src 'self' asset: http://asset.localhost data: blob:; ",
+            "style-src 'self' 'unsafe-inline'; font-src 'self' data:; ",
+            "script-src 'self'; object-src 'none'; base-uri 'self'"
+        );
+        assert!(
+            text.contains(EXPECTED_CSP),
+            "随包 CSP 与冻结值不一致——开发期端点（ws://localhost:1420 等）只允许出现在 .verify/dev/ overlay"
+        );
+        let csp_line = text
+            .lines()
+            .find(|line| line.contains("\"csp\""))
+            .expect("随包配置应显式声明 CSP（宪法红线 1）");
+        assert!(
+            !csp_line.contains("localhost:1420"),
+            "CSP 里不得残留开发期端点：{csp_line}"
+        );
+    }
+}

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CM6 源码编辑器（M3-A，F7）：EditorView 常驻单例，只改显隐；
  * 每标签保存/恢复 {EditorState, scrollTop}——history 是 StateField，
  * 态随标签走即跨标签保撤销链（规格 D1）。
@@ -191,17 +191,37 @@ export function createEditor(container: HTMLElement, host: EditorHost): EditorHa
   }
 
   function reveal(target: RevealTarget): void {
-    view.requestMeasure({
-      read: () => null,
-      write: () => {
-        if (typeof target.scrollTop === "number") {
-          view.scrollDOM.scrollTop = target.scrollTop;
-        } else if (typeof target.line === "number") {
-          scrollToLine(target.line);
-        }
-        view.focus();
-      },
-    });
+    // 先落成 const 再判型：TS 的 typeof 收窄不会穿透到闭包（write 回调）里
+    const scrollTop = target.scrollTop;
+    const line = target.line;
+    if (typeof scrollTop === "number") {
+      view.requestMeasure({
+        read: () => null,
+        write: () => {
+          view.scrollDOM.scrollTop = scrollTop;
+        },
+      });
+    } else if (typeof line === "number") {
+      // P0-2 修复：这里绝不能 dispatch。原先在 measure 的 write 里调 scrollToLine()
+      // （内部 view.dispatch）会被 CM 拒绝——
+      //   "Calls to EditorView.update are not allowed while an update is in progress"
+      // 异常抛出后，同一个 write 回调里紧随其后的 view.focus() 被一并吞掉，
+      // 手测表现即「切编辑后既没定位到阅读位置、也没聚焦」
+      // （.cm-scroller.scrollTop = 0、document.activeElement = BODY）。
+      // 改为 measure 只读目标行的块顶偏移、write 只写 scrollTop（纯 DOM 写），
+      // 等价于 scrollIntoView(pos, { y: "start" }) 且完全不触发 update。
+      view.requestMeasure({
+        read: () => {
+          const clamped = Math.min(Math.max(1, line), view.state.doc.lines);
+          return view.lineBlockAt(view.state.doc.line(clamped).from).top;
+        },
+        write: (top) => {
+          view.scrollDOM.scrollTop = top;
+        },
+      });
+    }
+    // focus 移出 measure 回调：不再被可能的异常连坐
+    view.focus();
   }
 
   return {

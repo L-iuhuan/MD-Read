@@ -149,11 +149,12 @@
                                             （40–60 步进 2，modu-width 持久化），单位为正文 em
                                             倍数（数字），缺省 46 = 旧固定值，两处派生一致。 */
   --measure-wide: calc(60 * var(--fs-body)); /* 宽表带出，避免 7 列财务表腰斩（设计决策）
-                                             ⚠ 波5 复核：渲染管线直出裸 table，不生成 .table-wrap，
-                                             而 `.mdc > *` 已把每个直接子元素限在 --measure，
-                                             故本值实际作用不到表格（现状如此，非波5 引入）；
-                                             整页纸路线下纸宽 = --measure + 2×--pad-page，
-                                             真要宽表得先有 wrap 容器。*/
+                                             P0-5 后本值真的作用到表格了：渲染层 markdown.ts 的
+                                             installTableWrapRule 给每个 table 套 .table-wrap
+                                             （cjk.css 的 `.mdc .table-wrap` 取本值为宽度上限 +
+                                             横向滚动），表格不再被 `.mdc > *` 的 --measure 限死。
+                                             本条此前写「管线直出裸 table、不生成 .table-wrap」，
+                                             P0-5 落地后已成假话，本批修正（见 cjk.css §4）。*/
   --line-body: 1.8;                      /* §4 D3 行高 1.8 */
   --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
                "Source Han Sans SC", "Noto Sans SC", system-ui, sans-serif; /* §4 D3 默认无衬线 */
