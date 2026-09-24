@@ -22,3 +22,13 @@ Thumbs.db
 
 # pnpm 在项目所在盘符建的本地 store（Windows 多盘符环境）
 .pnpm-store/
+
+# 敏感词条清单：故意不入库（它是身份信息的载体，见 scripts/check-sensitive.ps1 顶部说明）
+scripts/.sensitive-extra.txt
+
+# 过程产物：不进公开仓库（对使用者无价值，且是敏感信息的主要载体）
+# 文件仍保留在本地工作目录，仅从版本控制移出
+docs/tasks/
+docs/review/
+docs/demo/
+参考/
