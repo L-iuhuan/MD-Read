@@ -70,7 +70,9 @@ if ($Staged) {
 } else {
   $files = git -c core.quotepath=false ls-files
 }
-$files = @($files | Where-Object { $_ -and $_ -notmatch '^"' -and (Test-Path -LiteralPath $_ -ErrorAction SilentlyContinue) })
+# 门禁自身与词条清单不参与扫描（前者含模式字面量如「有限公司」，后者是词条来源，都会自命中）
+$selfSkip = @('scripts/check-sensitive.ps1', 'scripts/.sensitive-extra.txt')
+$files = @($files | Where-Object { $selfSkip -notcontains $_ } | Where-Object { $_ -and $_ -notmatch '^"' -and (Test-Path -LiteralPath $_ -ErrorAction SilentlyContinue) })
 
 if ($files.Count -eq 0) { Write-Host "没有需要扫描的文件。" -ForegroundColor Yellow; exit 0 }
 
@@ -112,6 +114,6 @@ $hits | Group-Object 类别 | ForEach-Object {
   if ($_.Count -gt 10) { Write-Host "    …（另有 $($_.Count - 10) 处）" }
 }
 Write-Host ""
-Write-Host "处理建议：改写为占位符（<user@example.com> / <公司> / <user> / 10.0.0.1）或移出公开仓库。" -ForegroundColor Cyan
+Write-Host "处理建议：改写为占位符（<user@example.com> / <公司> / <user> / <内网IP>）或移出公开仓库。" -ForegroundColor Cyan
 if ($FixList) { exit 0 }
 exit 1
