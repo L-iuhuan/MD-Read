@@ -295,3 +295,38 @@ fn list_dir_allows_trusted_dir_and_descendants_only() {
     assert!(!err.contains("No such file"), "拒绝文案不得含英文 OS 错误：{err}");
     assert!(!err.is_empty(), "拒绝必须给出中文可行动文案");
 }
+
+/// D-11 ②b-1 补锚：**拒绝文案的对象名词随 action 变化**，且**模板可断言**。
+///
+/// 为什么需要这条锚：既有断言只看**原因子串**（如「不在本次已打开的清单中」），**对名词完全盲** ✗——
+/// 实测教训：我改文案时用单行正则只命中 4/5，**恰恰漏掉列目录真正走的那条 `Untrusted`**（它的 `format!(` 换行了），
+/// 而 `cargo test` 仍 50 passed ⇒ **"测试通过 ≠ 文案对"** ✗ ⇒ 从此**盯特征前缀（完整模板）**，不只盯中间子串 ✓
+#[test]
+fn deny_message_names_the_object_by_action_and_keeps_one_template() {
+    // ① 列目录（浏览）必须是「目录/位置」，不能再说"文件" ✓
+    let browse = deny_message("浏览", "C:\\ws\\..\\x", DenyReason::Untrusted);
+    assert!(browse.starts_with("无法浏览目录/位置："), "列目录文案名词必须是「目录/位置」，实际：{browse}");
+    assert!(!browse.contains("无法浏览文件"), "列目录不得再说「浏览文件」，实际：{browse}");
+    // ② 读/保存仍说"文件" ✓（不受本次改名影响）
+    let read = deny_message("读取", "C:\\a.md", DenyReason::Untrusted);
+    assert!(read.starts_with("无法读取文件："), "读取文案应仍说「文件」，实际：{read}");
+    let save = deny_message("保存", "C:\\a.md", DenyReason::Untrusted);
+    assert!(save.starts_with("无法保存文件："), "保存文案应仍说「文件」，实际：{save}");
+    // ③ 存在性不泄露：**同 reason 的两条只有路径不同**，剥掉路径后模板必须逐字相同 ✓
+    let exists = deny_message("浏览", "C:\\外面\\存在", DenyReason::Untrusted);
+    let ghost = deny_message("浏览", "C:\\外面\\不存在", DenyReason::Untrusted);
+    let strip = |m: &str| m.replacen("C:\\外面\\存在", "<p>", 1).replacen("C:\\外面\\不存在", "<p>", 1);
+    assert_eq!(strip(&exists), strip(&ghost), "存在与不存在必须同一模板（不泄露存在性）");
+    // ④ 五条 reason 的模板都要能被"特征前缀"断言到（防今后再改名词时漏条）
+    for (reason, tail) in [
+        (DenyReason::NotAbsolute, "（路径必须是完整路径）"),
+        (DenyReason::NotMarkdown, "（只支持 Markdown 文件：.md / .markdown / .mdx）"),
+        (DenyReason::NotAFile, "（不是文件）"),
+        (DenyReason::Missing, "（文件不存在或已被移动）"),
+        (DenyReason::Untrusted, "（该文件不在本次已打开的清单中，请用「打开文件」重新选择）"),
+    ] {
+        let message = deny_message("浏览", "C:\\x", reason);
+        assert!(message.starts_with("无法浏览目录/位置："), "五条里有一条没改成「目录/位置」：{message}");
+        assert!(message.ends_with(tail), "模板尾部不符：{message}");
+    }
+}
