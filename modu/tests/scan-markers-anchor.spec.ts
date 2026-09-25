@@ -13,21 +13,22 @@
  *      函数级测试照样全绿、但**工具作为 CLI 一跑就崩** ✗）⇒ 函数级锚抓不到它，必须有 CLI 冒烟 ✓
  *
  * ⚠ 夹具必须与真实字节布局一致（`AGENTS.md`：**夹具不真 ⇒ 锚会绿现实会错** ✗）：
- *   值首字节是**编码标签** `0x00` = Latin1 / `0x01` = UTF-16（两者都不可打印 ✓）
+ *   值首字节是**编码标签** `0x00` = **UTF-16LE** / `0x01` = **Latin1/1 字节**（两者都不可打印 ✓）
+ *   （2026-09-23 **只在 `layout:'batch'` 记录上重验**：同类 18/18 ✓ —— 早先此处与笔记写反了 ✗，见 `scan-markers.d.mts` 注释）
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { ParsedMarker } from './tools/scan-markers.mjs';
 
-interface Parsed {
-  key: string;
-  value: string[] | null;
-  encoding: string | null;
-  rawValue: string | null;
-  rawEncoding: string | null;
-}
+/**
+ * ⭐ **只用【唯一一份】类型声明** ✓ —— 这里此前自己又抄了一份 `interface Parsed`（少两个新字段 ✗）
+ * ⇒ `tsc` 直接报 `TS2339` / `TS7053` ✗（2026-09-23 实测：门禁 `check:full` EXIT=2 拦下提交 ✓，零部分提交 ✓）
+ * ⇒ 改为**别名到 `.d.mts` 的 `ParsedMarker`** ✓：类型只有一处定义 ⇒ 这类"副本过期"不可能再发生 ✓
+ */
+type Parsed = ParsedMarker;
 interface ScanMarkers {
   parseAfterMark(buf: Buffer, at: number): Parsed;
 }
@@ -42,7 +43,11 @@ const SEP = Buffer.from([0x00, 0x01]);
 const TOOL = path.resolve(__dirname, 'tools', 'scan-markers.mjs');
 
 function encodePayload(text: string, label: number): Buffer {
-  return Buffer.from(text, label === 0x01 ? 'utf16le' : 'latin1');
+  // ⭐ **新映射**（2026-09-23 只在 layout:'batch' 记录上重验，同类 18/18 ✓）：**0x00 ⇒ UTF-16LE · 0x01 ⇒ Latin1**
+  //   （旧版写成 `label === 0x01 ? 'utf16le' : 'latin1'` ✗ = 旧映射 ⇒ **构造侧**仍按旧映射造字节 ✗
+  //    ⇒ 所有"按形态逐字相同"的断言必然对不上 ✗ —— "改映射要清点【全部承载面】"的第 2 例 ✓：
+  //      解析侧 ✓ 构造侧（就是这里）✓ 文档/注释 ✓ 断言 ✓）
+  return Buffer.from(text, label === 0x00 ? 'utf16le' : 'latin1');
 }
 
 /**
@@ -88,21 +93,28 @@ describe('scan-markers 锚 · 函数级：布局 B 的值长吞并必须被修�
     }
   });
 
-  it('raw 回退：JSON 解析失败时按【标签字节】解码（0x00⇒Latin1 · 0x01⇒UTF-16）⇒ 原文可读', async () => {
+  it('raw 回退：两种解码都在，且【按记录形态】至少一条与原文逐字相同', async () => {
     const { parseAfterMark } = await loadTool();
-    // ⚠ **按标签各用"能装得下"的载荷**：Latin1 装不下 CJK ⇒ 对它断言中文路径必然乱码 ✗（我第一次就这么写错了 ✓）
-    //   ⇒ UTF-16（0x01）用中文路径验"可读"，Latin1（0x00）用 ASCII 路径验"可读" ✓
-    for (const [label, rawText] of [
-      [0x01, 'D:\\工作区\\笔记\\a.md'],
-      [0x00, 'D:\\notes\\a.md'],
-    ] as [number, string][]) {
-      const payload = Buffer.concat([Buffer.from([label]), encodePayload(rawText, label), Buffer.from([label])]);
-      // ⚠ 夹具以**标记**开头（与 layoutB 一致 ✓）⇒ `parseAfterMark(buf, 0)` 的 `at` 语义成立 ✓
+    // ⭐ 新映射（2026-09-23 只在 layout:'batch' 记录上重验，同类 18/18 ✓）：**0x00 ⇒ UTF-16LE · 0x01 ⇒ Latin1**
+    //   （早先笔记写的 "0x00=Latin1 / 0x01=UTF-16" **是反的** ✗）
+    // ⚠ **"可读"必须按记录的实际形态指定解码** —— 两种解码对**同一条记录**是**互斥**的 ✗：
+    //   tag=0x01 + ASCII ⇒ UTF-16 必乱 ✓；tag=0x00 + UTF-16 ⇒ Latin1 必乱 ✓
+    //   ⇒ 要求"两种解码同时可读"是**逻辑上不可能**的 ✗ ⇒ 断言 =【两条都在】＋【按形态那条逐字相同】＋【另一条不同】
+    const cases: { label: number; text: string; field: 'rawValueUtf16' | 'rawValueLatin1'; why: string }[] = [
+      { label: 0x00, text: 'D:\\工作区\\笔记\\a.md', field: 'rawValueUtf16', why: 'tag=0x00 ⇒ UTF-16LE ✓' },
+      { label: 0x01, text: 'D:\\notes\\a.md', field: 'rawValueLatin1', why: 'tag=0x01 ⇒ Latin1（内容只能是 ASCII ✓）' },
+    ];
+    for (const c of cases) {
+      const payload = Buffer.concat([Buffer.from([c.label]), encodePayload(c.text, c.label), Buffer.from([c.label])]);
       const buf = Buffer.concat([SEP, Buffer.from('modu-workspace', 'latin1'), Buffer.from([payload.length]), payload]);
       const parsed = parseAfterMark(buf, 0);
       expect(parsed.key).toBe('modu-workspace');
       expect(parsed.value, '非 JSON ⇒ value 应为 null（不假装解析成功）').toBeNull();
-      expect(parsed.rawValue, `标签 0x0${label} 的原始串必须可读（不得呈乱码）`).toBe(rawText);
+      expect(parsed.rawValueLatin1, 'Latin1 解必须在').not.toBeNull();
+      expect(parsed.rawValueUtf16, 'UTF-16LE 解必须在').not.toBeNull();
+      expect(parsed[c.field], c.why).toBe(c.text);
+      const other = c.field === 'rawValueUtf16' ? parsed.rawValueLatin1 : parsed.rawValueUtf16;
+      expect(other, '另一条解码应因形态不符而不同（互斥性 ✓ —— 不是"碰巧都能读"✗）').not.toBe(c.text);
     }
   });
 
@@ -111,7 +123,7 @@ describe('scan-markers 锚 · 函数级：布局 B 的值长吞并必须被修�
     const parsed = parseAfterMark(layoutB('modu-recent', 32, 0x01, '["D:\\\\x.md"]'), 0);
     expect(parsed.key).toBe('modu-recent');
     expect(parsed.value).toEqual(['D:\\x.md']);
-    expect(parsed.rawValue, 'JSON 成功时不得再给 raw（否则等于覆盖）').toBeNull();
+    expect(parsed.rawValueLegacy, 'JSON 成功时不得再给 raw（否则等于覆盖）').toBeNull();
   });
   it('⭐ 键名不得退化：真实键名样例（layout A 与 B）都必须一字不少', async () => {
     const { parseAfterMark } = await loadTool();
@@ -129,25 +141,33 @@ describe('scan-markers 锚 · 函数级：布局 B 的值长吞并必须被修�
 
   it('通用不变式：raw 值必须与声明内容逐字相同（值区偏移错 1 字节就会红）', async () => {
     const { parseAfterMark } = await loadTool();
-    // 用**已知内容**的原始值当不变式：只要值区起点错 1 字节，rawValue 就不再逐字相同 ✓
+    // 用**已知内容**的原始值当不变式：只要值区起点错 1 字节，rawValueLegacy 就不再逐字相同 ✓
     // （比"断言键名"更强：它锁的是**值区边界** ✓ —— 2026-09-23 那个"值长不可打印 ⇒ 长度字节被当成值首字节"就属于此类 ✗）
     // ⚠ 两条教训（都发生在这条锚里）：
     //   ① 断言必须按**实际构造的值**比对（我第一次按"不含填充"比 ⇒ 假红 ✗）
     //   ② **绝不能在 UTF-16 流里塞单字节填充** ✗（`0x20` 单字节会让 UTF-16 尾巴错位 ⇒ 我第二次又假红 ✗）
     //   ⇒ 现在用**两个不同长度的真实样例**替代"填充"：既覆盖不同长度，又保证字节流自洽 ✓
-    const samples: [number, string][] = [
-      [0x01, 'D:\\工作区\\笔记\\a.md'],
-      [0x01, 'D:\\工作区\\一个更长一些的笔记文件名.md'],
-      [0x00, 'D:\\notes\\b.md'],
-      [0x00, 'D:\\notes\\a-longer-name.md'],
+    // ⭐ **按新映射重建样本**（0x00 ⇒ UTF-16LE ✓ / 0x01 ⇒ Latin1 ✓）：
+    //   · CJK 内容**只能**走 UTF-16（Latin1 装不下 ⇒ 必然乱码 ✗）⇒ 配 tag=0x00 ✓
+    //   · ASCII 内容配 tag=0x01（Latin1 ✓）✓
+    //   ⚠ 这是"改映射要清点【全部承载面】"里最容易漏的一处：**构造侧的样本数组** ✗
+    const samples: { label: number; text: string; field: 'rawValueUtf16' | 'rawValueLatin1' }[] = [
+      { label: 0x00, text: 'D:\\工作区\\笔记\\a.md', field: 'rawValueUtf16' },
+      { label: 0x00, text: 'D:\\工作区\\一个更长一些的笔记文件名.md', field: 'rawValueUtf16' },
+      { label: 0x01, text: 'D:\\notes\\b.md', field: 'rawValueLatin1' },
+      { label: 0x01, text: 'D:\\notes\\a-longer-name.md', field: 'rawValueLatin1' },
     ];
-    for (const [label, rawText] of samples) {
-      const payload = Buffer.concat([Buffer.from([label]), encodePayload(rawText, label), Buffer.from([label])]);
+    for (const sample of samples) {
+      const payload = Buffer.concat([
+        Buffer.from([sample.label]),
+        encodePayload(sample.text, sample.label),
+        Buffer.from([sample.label]),
+      ]);
       const buf = Buffer.concat([SEP, Buffer.from('modu-workspace', 'latin1'), Buffer.from([payload.length]), payload]);
       const parsed = parseAfterMark(buf, 0);
       expect(parsed.key).toBe('modu-workspace');
-      // 偏移一旦错 1 字节，这里就会少/多一个字符 ⇒ 该不变式仍然有效 ✓
-      expect(parsed.rawValue, `值区必须逐字取到（标签 0x0${label}，长 ${rawText.length}）`).toBe(rawText);
+      // 偏移一旦错 1 字节，这里就会少/多一个字符 ⇒ 该不变式仍然有效 ✓（强度不降 ✓：仍锁"逐字相同"）
+      expect(parsed[sample.field], `值区必须逐字取到（tag=0x0${sample.label}）`).toBe(sample.text);
     }
   });
 
@@ -160,10 +180,17 @@ describe('scan-markers 锚 · 函数级：布局 B 的值长吞并必须被修�
       const parsed = parseAfterMark(buf, 0);
       expect(parsed.key, '空值记录的键名必须正确').toBe('modu-workspace');
       expect(parsed.value, '空值不是 JSON ⇒ value 为 null').toBeNull();
-      // 空内容 ⇒ rawValue 也应为 null（工具**不得**凭空造出一个字符串 ✓）
-      expect(parsed.rawValue, '空值不得被"解读"出内容').toBeNull();
+      // 空内容 ⇒ rawValueLegacy 也应为 null（工具**不得**凭空造出一个字符串 ✓）
+      expect(parsed.rawValueLegacy, '空值不得被"解读"出内容').toBeNull();
     }
   });
+  // ⭐ 原「真实形态（可打印值长 + 值后紧跟下一条记录）」函数级锚**已删除**（2026-09-23）——
+  //   原因：结构路径在**主循环**里 ⇒ **函数级单测永远够不到它** ✗ ⇒ 留着只会长期假红 ✗
+  //   覆盖已**搬到**下方 `CLI 冒烟` 的 framed 用例（**更强** ✓）：
+  //     · 真 `.log` 框架（`[crc][len][type]` + `seq(8)+count(4)+记录`，count 与条数一致 ＋ 恰好用尽数据区 ✓）
+  //     · 两条记录 + **第二条用不同的键** ⇒ 第一条值末落在**缓冲中间** ✓（= 原锚的失败条件 ✓）
+  //     · 断言三件事：命中 1 ✓ ＋ `layout === 'batch'` ✓ ＋ **raw 值按形态逐字相同** ✓
+  //   删除前已逐条核对"原锚的失败条件在新锚里可复现" ✓（值长 32 = 0x20 可打印 ✓ ＋ 后随不同键记录 ✓）
 });
 
 describe('scan-markers 锚 · CLI 冒烟（防"入口被改坏但函数级全绿"）', () => {
@@ -176,13 +203,42 @@ describe('scan-markers 锚 · CLI 冒烟（防"入口被改坏但函数级全绿
           writeFileSync(path.join(dir, `rec-${label}-${valueLen}.log`), layoutB(`modu-t${label}-n${valueLen}`, valueLen, label, '[]'));
         }
       }
-      // raw 值那一条（非 JSON，标签为 UTF-16）⇒ CLI 应报 parseState=raw 且 rawValue 可读
-      const rawText = 'D:\\工作区\\b.md';
+      // raw 值那一条：**按新映射**（0x01 ⇒ Latin1 ⇒ 内容只能 ASCII ✓）
+      const rawText = 'D:\\notes\\b.md';
       const rawPayload = Buffer.concat([Buffer.from([0x01]), encodePayload(rawText, 0x01), Buffer.from([0x01])]);
       writeFileSync(
         path.join(dir, 'rec-raw.log'),
         Buffer.concat([ORIGIN, SEP, Buffer.from('modu-workspace', 'latin1'), Buffer.from([rawPayload.length]), rawPayload]),
       );
+
+      // ⭐ 真 `.log` 框架 + WriteBatch —— 一次覆盖三件事 ✓：
+      //   ① 真框架形态（否则结构路径不启用 ✗）② 值后【紧跟另一条记录】（旧"猜分界"判据的**误杀面** ✓，
+      //      故第二条**必须用不同的键** ✗⇒ 同键会让边界歧义消失 ✓）③ **取到对的值**且走的是结构路径 ✓
+      //   ⚠ 结构路径在**主循环**里 ⇒ **函数级单测够不到** ✗ ⇒ 必须走这条 CLI 冒烟 ✓
+      const framedKey = 'modu-framed-a';
+      const framedText = 'D:\\framed\\a.md';
+      const framedKeyB = 'modu-framed-b';
+      const framedTextB = 'D:\\framed\\b-longer-name.md';
+      const varint = (n: number): Buffer => (n < 0x80 ? Buffer.from([n]) : Buffer.from([(n & 0x7f) | 0x80, n >> 7]));
+      const le16 = (n: number): Buffer => {
+        const b = Buffer.alloc(2);
+        b.writeUInt16LE(n, 0);
+        return b;
+      };
+      const le32 = (n: number): Buffer => {
+        const b = Buffer.alloc(4);
+        b.writeUInt32LE(n, 0);
+        return b;
+      };
+      const mkRecord = (key: string, label: number, text: string): Buffer => {
+        const fullKey = Buffer.from(`${ORIGIN.toString('latin1')}\u0000\u0001${key}`, 'latin1');
+        const payload = Buffer.concat([Buffer.from([label]), encodePayload(text, label), Buffer.from([label])]);
+        return Buffer.concat([Buffer.from([0x01]), varint(fullKey.length), fullKey, varint(payload.length), payload]);
+      };
+      const framedBody = Buffer.concat([mkRecord(framedKey, 0x00, framedText), mkRecord(framedKeyB, 0x01, framedTextB)]);
+      const framedData = Buffer.concat([Buffer.alloc(8), le32(2), framedBody]); // seq(8) + count(4)=2 ✓（两条自证 ✓）
+      const framedLog = Buffer.concat([le32(0), le16(framedData.length), Buffer.from([0x01]), framedData]); // crc+len+type ✓
+      writeFileSync(path.join(dir, 'framed.log'), framedLog);
 
       const run = (key: string) =>
         spawnSync(process.execPath, [TOOL, '--dir', dir, '--key', key], { encoding: 'utf8' });
@@ -198,10 +254,21 @@ describe('scan-markers 锚 · CLI 冒烟（防"入口被改坏但函数级全绿
       }
       const rawRun = run('modu-workspace');
       expect(rawRun.status).toBe(0);
-      const rawJson = JSON.parse(rawRun.stdout) as { timeline: { parseState: string; rawValue: string | null }[] };
+      const rawJson = JSON.parse(rawRun.stdout) as { timeline: { parseState: string; rawValueLatin1: string | null }[] };
       expect(rawJson.timeline.length, '非 JSON 的键也必须"可见"（看不见 ≠ 不存在）').toBe(1);
       expect(rawJson.timeline[0].parseState).toBe('raw');
-      expect(rawJson.timeline[0].rawValue).toBe(rawText);
+      // ⭐ 按形态取：tag=0x01 + ASCII ⇒ **Latin1 那条**逐字相同 ✓（UTF-16 那条此形态下必乱 ✓，不在此断言）
+      expect(rawJson.timeline[0].rawValueLatin1).toBe(rawText);
+
+      // ⭐ 真框架那条（走结构路径 ✓ ＋ 值后紧跟另一条记录 ✓ ＋ 取到对的值 ✓）
+      const framedRun = run(framedKey);
+      expect(framedRun.status, `framed CLI 必须 exit 0（stderr: ${framedRun.stderr}）`).toBe(0);
+      const framedJson = JSON.parse(framedRun.stdout) as {
+        timeline: { layout?: string; parseState: string; rawValueUtf16: string | null }[];
+      };
+      expect(framedJson.timeline.length, 'framed 记录应命中 1（旧判据会误杀 ⇒ 0 ✗）').toBe(1);
+      expect(framedJson.timeline[0].layout, '必须走【结构】路径（= 夹具真被当成 .log 解析 ✓）').toBe('batch');
+      expect(framedJson.timeline[0].rawValueUtf16, '走了结构路径还必须取到【对的值】✓').toBe(framedText);
 
       // 不存在的键 ⇒ 明确"没有"（timeline 空），而不是"未能解析"（unparsedHits 非空）
       const missing = JSON.parse(run('modu-不存在').stdout) as { timeline: unknown[]; unparsedHits: unknown[] };

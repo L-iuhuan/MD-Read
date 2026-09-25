@@ -63,6 +63,83 @@ function readVarint(buf, at) {
 }
 
 /**
+ * ⭐ **结构解析：顺序解析 `.log` 里的 WriteBatch**（2026-09-23 加，取代"猜分界"✗）。
+ *
+ * 为什么不再猜分界（本会话最值钱的教训）：
+ *   旧做法从"可打印游程尾部**往前猜**键尾"✗ ⇒ 是**单条局部**判断、**没有全局自证** ✗
+ *   ⇒ 收紧则**误杀真记录**（隔离库 `000003.log` 里 `modu-workspace` 键后有 0x2C=44 可打印长度、
+ *      值末 @406 既非缓冲末尾也非 `00 01` ✗ ⇒ 被拒 → `--key` 0 命中 ✗）；
+ *      放宽则**放回假阳性**（真实 profile 上 `modu-recent` 被缩短成 `modu-recen` ✗）
+ *   ⇒ **当启发式在两个失败模式之间来回摆（太宽/太严）⇒ 通常不是调参数的事，而是【不该猜】—— 去解析结构** ✓
+ *
+ * 结构（只读 dump `000003.log` 实测，2026-09-23）：
+ *   `[crc(4)][len(2)][type(1)]` 框架 + 数据区；数据区首部 `seq(8) + count(4)`；
+ *   其后逐条 `[type(1)][varint keyLen][key][varint valueLen][value]`，共 `count` 条
+ *   ⇒ 实测 `count = 8` 与**逐条走出来的条数【正好一致】** ✓（结构性自证 ✓）
+ *
+ * **判据（两条同时成立才采纳）**：① 条数 **恰好等于** `count` ② 逐条消费 **恰好用尽**数据区 ✓
+ *   ⇒ 错位解析**不可能**同时满足两条 ✓ ⇒ `modu-recen` 那类假阳性**不可能**通过 ✓
+ */
+function parseWriteBatch(buf, dataStart, dataEnd) {
+  // ⚠ 我曾在这里写 `readVarint(buf, dataStart).size !== 8` 当"seq 是定长 8 字节"的检查 ✗ —— **那是错的** ✗：
+  //   `readVarint` 读的是 **varint** ✗，而批头的 `seq` 是**定长 8 字节小端** ✓ ⇒ 该条件**恒成立** ⇒
+  //   解析器**永远返回 null** ⇒ 索引恒空 ⇒ 接线后【红锚不转绿、隔离库仍 0 命中】（2026-09-23 实测抓到 ✓）
+  //   ⇒ 现在只校验两件可自证的事：`count` 合理 ✓ 且"逐条消费**恰好用尽**数据区" ✓
+  const count = buf.readUInt32LE(dataStart + 8);
+  if (count === 0 || count > 100000) return null;
+  const records = [];
+  let at = dataStart + 12; // seq(8) + count(4)
+  for (let i = 0; i < count; i += 1) {
+    if (at >= dataEnd) return null;
+    const type = buf[at];
+    if (type !== 0x01) return null; // 只认 PUT（本次取证只需 PUT ✓）
+    const keyLen = readVarint(buf, at + 1);
+    if (keyLen === null) return null;
+    const keyStart = at + 1 + keyLen.size;
+    const keyEnd = keyStart + keyLen.value;
+    if (keyEnd > dataEnd) return null;
+    const valueLen = readVarint(buf, keyEnd);
+    if (valueLen === null) return null;
+    const valueStart = keyEnd + valueLen.size;
+    const valueEnd = valueStart + valueLen.value;
+    if (valueEnd > dataEnd) return null;
+    const sep = buf.indexOf(Buffer.from([0x00, 0x01]), keyStart);
+    if (sep !== -1 && sep < keyEnd && sep >= keyStart) {
+      // 键形如 `_<origin>\x00\x01<name>` ⇒ 标记偏移与名字都记下（标记是工具既有的入口 ✓）
+      records.push({
+        sepAt: sep,
+        name: buf.subarray(sep + 2, keyEnd).toString('utf8'),
+        valueStart,
+        valueEnd,
+      });
+    }
+    at = valueEnd;
+  }
+  if (at !== dataEnd) return null; // ② 恰好用尽数据区 ✓（条数已在循环里保证 ✓）
+  return records;
+}
+
+/** 在一份文件里扫出所有 `.log` 框架，逐批结构解析；返回 `Map<标记偏移, 记录>` ✓ */
+function indexBatches(buf) {
+  const index = new Map();
+  let batches = 0;
+  let at = 0;
+  while (at + 7 <= buf.length) {
+    const len = buf.readUInt16LE(at + 4);
+    const type = buf[at + 6];
+    const dataStart = at + 7;
+    const dataEnd = dataStart + len;
+    if (type !== 0x01 || dataEnd > buf.length) break; // 只认 FULL 记录；越界 ⇒ 停（退回原路径 ✓）
+    const records = parseWriteBatch(buf, dataStart, dataEnd);
+    if (records === null) break; // 结构解析失败 ⇒ 退回原路径（主循环会用 marker 路径 ✓，且输出里标注 ✓）
+    batches += 1;
+    for (const r of records) index.set(r.sepAt, r);
+    at = dataEnd;
+  }
+  return { index, batches };
+}
+
+/**
  * 值区域之后是否**恰好**落在"记录分界"（**单一实现，两处候选共用** ✓）。
  *
  * ⚠ 收紧史（2026-09-23，真实字节定性）：旧版写的是"其后 **64 字节内**出现 `\x00\x01`" ✗ ⇒ **太宽** ✗：
@@ -90,7 +167,14 @@ function landsOnRecordBoundary(buf, end) {
  * 布局 B 触发时**值长已被吞进游程**，游程之后遇到的是**值的编码标签 `0x00/0x01`（不可打印）** ⇒
  * 那个条件**永远不成立**，等于没修 ✗ ⇒ 故改用上面的结构判据（内容无关 ✓）。
  */
-function parseAfterMark(buf, at) {
+function parseAfterMark(buf, at, bounds) {
+  // ⭐ **结构优先（2026-09-23）**：若调用方已由 `parseWriteBatch` 解出本条记录的精确边界
+  //   （`bounds = {name, valueStart, valueEnd}`）⇒ **完全跳过"猜分界"** ✓
+  //   ⇒ 键名不会退化、值末由结构给出 ⇒ 隔离库那种"可打印值长 + 值后还有记录"的形态也正确 ✓
+  if (bounds) {
+    const regionB = buf.subarray(bounds.valueStart, Math.min(bounds.valueEnd, bounds.valueStart + 12000));
+    return decodeValue(bounds.name, regionB);
+  }
   let runEnd = at + 2;
   while (runEnd < buf.length && runEnd - (at + 2) < 60) {
     const b = buf[runEnd];
@@ -129,7 +213,19 @@ function parseAfterMark(buf, at) {
     }
   }
   const key = buf.subarray(at + 2, keyEnd).toString('utf8');
-  const region = buf.subarray(valueStart, Math.min(buf.length, valueStart + 12000));
+  return decodeValue(key, buf.subarray(valueStart, Math.min(buf.length, valueStart + 12000)));
+}
+
+/**
+ * 值解码（**唯一一份实现** ✓ —— marker 路径与结构路径都调它，避免"两份逻辑各错一半"✗）。
+ *
+ * 规则：
+ *  1. 先试 **JSON 数组**（两种字节编码 × 两种 UTF-16 偏移 ✓ —— 只试 UTF-16LE 会让 `[]` 这类值完全不可见 ✗）
+ *  2. JSON 失败才 **raw 回退**（**绝不在 JSON 成功时给 raw** ✗），且**按标签字节解码**：
+ *     `0x00` ⇒ Latin1 · `0x01` ⇒ UTF-16LE（否则 UTF-16 原始串会成乱码 ✗）
+ *  3. 两者都失败 ⇒ `value = rawValueLegacy = null`（**"看不见"必须可与"不存在"区分** ✓ —— 上层用 parseState 三态体现 ✓）
+ */
+function decodeValue(key, region) {
   let value = null;
   let encoding = null;
   // ⚠ 两种**字节编码**都要试：纯 ASCII 值 Chromium 用 **1 字节（Latin1）** 存，
@@ -163,25 +259,35 @@ function parseAfterMark(buf, at) {
     if (value !== null) break;
   }
   // —— raw 回退：**只在 JSON 解析失败时**生效（绝不覆盖一次成功的 JSON 解析 ✗）
-  //    ⚠ 必须按【标签字节】解码：0x00 ⇒ Latin1 · 0x01 ⇒ UTF-16LE（否则 UTF-16 原始串会成乱码 ✗）
-  //    形如 `<标签><原始串><标签>`（如 `modu-workspace` = `\x01 + 路径 + \x01`）⇒ 去掉标签与尾部同值字节 ✓
-  let rawValue = null;
+  //    ⭐ **两种解码【都给】，不猜**（2026-09-23 实测定案）：
+  //      · 隔离库 `iso-v3/…/000003.log`：标签 `0x01` + **ASCII 内容** `D:\Fil…` ⇒ 只有 Latin1 解得对 ✓
+  //      · 真实 profile `000010.log`：标签 `0x01` + **UTF-16 内容** ⇒ 只有 UTF-16 解得对 ✓
+  //      ⇒ ⭐ **同一个标签、两种内容** ⇒ **"标签字节"不是可靠的编码指示** ✗
+  //        （笔记里"0x00=Latin1 / 0x01=UTF-16"不是"反了"，而是**过度泛化** ✗ —— 有时对、不总是对 ✓）
+  //      ⇒ 于是**不在这个已被证明非确定的字段上建启发式** ✓：`rawValueLatin1` 与 `rawValueUtf16` **同时给**，
+  //        由读的人判定 ✓（"看不见 ≠ 不存在" ✓）
+  //    `rawValueLegacy` 保留作向后兼容（**沿用旧的标签推断** ✗）⇒ ⚠ **不要单信它**，新代码请用上面两个字段 ✓
+  let rawValueLegacy = null;
+  let rawValueLatin1 = null;
+  let rawValueUtf16 = null;
   let rawEncoding = null;
   if (value === null && region.length > 1 && ENCODING_LABELS.includes(region[0])) {
-    const used = region[0] === 0x01 ? 'utf16le' : 'latin1';
-    for (const parity of used === 'utf16le' ? [0, 1] : [0]) {
-      let text = region.subarray(1 + parity).toString(used);
+    const decodeTagged = (enc) => {
+      let text = region.subarray(1).toString(enc);
       const cut = text.indexOf('\u0001');
       if (cut !== -1) text = text.slice(0, cut);
-      text = text.replace(/\u0000/g, '');
-      if (text.length > 0) {
-        rawValue = text;
-        rawEncoding = `${used}(parity=${parity})`;
-        break;
-      }
-    }
+      return text.replace(/\u0000/g, '');
+    };
+    const asLatin1 = decodeTagged('latin1');
+    const asUtf16 = decodeTagged('utf16le');
+    if (asLatin1.length > 0) rawValueLatin1 = asLatin1;
+    if (asUtf16.length > 0) rawValueUtf16 = asUtf16;
+    // 向后兼容：沿用旧行为（按标签推断 ✗）—— 仅供旧消费方；新代码用上面两个字段 ✓
+    const legacy = region[0] === 0x00 ? asUtf16 : asLatin1;
+    if (legacy.length > 0) rawValueLegacy = legacy;
+    rawEncoding = `both(latin1+utf16le; tag=0x0${region[0].toString(16)})`;
   }
-  return { key, value, encoding, rawValue, rawEncoding };
+  return { key, value, encoding, rawValueLegacy, rawValueLatin1, rawValueUtf16, rawEncoding };
 }
 
 export { parseAfterMark, readVarint, landsOnRecordBoundary, ENCODING_LABELS };
@@ -212,22 +318,39 @@ if (isMain) {
       files.push({ file: f, error: `读失败:${error.code ?? 'unknown'}` });
       continue;
     }
-    files.push({ file: f, bytes: buf.length, mtime: new Date(st.mtimeMs).toISOString() });
+    // ⭐ **结构解析优先**：先按 `.log` 框架顺序解析 WriteBatch，得到每条记录的**精确边界** ✓
+    //   ⇒ 命中索引的记录完全跳过"猜分界" ✓（隔离库那种"可打印值长 + 值后还有记录"的形态也能正确 ✓）
+    //   ⇒ 无框架 / 解析失败 / 非 `.log`（如 `.ldb`）⇒ 索引为空 ⇒ 全部走原 marker 路径 ✓（**真的退回** ✓）
+    const batches = indexBatches(buf);
+    files.push({
+      file: f,
+      bytes: buf.length,
+      mtime: new Date(st.mtimeMs).toISOString(),
+      batches: batches.batches,
+      // ⚠ **不许静默**：一个批次都没解出来 ⇒ 明确标注（后续命中会带 `layout: 'marker'` ✓）
+      batchParseError: batches.batches === 0 ? 'no-frame-or-batch-parse-failed' : null,
+    });
     for (let at = buf.indexOf(Buffer.from([0x00, 0x01])); at !== -1; at = buf.indexOf(Buffer.from([0x00, 0x01]), at + 1)) {
-      const parsed = parseAfterMark(buf, at);
+      const bounds = batches.index.get(at) ?? null;
+      const parsed = parseAfterMark(buf, at, bounds);
       if (parsed.key === '') continue; // 不是"键"标记
       if (onlyKey !== null && parsed.key !== onlyKey) continue;
       markers.push({
         file: f,
         offset: at,
+        // ⭐ **路径标注必须有值**：这条是用【结构】还是用【标记猜测】得到的 ✓
+        layout: bounds ? 'batch' : 'marker',
         mtime: new Date(st.mtimeMs).toISOString(),
         key: parsed.key,
         encoding: parsed.encoding,
         value: parsed.value,
-        rawValue: parsed.rawValue,
+        rawValueLegacy: parsed.rawValueLegacy,
+        // ⭐ **两种解码都给**（标签不足以定编码 ⇒ 不猜 ✓）；⚠ 消费方**不得**用 `rawValueLegacy` 单判 ✗
+        rawValueLatin1: parsed.rawValueLatin1,
+        rawValueUtf16: parsed.rawValueUtf16,
         rawEncoding: parsed.rawEncoding,
         // ⚠ "看不见 ≠ 不存在"：三态必须可区分（json / raw / unparsed），不许把 unparsed 静默算成"没有" ✗
-        parseState: parsed.value !== null ? 'json' : parsed.rawValue !== null ? 'raw' : 'unparsed',
+        parseState: parsed.value !== null ? 'json' : parsed.rawValueLegacy !== null ? 'raw' : 'unparsed',
         valueCount: parsed.value === null ? null : parsed.value.length,
       });
     }
@@ -248,7 +371,19 @@ if (isMain) {
     timeline: list
       .slice()
       .sort((a, b) => (a.mtime === b.mtime ? a.offset - b.offset : a.mtime < b.mtime ? -1 : 1))
-      .map((m) => ({ file: m.file, offset: m.offset, mtime: m.mtime, valueCount: m.valueCount, parseState: m.parseState, isEmpty: m.value !== null && m.value.length === 0 })),
+      // ⭐ 投影补齐（`layout` ＋ 两种 raw 解码都要出 ⇒ 报告能引用"走哪条路 ✓ / 哪种解码可读 ✓"，
+      //   并能算**全库布局分布** ✓ —— 它是"结构覆盖面 ＋ 36 条 raw 不回归"的正面证据 ✓）
+      .map((m) => ({
+        file: m.file,
+        offset: m.offset,
+        mtime: m.mtime,
+        valueCount: m.valueCount,
+        parseState: m.parseState,
+        layout: m.layout,
+        rawValueLatin1: m.rawValueLatin1,
+        rawValueUtf16: m.rawValueUtf16,
+        isEmpty: m.value !== null && m.value.length === 0,
+      })),
   }));
 
   const target = onlyKey ?? 'modu-recent';
@@ -262,11 +397,27 @@ if (isMain) {
         /** 你要的判据：**有没有一条值恰好是 `[]` 的命中**？它在时间序里的位置？ */
         emptyValueHits: targetHits.filter((m) => m.value !== null && m.value.length === 0),
         nonEmptyValueHits: targetHits.filter((m) => m.value !== null && m.value.length > 0),
-        /** 原始值命中（非 JSON，如 `modu-workspace` = `\x01 + 路径 + \x01`）*/
+        /** 原始值命中（非 JSON，如 `modu-workspace` = `\x01 + 路径 + \x01`）
+         *  ⚠ 它数的只是 `parseState === 'raw'` 的**条数** ✓ 与下面哪个字段可读无关 ✓
+         *  （2026-09-23 我做过一次"纯改名"，正则把**这个输出字段名也改了** ✗ ⇒ 键名变成 `rawValueLegacyHits` ✗
+         *   ⇒ 验收脚本读 `rawValueHits` 得 undefined ⇒ **假报 36→0** ✓ —— 是改名越界，不是语义回归 ✓
+         *   ⇒ 已改回 `rawValueHits` ✓：**输出字段名属于对外契约，改名不许越界** ✓）*/
         rawValueHits: targetHits.filter((m) => m.parseState === 'raw'),
         /** ⚠ "看不见 ≠ 不存在"：命中但既非 JSON 也非 raw ⇒ 明确单列（而不是静默算作"没有"）✓ */
         unparsedHits: targetHits.filter((m) => m.parseState === 'unparsed'),
-        timeline: targetHits.map((m) => ({ file: m.file, offset: m.offset, mtime: m.mtime, valueCount: m.valueCount, parseState: m.parseState, rawValue: m.rawValue })),
+        // ⭐ 投影补齐（报告与验收都要能引用"走的是哪条路 ✓、哪种解码可读 ✓"）
+        //   ⚠ `rawValueLatin1` / `rawValueUtf16` **两种都给**（标签不足以定编码 ✓）—— 消费方**不得**用 `rawValueLegacy` 单判 ✗
+        timeline: targetHits.map((m) => ({
+          file: m.file,
+          offset: m.offset,
+          mtime: m.mtime,
+          valueCount: m.valueCount,
+          parseState: m.parseState,
+          layout: m.layout,
+          rawValueLegacy: m.rawValueLegacy,
+          rawValueLatin1: m.rawValueLatin1,
+          rawValueUtf16: m.rawValueUtf16,
+        })),
         lastTimelineEntry: targetHits[targetHits.length - 1] ?? null,
         allKeysSummary: summary,
         totalMarkers: markers.length,
