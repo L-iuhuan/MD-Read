@@ -238,6 +238,16 @@ fn unquote(arg: &str) -> &str {
 
 /// 从命令行参数里筛出全部 Markdown 文件路径（跳过 exe 自身与开关项，保持原顺序）。
 /// P0-6 前是 `md_arg()`：`find` 只取第一个 `.md`，多文件启动后面几个全丢。
+///
+/// **一律归一为 `fs::canonicalize` 形态**（`fs::normalize_path`，全仓唯一实现）——
+/// 这里是 argv（含"双击关联文件"）与单实例转发两条通道的**唯一汇聚点**，此处的产物
+/// 同时喂给两个消费者：① 受信登记 `fs::trust_all_existing`（它内部本就按 canonical 建键）
+/// ② 前端 `take_pending_files` / `second-instance` 事件（前端直接把它当标签路径）。
+/// 不在这里归一，前端就会拿到"原始串"形态 ⇒ 与对话框/目录树给的 canonical 形态字符串不等 ⇒
+/// `tabs.ts` 的标签去重按字符串比较 ⇒ **同一文件开出两个同名标签** ✗。
+///
+/// 不存在的路径**原样保留**（`normalize_path` 的 fallback 语义；这类路径去重失效可接受）：
+/// 用户完全可能在文档不存在时仍要求打开（例如先敲命令、文件稍后同步下来）。
 fn md_paths(args: &[String]) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     for arg in args {
@@ -246,7 +256,7 @@ fn md_paths(args: &[String]) -> Vec<String> {
             continue; // 开关项（--config 等）不是文件路径
         }
         if has_md_extension(candidate) {
-            found.push(candidate.to_string());
+            found.push(fs::normalize_path(candidate));
         }
     }
     found
@@ -266,6 +276,8 @@ pub fn run() {
             fs::pick_markdown_files,
             fs::list_dir,
             fs::pick_workspace_directory,
+            // 路径形态归一（拖放入口用）：唯一实现在 fs::normalize_path，前端只是调用者
+            fs::canonical_path,
             take_pending_files,
             allow_asset_paths,
             print::spike_log,
@@ -578,6 +590,10 @@ mod asset_path_tests {
     }
 
     /// P0-6 回归：多文件启动必须全部解析出来（旧实现 find() 只取第一个）。
+    ///
+    /// ⚠ 本轮（路径归一）实测复核：这里三条虚构路径**真的不存在** ⇒ `md_paths` 走
+    /// `normalize_path` 的 fallback（临时加过 `canonicalize(...).is_err()` 自检，全绿后删）
+    /// ⇒ 断言里的"原始串"期望值与归一后的产物一致，本用例**不是假绿** ✓
     #[test]
     fn md_paths_keeps_every_markdown_argument_in_order() {
         let args = vec![
@@ -598,6 +614,7 @@ mod asset_path_tests {
     }
 
     /// P0-6：非 Markdown 参数、开关项、带引号的关联路径三种边界。
+    /// ⚠ 本轮实测：这条虚构路径不存在（同上的临时自检）⇒ 同样走 fallback，非假绿 ✓
     #[test]
     fn md_paths_skips_non_markdown_and_unquotes_paths() {
         let args = vec![
@@ -611,6 +628,90 @@ mod asset_path_tests {
 
         let none = vec![r"C:\apps\modu.exe".to_string(), "--no-watch".to_string()];
         assert!(md_paths(&none).is_empty(), "无 Markdown 参数时为空列表");
+    }
+
+    /// **路径归一锚（本轮修复）**：存在的文件 ⇒ 产物 = `fs::canonicalize` 形态；
+    /// 不存在的路径 ⇒ **原样返回**（fallback，不报错、不构造）。
+    ///
+    /// 为什么两个断言必须成对：只测"存在 ⇒ canonical"会漏掉 fallback 分支（那是既有两条
+    /// `md_paths` 单测（虚构路径 `C:\docs\一.MDX`）走的路 —— 它们正因为 fallback 才仍然绿）；
+    /// 只测"不存在 ⇒ 原样"则测不到真正要修的那半。
+    #[test]
+    fn normalize_path_canonicalizes_existing_and_keeps_missing_verbatim() {
+        let dir = std::env::temp_dir().join(format!("modu-norm-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("建临时目录不应失败");
+        let file = dir.join("笔记.md");
+        std::fs::write(&file, b"x").expect("预置临时文件不应失败");
+
+        // 同一文件的两种形态：① 带 `..` 的未归一绝对路径 ② canonical。
+        // ⚠ `..` 必须真的抵消一级（`<dir>\sub\..\笔记.md` 才指向 `<dir>\笔记.md`）——
+        //   直接拿 `<dir>` 再拼 `..` 就指到**上一级**去了（本轮实测翻车）。
+        // ⚠ 临时目录在 Windows 上可能带 8.3 短名（`RUNNER~1`）⇒ **不能**拿未归一的
+        //   `to_string_lossy()` 当期望值，两边都走同一函数产出基准。
+        // ⚠ 路径用 `PathBuf::join` 拼（不写"分隔符 + 点点 + 分隔符"那种字面量）：那个形状会被
+        //   本仓的**敏感信息门禁**判成"UNC 主机路径"（实测命中 2 处）—— 是假阳性，但门禁
+        //   只认 EXIT 码，所以这里换一种拼法把假阳性源去掉，不改门禁、不写豁免。
+        let sub = dir.join("sub");
+        std::fs::create_dir_all(&sub).expect("建临时子目录不应失败");
+        let raw = sub.join("..").join("笔记.md").to_string_lossy().into_owned();
+        let canonical = crate::fs::normalize_path(&file.to_string_lossy());
+        assert_eq!(
+            std::fs::canonicalize(&file).expect("canonicalize").to_string_lossy(),
+            canonical,
+            "归一产物必须正好是 canonicalize 形态（标签身份就建在它上面）"
+        );
+        assert_eq!(
+            crate::fs::normalize_path(&raw),
+            canonical,
+            "带 `..` 的未归一形态必须收敛到同一串"
+        );
+        // 鉴别力自检：两种输入形态**按字符串不等**（`raw` 含 `..`，canonical 不含）。
+        // ⚠ 这里比 `std::path::Path` 而不是裸串：Windows 上 `canonicalize` 会加 `\\?\`
+        // 前缀，裸串比较会被前缀"顺带"满足，从而掩盖"其实 `..` 没被消掉"的失败。
+        assert_ne!(
+            std::path::Path::new(&raw),
+            std::path::Path::new(&canonical),
+            "两种形态确实是不同的路径（否则本用例没有鉴别力）"
+        );
+
+        // 不存在 ⇒ 原样返回（可接受的退化：这类文件去重失效）
+        let missing = dir.join("不存在的文件.md");
+        let missing_raw = missing.to_string_lossy().into_owned();
+        assert_eq!(
+            crate::fs::normalize_path(&missing_raw),
+            missing_raw,
+            "不存在的路径必须原样返回（保留原样 + 不报错）"
+        );
+
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **argv 三条通道（argv / 单实例转发 / 文件关联）同源锚**：`md_paths` 的产物
+    /// 必须是 canonical 形态，与对话框/目录树给的形态**逐字相等**。
+    #[test]
+    fn md_paths_yields_canonical_form_for_an_existing_file() {
+        let dir = std::env::temp_dir().join(format!("modu-mdpaths-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("建临时目录不应失败");
+        let file = dir.join("已存在.md");
+        std::fs::write(&file, b"x").expect("预置临时文件不应失败");
+        // 同上：`..` 必须抵消一级（拼法见上一个用例的注释 —— 不写字面量反斜杠）
+        let sub = dir.join("sub");
+        std::fs::create_dir_all(&sub).expect("建临时子目录不应失败");
+        let raw = sub.join("..").join("已存在.md").to_string_lossy().into_owned();
+
+        let args = vec![r"C:\apps\modu.exe".to_string(), raw.clone()];
+        assert_eq!(
+            md_paths(&args),
+            vec![crate::fs::normalize_path(&raw)],
+            "argv 通道产物必须与前端其它通道（对话框/目录树）的形态一致"
+        );
+        // 虚构路径仍走 fallback（既有两条 md_paths 单测就靠这条语义保持绿）
+        let fake = vec![r"C:\apps\modu.exe".to_string(), r"C:\docs\一.MDX".to_string()];
+        assert_eq!(md_paths(&fake), vec![r"C:\docs\一.MDX".to_string()], "不存在的路径原样保留");
+
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 默认窗口（2026-09-23 批）：本机 2560×1392 工作区（100% 缩放）→ 1680×1200。

@@ -23,12 +23,13 @@ import {
   type TabManager,
 } from "./app/tabs";
 import { createCloseGuard } from "./app/close-guard";
-import { pushRecent, setupRecentMenu } from "./app/recent";
+import { hydrateRecentOnBoot, pushRecent, setupRecentMenu } from "./app/recent";
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
 import { setupWorkspacePanel } from "./app/workspace-panel";
 import { prevalidateMermaid } from "./render/mermaid";
 import { openEachMd } from "./app/drop";
+import { normalizePath, normalizePaths } from "./app/path-norm";
 import { createOutlineFollow } from "./app/outline-follow";
 import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
@@ -223,9 +224,15 @@ function createTabs(session: EditSession, mountRendered: (ctx: MountContext) => 
 /** activate=false：多文件连开的中间项——只开标签不挂载（P5 批2，见 drop.ts） */
 async function openPath(tabs: TabManager, path: string, activate = true): Promise<void> {
   try {
-    const file = await invoke<LoadedFile>("read_file", { path });
-    tabs.openTab(path, file, activate);
-    pushRecent(path);
+    // **路径形态归一（本轮修复）**：标签身份就是路径字符串（`tabs.ts` 的 `find` 按 `===` 比），
+    // 同一文件以两种形态（对话框/目录树给的 canonical vs 拖放/recent 给的原始串）进来就会
+    // 开出两个同名标签 ✗。归一实现在 Rust（`fs.rs::normalize_path`，全仓唯一一份），
+    // 此处只是**渲染层唯一边界**：进 `read_file` 与 `pushRecent` 的串就此收敛，
+    // 于是 `tab.path` / `modu-recent` / 受信登记三处形态同源。
+    const canonical = await normalizePath(path);
+    const file = await invoke<LoadedFile>("read_file", { path: canonical });
+    tabs.openTab(canonical, file, activate);
+    pushRecent(canonical);
   } catch (error) {
     showError(error);
   }
@@ -385,7 +392,12 @@ function setupDragDrop(tabs: TabManager): void {
     if (event.payload.type === "drop") {
       // 多文件拖放（M2 波3 反馈①）：全部 Markdown（md/markdown/mdx，共用清单见 app/md-ext.ts）
       // 逐个开标签；仅末项渲染（P5 批2）
-      void openEachMd(event.payload.paths, (path, activate) => openPath(tabs, path, activate));
+      // ⚠ 路径形态：OS 拖放给的是**原始串**（不经对话框也不经 argv ⇒ 没被 `md_paths` 归一过），
+      //   所以这里先把它们收敛到 canonical 再交给 `openEachMd`/`openPath`。
+      //   归一只有一份实现（Rust `fs.rs::normalize_path`），此处与 `openPath` 调的是同一条命令。
+      void normalizePaths(event.payload.paths).then((paths) =>
+        openEachMd(paths, (path, activate) => openPath(tabs, path, activate)),
+      );
     }
   });
 }
@@ -707,6 +719,14 @@ setupWorkspacePanel({ openFile: (path) => void openPath(tabs, path) });
   if (pending.length > 0) {
     await openEachMd(pending, (path, activate) => openPath(tabs, path, activate));
   }
+  // 最近列表的历史双形态收敛（本轮修复）：存储里同一个文件可能并存 canonical 与"原始串"
+  // 两条（早期 argv 通道写入的）。归一 + "只在值真变了才写回" + 空态重画都在 recent.ts
+  // （`hydrateRecentOnBoot`），此处只做接线 —— main.ts 已顶到行数棘轮硬上限，不再长代码。
+  // ⚠ 放在 `pending` 打开之后：带文件启动时 `pushRecent` 已把最新项写进去，这里收敛的是全表，
+  // 顺序不会被打乱（`hydrateRecent` 保留原序）。
+  void hydrateRecentOnBoot(() => activeEmptyState?.refresh()).catch((error: unknown) => {
+    console.warn("最近列表归一失败", error); // 不阻断启动：沿用原值
+  });
   // 开发期真机探针入口（D-05 多标签验收用）。为什么不复用既有入口：
   // 开第二个及以后的标签必须**真的走 read_file**（受控语料的自动保存会写回原文件），
   // 所以不能靠上次的渲染缓存或拖放伪造；而磁盘上的草稿副本只能经这条真实读文件链进来。

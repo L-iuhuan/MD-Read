@@ -1,9 +1,24 @@
 /**
  * 最近文件（M2 波1，F5）断言：增/去重/最新在前/上限 10、损坏存储回退、
  * 下拉菜单点击行为（jsdom localStorage 可用）。
+ * 本轮（标签重复缺陷）加 `hydrateRecent`：历史**双形态**值的读取归一到 canonical，
+ * 且**只在值真的变了才写回**（没变 ⇒ 一个字节都不动，见下方 spy 断言）。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { dirName, loadRecent, pushRecent, setupRecentMenu } from "../src/app/recent";
+
+/** mock 的"canonical 形态"：Windows `canonicalize` 产物含 `\\?\` 前缀。 */
+const CANONICAL = "\\\\?\\C:\\docs\\笔记.md";
+const PLAIN = "C:\\docs\\..\\docs\\笔记.md";
+
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(async (_cmd: string, args?: Record<string, unknown>) => {
+    const raw = String(args?.raw ?? "");
+    return raw === PLAIN ? CANONICAL : raw; // 与 Rust `normalize_path` 同语义（认不出就原样）
+  }),
+}));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+
+import { dirName, hydrateRecent, loadRecent, pushRecent, setupRecentMenu } from "../src/app/recent";
 
 beforeEach(() => {
   localStorage.clear();
@@ -48,6 +63,60 @@ describe("recent 存储", () => {
   it("非数组/非字符串项被过滤", () => {
     localStorage.setItem("modu-recent", JSON.stringify([1, "a.md", null]));
     expect(loadRecent()).toEqual(["a.md"]);
+  });
+});
+
+/* ---- 历史双形态收敛（本轮修复）：读取时归一 + 只在值真的变了才写回 ---- */
+
+describe("hydrateRecent（读取时归一）", () => {
+  function stored(): string[] {
+    return JSON.parse(localStorage.getItem("modu-recent") ?? "[]") as string[];
+  }
+
+  it("同一文件的 plain 与 canonical 两条历史值 ⇒ 收敛成一条（去重前是两个条目）", async () => {
+    localStorage.setItem("modu-recent", JSON.stringify([PLAIN, CANONICAL, "D:\\other.md"]));
+    expect(loadRecent()).toHaveLength(3); // 存储层原样读：确实并存两条形态（缺陷现场）
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    try {
+      const list = await hydrateRecent();
+      expect(list).toEqual([CANONICAL, "D:\\other.md"]);
+      expect(stored()).toEqual([CANONICAL, "D:\\other.md"]);
+      expect(loadRecent()).toEqual([CANONICAL, "D:\\other.md"]); // 写回后 load 也只剩一条
+      expect(setItem).toHaveBeenCalled(); // 变了的这一侧必须真写（下面那条才有鉴别力）
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("⭐ 值没变 ⇒ 不写回（不每次启动都写使用者可见的列表）", async () => {
+    localStorage.setItem("modu-recent", JSON.stringify([CANONICAL, "D:\\other.md"]));
+    const before = localStorage.getItem("modu-recent"); // 逐字快照（含 JSON 形态）
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    try {
+      const list = await hydrateRecent();
+      expect(list).toEqual([CANONICAL, "D:\\other.md"]);
+      expect(setItem).not.toHaveBeenCalled(); // 一个字节都没写
+      expect(localStorage.getItem("modu-recent")).toBe(before);
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("空存储：不归一、不写回、不凭空造键", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    try {
+      expect(await hydrateRecent()).toEqual([]);
+      expect(setItem).not.toHaveBeenCalled();
+      expect(localStorage.getItem("modu-recent")).toBeNull();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("收敛后仍守上限 10（去重让列表变短，不会因此变长）", async () => {
+    const eleven = Array.from({ length: 11 }, (_, i) => `D:\\d\\f${i}.md`);
+    localStorage.setItem("modu-recent", JSON.stringify(eleven));
+    expect(await hydrateRecent()).toHaveLength(10);
   });
 });
 

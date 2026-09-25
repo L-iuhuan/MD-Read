@@ -95,6 +95,40 @@ pub fn read_file(state: tauri::State<TrustedPaths>, path: String) -> Result<Load
     read_file_checked(&state, &path)
 }
 
+/// **路径归一的唯一实现**（全仓只此一份，两侧都调它：Rust 直接调、渲染层经
+/// `canonical_path` 命令调 ⇒ 不存在第二份归一逻辑）。
+///
+/// 为什么需要它：同一文件会以**不同字符串形态**进来 —— argv/文件关联是"用户/系统给的
+/// 原始串"（可能是相对路径、含 `..`、8.3 短名、大小写不同、`/` 与 `\` 混用），而原生
+/// 对话框（`pick_markdown_files`）与目录树（`list_dir`）给的是 `fs::canonicalize` 形态。
+/// 标签层按**字符串**去重（`tabs.ts` 的 `find`，路径是标签的身份），两种形态就是两个标签 ⇒
+/// 开出两个同名标签 ✗。故**在渲染层拿到路径之前**把全局收敛到 canonical 形态。
+///
+/// ⚠ `canonicalize` 失败（不存在 / 不可读 / 无权限 / 网络 UNC 打不通）⇒ **保留原样返回**：
+/// 这不是错误路径 —— 文件可以是"刚被移走""稍后才出现"，而"这个串去重不生效"是**可接受**的
+/// 退化（顶多多一个标签），远好过在这里报错把打开流程打断。同理，本函数**不产生任何用户可见
+/// 文案**，纯粹是路径形态整理。
+pub fn normalize_path(raw: &str) -> String {
+    std::fs::canonicalize(raw)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| raw.to_string())
+}
+
+/// `canonical_path` 命令（IPC 名）：**渲染层的拖放入口**用它（OS 拖放给的是原始串，
+/// 不经对话框也不经 argv ⇒ 必须单独归一）。
+///
+/// ⚠ **命令名只能与函数名不同**：Rust 的函数与 `#[tauri::command]` 展开出的宏
+/// 共用值命名空间 ⇒ 与上面那个 `pub fn normalize_path` 同名会 `E0428 定义多次`（实测）。
+/// 命令名面向渲染层（与 `read_file` / `list_dir` 同族，动词_名词），实现体仍**只有一份**
+/// —— 就是 `normalize_path`，本函数只做转发。
+///
+/// ⚠ 这不是授权入口：它**只整理路径形态**，不做任何受信判定、不写盘、不登记 ——
+/// 所以攻陷页面拿它得不到任何新能力（受信登记仍在 `trust_all_existing` 里按 canonical 做）。
+#[tauri::command]
+pub fn canonical_path(raw: &str) -> String {
+    normalize_path(raw)
+}
+
 /// 目录项（D-11 文件夹工作区）：**只有名字与类型** —— **不读文件内容** ✓
 /// `is_markdown` **只看扩展名**（不打开文件、不嗅探内容）⇒ 属性级，性能与隐私双属性 ✓
 #[derive(serde::Serialize, Debug)]
