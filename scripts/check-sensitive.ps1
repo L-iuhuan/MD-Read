@@ -71,9 +71,13 @@ foreach ($k in $generic.Keys) { $patterns[$k] = $generic[$k] }
 foreach ($k in $extra.Keys)   { $patterns[$k] = $extra[$k] }
 
 # ── 3) 已知假阳性（测试夹具里的故意假路径，不算泄露）────────────
+# ⚠ 这里只放**具体字面量**，不要放"整类豁免" —— 整类豁免会连真实泄露一起盖住。
+#   造夹具时优先用不撞正则的形状（如 `C:\docs\…`）；撞上了就在此加白，并写明出处。
+#   注意「家目录」类正则**对测试夹具同样生效**（故意的）：真实家目录粘进夹具里仍要被抓。
 $allowList = @(
   'D:\\docs\\a.md', 'D:/docs/a.md',
-  'E:\\docs\\sub\\a.md', 'E:/docs/sub/a.md'
+  'E:\\docs\\sub\\a.md', 'E:/docs/sub/a.md',
+  '/home/u/a.md'                     # modu/tests/recent.spec.ts:95 的 dirName 夹具
 )
 
 # ── 4) 取文件清单 ────────────────────────────────────────────
@@ -94,12 +98,16 @@ $hits = @()
 foreach ($f in $files) {
   # 跳过二进制
   if ($f -match '\.(png|jpg|jpeg|gif|webp|ico|woff2?|ttf|otf|msi|exe|pdf|zip|bundle)$') { continue }
-  $isTestFixture = $f -match '(^|/)tests/'   # 测试夹具含故意假路径
+  # 测试夹具含**故意造的假路径**，会让路径类正则咬到转义反斜杠（如 Rust 的 "C:\\docs\\a.md"、
+  # TS 的 "D:\\docs\\b.md"）。覆盖三种形态：tests 目录 / src 下的 *_tests.rs / *.spec|test.ts。
+  $isTestFixture = ($f -match '(^|/)tests?/') -or ($f -match '_tests?\.rs$') -or ($f -match '\.(spec|test)\.(ts|tsx|js)$')
   $lineNo = 0
   foreach ($line in (Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue)) {
     $lineNo++
     foreach ($name in $patterns.Keys) {
-      if ($isTestFixture -and $name -match 'UNC|家目录') { continue }
+      # 只豁免「UNC 主机路径」一种：测试夹具里的 `\\docs\` 是 Rust/TS 转义字面量，必然假阳性。
+      # ⚠ **不豁免「家目录」** —— 真实用户家目录（C:\Users\<真名>）出现在测试里仍然是敏感信息，必须照抓。
+      if ($isTestFixture -and $name -eq 'UNC 主机路径') { continue }
       if ([regex]::IsMatch($line, $patterns[$name])) {
         $isAllowed = $false
         foreach ($a in $allowList) { if ($line -like "*$a*") { $isAllowed = $true; break } }
