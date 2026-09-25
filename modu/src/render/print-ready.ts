@@ -135,3 +135,32 @@ export async function awaitPrintReady(
   }
   return { timedOut: false, fontsTimedOut: !fontsOk, imageFailures }
 }
+
+/**
+ * 导出前"可能被截"的块（P1-4(b) 补，2026-09-23）。
+ *
+ * 口径（**实测依据**）：**可横向滚动的块** = `scrollWidth > clientWidth`（`.table-wrap` 与 `pre`）。
+ * 它们正是"打印时按当前滚动位置出图、滚动外内容不可达"的那一类（a4-wide 语料实锤：
+ * 长代码行尾部丢失 + 页面残留横向滚动条）。这里**不**直接拿"是否超过 A4 可印宽 658px"比 ——
+ * 导出时版式是屏显宽度（窗口 ~1665px），用屏显宽度与 658 比会把所有元素都误报；
+ * "会不会滚"才是与纸面无关的确定信号。返回面向使用者的中文标签列表（可含重复）。
+ */
+export function overflowingBlocks(container: ParentNode): string[] {
+  const labels: string[] = []
+  for (const el of Array.from(container.querySelectorAll<HTMLElement>('.table-wrap, pre'))) {
+    if (el.scrollWidth <= el.clientWidth + 1) {
+      continue
+    }
+    labels.push(el.classList.contains('table-wrap') ? '宽表格' : '长代码行')
+  }
+  return labels
+}
+
+/** 拼"可能被截"的中文提醒（无风险返回 null）。文案面向使用者、不露技术黑话。 */
+export function overflowWarning(labels: string[]): string | null {
+  if (labels.length === 0) {
+    return null
+  }
+  const kinds = Array.from(new Set(labels)).join(' / ')
+  return `本文档有 ${labels.length} 处内容超出 A4 可印宽（${kinds}），PDF 中可能被截断`
+}

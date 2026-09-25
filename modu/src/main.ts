@@ -15,7 +15,7 @@ import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { keepOffscreenSkipping, shapeOf } from "./render/offscreen-policy";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
 import { attachCodeCopyButtons } from "./render/codecopy";
-import { awaitPrintReady } from "./render/print-ready";
+import { awaitPrintReady, overflowingBlocks, overflowWarning } from "./render/print-ready";
 import {
   createCloseGuard,
   createTabManager,
@@ -283,6 +283,11 @@ async function onExportClick(tabs: TabManager): Promise<void> {
     flashStatus("字体加载超时，部分字形可能按回退字体导出", "warn");
   } else if (ready.imageFailures.length > 0) {
     flashStatus(`有 ${ready.imageFailures.length} 张图片未就绪，将按当前版式导出`, "warn");
+  }
+  // P1-4(b)：**不许静默丢内容** —— 导出前量一遍"会横向滚动的块"（打印时按当前滚动位置截断）
+  const overflowNote = overflowWarning(overflowingBlocks(doc));
+  if (overflowNote !== null) {
+    flashStatus(overflowNote, "warn");
   }
   let picked: string | null;
   try {
