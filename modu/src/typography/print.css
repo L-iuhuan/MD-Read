@@ -94,8 +94,10 @@
      页面上还残留横向滚动条）。打印时改为换行 + 放开滚动：
      `pre-wrap` 提供换行点、`overflow-wrap: anywhere` 让**无空格的超长 token** 也能断，
      `overflow: visible` 让整块回到分页流。不改变字号/版式，属纯赚修复。
-     注意：宽表格"能否印全"是**产品取舍**（缩放/横排/接受截断三选一，待用户裁决），
-     本文件**不做**任何缩放、transform、@page 横排或 table-layout:fixed。 */
+     注意：**超宽**表格（内容宽 > 987px，连横版都放不下）仍是未决的产品取舍
+     （缩放 / 拆列 / 接受截断）—— 本文件对它**不做**任何缩放、transform 或
+     table-layout:fixed，由 overflowWarning 提醒兜底。中等宽表（658 < w ≤ 987）
+     的横排见上方 `@page wide` 与 `.mdc .wide-page`。 */
   .mdc pre {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
