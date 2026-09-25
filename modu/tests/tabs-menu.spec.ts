@@ -1,15 +1,17 @@
 /**
  * D-05 新增功能 · 壳层两个下拉菜单（ui/tabs-menu.ts）的行为锚。
  *   ▾ 全部标签列表：两行式、当前项浅主色底、脏点、底部批量关闭；
- *   ⋯ 溢出菜单：被收起的「打开… / 最近」代理项 + 批量关闭；
+ *   ⋯ 溢出菜单：被收起的「打开 / 最近」代理项 + 批量关闭；**只在顶栏拥挤时出现**；
  *   两者共用：一次只开一个、点外部收起、aria-expanded 回显、溢出才显示 #tabs-nav。
- * jsdom 无布局引擎 → 溢出判定用 Object.defineProperty 直接给 scrollWidth/clientWidth。
+ * jsdom 无布局引擎 → 溢出判定用 Object.defineProperty 直接给 scrollWidth/clientWidth；
+ * 拥挤态（header.overflow）用 class 直接切，等价于 main.ts 的 ResizeObserver 行为。
  */
 import { describe, expect, it, vi } from "vitest";
 import { createTabMenus, dirOf, type TabMenusDeps } from "../src/ui/tabs-menu";
 import type { Tab } from "../src/app/tabs";
 
 const MENU_DOM = `
+  <header id="titlebar" class="topbar">
   <div id="tabbar"><div id="tab-list"></div><button id="btn-newtab">＋</button></div>
   <div id="tabs-nav" hidden>
     <button id="tabs-prev" disabled>‹</button>
@@ -18,13 +20,14 @@ const MENU_DOM = `
     <div id="tabs-menu" role="menu" hidden></div>
   </div>
   <div class="actions">
-    <button id="btn-open">打开…</button>
+    <button id="btn-open">打开</button>
     <div id="recent-wrap"><button id="btn-recent">最近</button><div id="recent-menu" hidden></div></div>
     <div id="overflow-wrap">
       <button id="btn-overflow" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
       <div id="overflow-menu" role="menu" hidden></div>
     </div>
-  </div>`;
+  </div>
+  </header>`;
 
 function tab(path: string, dirty = false): Tab {
   return {
@@ -52,10 +55,15 @@ interface Harness {
   closeAll: ReturnType<typeof vi.fn>;
   el: (id: string) => HTMLElement;
   setOverflow(on: boolean): void;
+  setCrowded(on: boolean): void;
 }
 
-function setup(tabs: Tab[], activePath: string | null): Harness {
+function setup(tabs: Tab[], activePath: string | null, crowded = true): Harness {
   document.body.innerHTML = MENU_DOM;
+  const header = document.getElementById("titlebar") as HTMLElement;
+  if (crowded) {
+    header.classList.add("overflow"); // 默认按「拥挤态」建：⋯ 只在该态出现，菜单才有意义
+  }
   const active = { path: activePath };
   const list = document.getElementById("tab-list") as HTMLElement;
   const state = { over: false };
@@ -85,6 +93,9 @@ function setup(tabs: Tab[], activePath: string | null): Harness {
     el: (id: string) => document.getElementById(id) as HTMLElement,
     setOverflow(on: boolean) {
       state.over = on;
+    },
+    setCrowded(on: boolean) {
+      header.classList.toggle("overflow", on);
     },
   };
 }
@@ -167,7 +178,7 @@ describe("⋯ 溢出菜单", () => {
     h.el("btn-overflow").click();
     const menu = h.el("overflow-menu");
     const items = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
-    expect(items.map((el) => el.textContent)).toEqual(["打开…", "最近"]);
+    expect(items.map((el) => el.textContent)).toEqual(["打开", "最近"]);
     realClick(items[0] as HTMLElement);
     expect(openSpy).toHaveBeenCalledTimes(1);
     expect(menu.hidden).toBe(true); // 先收菜单，再把点击交给原按钮
@@ -177,15 +188,37 @@ describe("⋯ 溢出菜单", () => {
     realClick(again[1] as HTMLElement);
     expect(recentSpy).toHaveBeenCalledTimes(1);
   });
+});
 
-  it("无标签时不显示 ⋯ 按钮；有标签才显示", () => {
+describe("⋯ 只在拥挤态出现", () => {
+  it("拥挤态且有标签才显示；无标签 / 非拥挤态都不显示（它不是常驻按钮）", () => {
     const empty = setup([], null);
     empty.menus.sync();
-    expect(empty.el("btn-overflow").hidden).toBe(true);
+    expect(empty.el("btn-overflow").hidden).toBe(true); // 无标签
+
+    const notCrowded = setup([tab("a.md")], "a.md", false);
+    notCrowded.menus.sync();
+    expect(notCrowded.el("btn-overflow").hidden).toBe(true); // 有标签但不拥挤
 
     const h = setup([tab("a.md")], "a.md");
     h.menus.sync();
+    expect(h.el("btn-overflow").hidden).toBe(false); // 拥挤态
+  });
+
+  it("拥挤态翻转（#titlebar class 变化）即时重算显隐并收掉开着的菜单", async () => {
+    const h = setup([tab("a.md")], "a.md");
+    h.menus.sync();
     expect(h.el("btn-overflow").hidden).toBe(false);
+
+    h.el("btn-overflow").click();
+    expect(h.el("overflow-menu").hidden).toBe(false);
+    expect(h.el("btn-overflow").getAttribute("aria-expanded")).toBe("true");
+
+    h.setCrowded(false); // main.ts 的 ResizeObserver 改的正是这一个 class
+    await new Promise((r) => { setTimeout(r, 0); }); // MutationObserver 回调排在微任务之后
+    expect(h.el("btn-overflow").hidden).toBe(true);
+    expect(h.el("overflow-menu").hidden).toBe(true); // 按钮不可见 → 浮层必须一起收
+    expect(h.el("btn-overflow").getAttribute("aria-expanded")).toBe("false");
   });
 });
 

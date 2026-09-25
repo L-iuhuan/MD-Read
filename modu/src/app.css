@@ -69,7 +69,7 @@
      两行式条目（文件名 + 弱化目录）、当前项浅主色底、底部「关闭其他/全部标签」；
    · 拥挤态（.topbar.overflow）：标签条可分宽度 < --w-tabs-min(420px) 时收成「编辑 + ⋯」，
      判据与滞回接线在 main.ts 的 setupShellOverflow（滞回余量 TABS_EXPAND_MARGIN = 140，
-     必须大于收起实际让出的 130px，否则自激）；
+     必须大于收起实际让出的宽度，否则自激）；非拥挤态**没有 ⋯**（打开 / 最近已在条上）；
    · 大纲活动项由「左侧 3px 硬色条」改为「浅主色底圆角矩形 + 主色文字 + 600 字重」，
      层级只用缩进 + 字重/字号；
    · 状态栏 11.5px（--fs-status）+ 上沿改 --hair；
@@ -354,7 +354,7 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
    不是动作区成员），但它是**同一排工具按钮**里的一个，用户实测「只有它长得不一样」：
    裸 button 的 UA 默认皮（0 圆角 / 2px outset 边框 / #f0f0f0 底 / 23px 高 / Arial 13.33px
    / cursor:default / 无 hover 反馈）。本批把它按「直属 id」写进这四组选择器，与
-   「打开… / 最近 / Aa / ◐ / PDF / ⋯」逐项同皮。**不给它裹一层 .actions 容器**——
+   「打开 / 最近 / Aa / ◐ / PDF / ⋯」逐项同皮。**不给它裹一层 .actions 容器**——
    那会改 DOM 结构、动到 flex 布局与 #actions 的收缩逻辑（T1 的滞回余量按实测 130px 定的）。 */
 .actions > button,
 .actions > .recent-wrap > button,
@@ -413,13 +413,20 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 
 /* --- 拥挤态：标签条可用宽度低于 --w-tabs-min(420px) 时收成「编辑 + ⋯」---
    由 main.ts 的 ResizeObserver 在 header 上切 .overflow 类（带 140px 滞回，防抖动）。
-   滞回余量必须**大于收起动作组实际让出的宽度（实测恒 130px）**，否则收起→重开无限循环；
-   48px 的旧余量在 1000~1060px 窗口下实测 2.2~2.5Hz 自激。
+   滞回余量必须**大于收起动作组实际让出的宽度**（实测 130px − ⋯ 自身占位，见下），
+   否则收起→重开无限循环；48px 的旧余量在 1000~1060px 窗口下实测 2.2~2.5Hz 自激。
    常显项（编辑 / Aa / ◐ / PDF）留在条上不动 —— 它们是任何宽度下都必须点得到的；
-   被收起的是「打开… / 最近」与标签批量操作，它们进 ⋯ 菜单（见 §7c）。 */
+   被收起的是「打开 / 最近」，它们进 ⋯ 菜单（见 §7c）。
+
+   ⋯ 按钮**只在拥挤态出现**（tabs-menu.ts 的 sync() 按 header.overflow 置 hidden）：
+   非拥挤态下「打开 / 最近」本来就在条上，⋯ 摆在那里是重复且无上下文的按钮。
+   下面这条只负责「非拥挤态连占位都不留」——空的 .overflow-wrap 会白吃 #actions
+   的一个 gap 槽（--size-1），留着会让 PDF 与窗口三钮之间多出一小段空档。
+   按钮的 hidden 仍由 JS 同步（语义与可测性的唯一来源，jsdom 里没有本样式表）。 */
 .topbar.overflow #act-sep { display: none; }
 .topbar.overflow #btn-open,
 .topbar.overflow .recent-wrap { display: none; }
+.topbar:not(.overflow) .overflow-wrap { display: none; }
 
 /* 开关状态回显（主题态挂在 <html data-theme> 上，既有契约直接读）。
    Aa 面板打开时按钮同样点灯：这是状态回显，不是装饰。填充与描边一起换，

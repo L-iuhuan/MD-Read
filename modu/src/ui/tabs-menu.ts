@@ -3,14 +3,18 @@
  *   ▾ 全部标签列表 —— 两行式（文件名 + 弱化目录）、当前项浅主色底、脏点；
  *                     底部「关闭其他标签 / 关闭全部标签」。
  *   ⋯ 溢出菜单     —— 顶栏拥挤（标签条可用宽度 < --w-tabs-min）时收进来的动作：
- *                     「打开… / 最近」的代理项 + 标签批量操作。
+ *                     「打开 / 最近」的代理项 + 标签批量操作。
+ *                     ⚠ 按钮本身**只在拥挤态出现**（非拥挤态 hidden，见 crowded()）：
+ *                     非拥挤态下「打开 / 最近」本来就在条上，⋯ 在那儿是重复且无上下文的
+ *                     按钮。已知取舍：非拥挤态没有「关闭其他 / 全部标签」的入口
+ *                     （用户知情；▾ 菜单里仍有，但它只在标签真有溢出时才出现）。
  *
  * 为什么独立一文件而不是塞进 app/tabs.ts：tabs.ts 已 460+ 行（超 400 铁律，本批
  * 不扩大改动面），菜单是**壳层 DOM** 而非标签状态机，放 ui/ 与 findbar/settings 同层。
  * 两个菜单都是 index.html 里的常驻空容器（默认 hidden），内容每次打开现填 ——
  * 样式来源唯一（app.css §7c），不靠运行时注入 <style>。
  *
- * 「代理点击」的做法与理由：被收进 ⋯ 的「打开… / 最近」按钮仍然留在 DOM 里
+ * 「代理点击」的做法与理由：被收进 ⋯ 的「打开 / 最近」按钮仍然留在 DOM 里
  * （只是 `.topbar.overflow` 下 display:none），它们的 click 监听器仍在原处。
  * 菜单项只做 `proxy.click()`，**不复制一份打开逻辑** —— 复制会让「打开文件」出现
  * 两条实现，是迟早会分叉的那种债。
@@ -101,7 +105,14 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
   const listMenu = document.getElementById("tabs-menu");
   const overflowBtn = document.getElementById("btn-overflow");
   const overflowMenu = document.getElementById("overflow-menu");
+  const header = document.getElementById("titlebar");
   const wrappers = [listMenu, overflowMenu].filter((el): el is HTMLElement => el !== null);
+
+  /** 拥挤态判据：顶栏是否带 .overflow（由 main.ts 的 setupShellOverflow 依标签条
+   *  可用宽度切类，带 140px 滞回）。⋯ 只在拥挤态出现 —— 非拥挤态它是重复按钮。 */
+  function crowded(): boolean {
+    return header !== null && header.classList.contains("overflow");
+  }
 
   function hide(el: HTMLElement | null): void {
     if (el !== null && !el.hidden) {
@@ -167,7 +178,7 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
     }
   }
 
-  /** ⋯ 溢出菜单：被收起的「打开… / 最近」代理项 + 标签批量操作 */
+  /** ⋯ 溢出菜单：被收起的「打开 / 最近」代理项 + 标签批量操作 */
   function renderOverflowActions(): void {
     if (overflowMenu === null) {
       return;
@@ -193,7 +204,7 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
     }
     overflowMenu.textContent = "";
     for (const [label, id] of [
-      ["打开…", "btn-open"],
+      ["打开", "btn-open"],
       ["最近", "btn-recent"],
     ] as const) {
       const item = makeItem();
@@ -227,17 +238,21 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
   function sync(): void {
     const count = deps.getTabs().length;
     const over = count > 0 && overflowing();
+    // ⋯ 只在**顶栏拥挤**且有标签时出现（非拥挤态它没有上下文：打开 / 最近已在条上）
+    const showOverflow = count > 0 && crowded();
     if (nav !== null) {
       nav.hidden = !over;
     }
     if (overflowBtn !== null) {
-      overflowBtn.hidden = count === 0;
+      overflowBtn.hidden = !showOverflow;
     }
     if (!over) {
       hide(listMenu);
     }
-    if (count === 0) {
+    if (!showOverflow) {
+      // 拥挤态翻转时菜单不能留在「开着」的旧状态：按钮已不可见，浮层必须一起收
       hide(overflowMenu);
+      overflowBtn?.setAttribute("aria-expanded", "false");
     }
     // 开着的时候重填：标签增删/切活性时内容要跟着变
     if (listMenu !== null && !listMenu.hidden) {
@@ -285,6 +300,13 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
       close();
     }
   });
+
+  // 拥挤态由 main.ts 的 ResizeObserver 切 #titlebar 的 class，而 sync() 只在标签集合
+  // 变化时被调用 —— 故这里自己盯住那个 class：一变就重算 ⋯ 的显隐并收掉旧菜单。
+  // 观察对象是 header 的 class，sync 动的是按钮的 hidden，不会自我触发（无自激）。
+  if (header !== null) {
+    new MutationObserver(sync).observe(header, { attributes: true, attributeFilter: ["class"] });
+  }
 
   return {
     sync,
