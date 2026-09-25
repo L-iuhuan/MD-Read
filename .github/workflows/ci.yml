@@ -52,8 +52,8 @@ jobs:
           cache-dependency-path: modu/pnpm-lock.yaml
       - name: 安装依赖（严格按锁文件）
         run: pnpm install --frozen-lockfile
-      - name: pnpm run check（tsc --noEmit ×2 + eslint + vitest）
-        run: pnpm run check
+      - name: pnpm run check:full（tsc ×2 + eslint + vitest + vite build）
+        run: pnpm run check:full
 
   rust:
     name: Rust 单测（cargo test）
