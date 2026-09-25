@@ -337,6 +337,28 @@ describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态
     // 内容高于窗口时不许被裁掉也滚不到：容器得能滚
     expect(appBody).toMatch(/\.empty-hint\s*\{[^}]*overflow-y:\s*auto/);
   });
+
+  it("X1：根级 :has() 已清零，豁免改走 html 状态类且单一入口在 ui/overlay-state.ts", () => {
+    // 根级 :has()（主体是 html）一条都不许剩
+    expect(appBody).not.toMatch(/html:has\(/);
+    expect(appBody).not.toMatch(/\bhtml\s*:has\(/);
+    // 新选择器就位
+    expect(appBody).toMatch(/html\.settings-open #btn-settings/);
+    expect(appBody).toMatch(/html\.panel-open \.topbar/);
+    expect(appBody).toMatch(/html\.editing \.titlebar/);
+    expect(appBody).toMatch(/html\.editing \.topbar/);
+    // 语义保真的接线：单一入口函数 + 观察那个 hidden 属性（不引入第二判据）
+    expect(readFileSync("src/ui/overlay-state.ts", "utf8")).toMatch(/attributeFilter:\s*\["hidden"\]/);
+    expect(mainSrc).toMatch(/setupOverlayState\(\)/);
+    // 权重同级后必须靠书写顺序取胜：豁免规则要排在 chrome-dim 淡出规则之后
+    const fade = appBody.indexOf(".chrome-dim .topbar { opacity: var(--opacity-dim); }");
+    const exempt = appBody.indexOf("html.panel-open .topbar");
+    expect(fade).toBeGreaterThan(-1);
+    expect(exempt).toBeGreaterThan(fade);
+    // 两条非 :has() 的豁免不许被误删（用户要求逐条保真）
+    expect(appBody).toMatch(/\.chrome-dim \.topbar:hover/);
+    expect(appBody).toMatch(/\.chrome-dim \.topbar:focus-within \{ opacity:\s*1; \}/);
+  });
 });
 
 describe("D-05 S1 底部下划线式标签", () => {

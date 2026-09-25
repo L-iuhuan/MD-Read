@@ -463,9 +463,12 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 
 /* 开关状态回显（主题态挂在 <html data-theme> 上，既有契约直接读）。
    Aa 面板打开时按钮同样点灯：这是状态回显，不是装饰。填充与描边一起换，
-   否则白底按钮配蓝底会露原先的灰发丝线。 */
+   否则白底按钮配蓝底会露原先的灰发丝线。
+   ⚠ 面板开合判据 2026-09-23 第二批从 `html:has(#settings-panel:not([hidden]))`
+     换成 `html.settings-open`（状态类由 ui/overlay-state.ts 单一入口同步，判据仍是
+     那个 hidden 属性）——根级 :has() 会让每次 DOM 变动退化成整文档样式重算（X1）。 */
 html[data-theme="dark"] #btn-theme,
-html:has(#settings-panel:not([hidden])) #btn-settings {
+html.settings-open #btn-settings {
   background: var(--accent-tint);
   border-color: var(--accent-tint-border);
   color: var(--accent-text-hover);
@@ -1318,15 +1321,21 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
 
 /* ==========================================================================
    11. 工具条沉浸淡出（波6，M5 项）—— 纯 CSS 只做「态」与「豁免」
-   ⚠ 接线不在本文件：滚动监听归 main.ts，见 setupProgress()。
+   ⚠ 接线不在本文件：滚动监听归 main.ts（setupProgress），豁免状态类归 ui/overlay-state.ts。
    CSS 只管两件事：
    ① 淡出态：body（或 html）.chrome-dim 时，顶栏降到 --opacity-dim；
    ② 豁免（任何一条命中就不淡出）：
       悬停 :hover / 含焦点 :focus-within / 浮层开着（最近菜单、Aa 面板、两个新菜单）/
       编辑态（#editor-pane 可见）。
-   为什么豁免能覆盖淡出态：豁免规则的权重更高（带 id 的 :has() 与伪类各多一级），
-   不靠书写顺序，JS 漏判其中任何一种也不会出现「浮层跟着一起淡掉」的破相。
-   类挂 body 或 html 都认（:is()），接线侧写哪个都能生效。
+   豁免靠**书写顺序**压过淡出态：`html.panel-open .topbar` 与
+   `:is(html, body).chrome-dim .topbar` 同为 (0,2,1)，本规则在文件里更靠后 ⇒ 生效
+   （旧版是 `html:has(#X:not([hidden]))` 靠 (1,2,1) 的高权重取胜；2026-09-23 第二批
+   换成状态类后权重降为同级，故这里必须保持在淡出规则之后，且**不得**被挪到前面）。
+   X1 背景：根级 `:has()` 会让每次 DOM 变动退化成整文档样式重算（性能实验 §4.3 实测
+   公式文档 FPS ×2.26 / RecalcStyleDuration −96.9%），故 7 条根级 :has() 全换状态类；
+   状态类由 ui/overlay-state.ts 的单一入口同步，判据仍是那 5 个元素的 hidden 属性。
+   :hover / :focus-within 两条豁免**不是** :has()，原样保留（用户要求逐条保真）。
+   类挂 body 或 html 都认（:is()），本批实际挂在 <html> 上。
    D-05：旧「标题栏 + 顶栏」两层已并成一条，选择器仍同时写 .titlebar 与 .topbar，
    因为 <header> 同时挂着这两个类名（兼容 print.css 的退场名单）。
    过渡 200ms ≤ 250ms；prefers-reduced-motion 由 §12 统一降级。
@@ -1341,12 +1350,10 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
 :is(html, body).chrome-dim .titlebar:focus-within,
 :is(html, body).chrome-dim .topbar:focus-within { opacity: 1; }
 
-html:has(#recent-menu:not([hidden])) .topbar,
-html:has(#settings-panel:not([hidden])) .topbar,
-html:has(#tabs-menu:not([hidden])) .topbar,
-html:has(#overflow-menu:not([hidden])) .topbar,
-html:has(#editor-pane:not([hidden])) .titlebar,
-html:has(#editor-pane:not([hidden])) .topbar { opacity: 1; }
+/* 浮层开着（四个浮层任一）/ 编辑态：顶栏不参与淡出（原 6 条 html:has(...) 的等价替换） */
+html.panel-open .topbar,
+html.editing .titlebar,
+html.editing .topbar { opacity: 1; }
 
 /* ==========================================================================
    12. 窄窗与动效降级

@@ -30,6 +30,7 @@ import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
 import { setupFindbar, closeTopmostOverlay, type Findbar } from "./ui/findbar";
 import { setupEmptyState, type EmptyState } from "./ui/empty-state";
+import { setupOverlayState } from "./ui/overlay-state";
 import { askCloseChoice } from "./ui/close-confirm";
 import { installBootWatchdog, revealBootFailure } from "./ui/boot-error";
 import { setupSettings, readAutosavePref } from "./ui/settings";
@@ -685,6 +686,9 @@ async function boot(): Promise<void> {
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
   setupShellOverflow(); // D-05：顶栏拥挤态（标签装不下 → 收成「编辑 + ⋯」，判据见函数处注释）
+  // X1（性能实验 §4.3）：把 7 条根级 `html:has(...)` 换成 html 上的状态类——
+  // 根级 :has() 会让每次 DOM 变动退化成整文档样式重算。单一入口在 ui/overlay-state.ts。
+  setupOverlayState();
   setupOutlineToggle(); // ☰ 大纲折叠（P5 批2）
   // 「Aa」设置面板（反馈⑥）：恢复字号/行宽/字体 + 面板接线；钩子接排版重算
   setupSettings({
