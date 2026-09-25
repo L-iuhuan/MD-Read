@@ -286,9 +286,22 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
    · 装不下或往左滚时它钉住不动、永远可点（否则往回滚时它被滚出视口，想开新文件就没入口）；
    · 导航组 ‹ › ▾ 与整个动作区都在 #tab-list 之后 ⇒ 钉住的位置天然是它们**左侧**，
      折叠按钮 ⋯ 也在它右边。
-   不透明底是必需的：滑过来的标签不许从加号上透出来。
-   ⚠ 它必须恒为最后一个孩子（tabs.ts 的 renderBar / keepNewTabButtonLast 与 DnD 都在保这一条）。 */
+   ⚠ 表面必须不透明：滑过来的标签不许从加号上透出来（下面用渐变实现，右侧仍是全不透明）。
+   ⚠ 它必须恒为最后一个孩子（tabs.ts 的 renderBar / keepNewTabButtonLast 与 DnD 都在保这一条）。
+
+   左缘渐变淡出（2026-09-23 第二批·用户裁决）：钉住时它盖住下面那枚标签的右端 26px，
+   硬切边看起来像被"一刀切断"；改成左缘 12px 的横向渐变（透明 → 壳层面），
+   被盖住的标签自然淡出。
+   · 为什么用 background-image 而不是 background-color + image：background-color 会在
+     渐变透明段下方继续铺满整块，等于没淡出 —— 必须让渐变成为**唯一**的表面绘制。
+   · 为什么不会出现可见接缝：非溢出场景下 ＋ 左缘底下就是同一层壳层底色（顶栏背景），
+     透明段露出的颜色与按钮自身完全一致；溢出场景下露出的正是那枚被盖住的标签（即淡出效果）。
+   · 12px = 按钮宽 26px 的一半不到：字形「＋」居中在 x≈7~19，渐变只影响它左侧的底色，
+     字形本身仍是 100% 不透明（背景先绘、文字后绘），字体渲染不受影响。
+   · 渐变不可 transition（浏览器不插值 background-image）⇒ 悬停/按压改为**整块换渐变**，
+     过渡里只保留 color。 */
 #btn-newtab {
+  --plus-fade: 12px;              /* 左缘淡出宽度 */
   flex: none;
   align-self: center;
   position: sticky;
@@ -299,15 +312,20 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
   font-size: 15px;
   line-height: 1;
   color: var(--text-muted);
-  background: var(--bg-chrome);   /* 不透明底：滑过来的标签不许从加号上透出来 */
+  background-color: transparent;
+  background-image: linear-gradient(to right, transparent 0, var(--bg-chrome) var(--plus-fade));
   border: 0;
   border-radius: var(--radius-2);
   cursor: pointer;
-  transition: background-color var(--duration-1) var(--ease-1),
-              color var(--duration-1) var(--ease-1);
+  transition: color var(--duration-1) var(--ease-1);
 }
-#btn-newtab:hover { background: var(--accent-tint); color: var(--accent-text-hover); }
-#btn-newtab:active { background: var(--accent-tint-hover); }
+#btn-newtab:hover {
+  background-image: linear-gradient(to right, transparent 0, var(--accent-tint) var(--plus-fade));
+  color: var(--accent-text-hover);
+}
+#btn-newtab:active {
+  background-image: linear-gradient(to right, transparent 0, var(--accent-tint-hover) var(--plus-fade));
+}
 
 
 /* ==========================================================================

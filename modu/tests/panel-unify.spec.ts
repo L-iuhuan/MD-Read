@@ -285,6 +285,23 @@ describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态
     expect(fn).toMatch(/desiredTabsWidth/);
     expect(fn).not.toMatch(/bar\.clientWidth/);
   });
+
+  it("＋ 左缘渐变淡出走 token（background-image + var(--bg-chrome)），且本规则内零字面色值", () => {
+    const body = /#btn-newtab\s*\{([^}]*)\}/.exec(appBody)?.[1] ?? "";
+    expect(body).not.toBe("");
+    // 必须是 background-image 渐变：background-color 会在透明段下方继续铺色，等于没淡出
+    expect(body).toMatch(/background-image:\s*linear-gradient\(\s*to right,\s*transparent/);
+    expect(body).toMatch(/var\(--bg-chrome\)/);
+    expect(body).toMatch(/background-color:\s*transparent/);
+    // 悬停/按压也走整块换渐变（渐变不可 transition）
+    for (const sel of ["#btn-newtab:hover", "#btn-newtab:active"]) {
+      const rule = new RegExp(`${sel.replace("#", "\\#")}\\s*\\{([^}]*)\\}`).exec(appBody)?.[1] ?? "";
+      expect(rule, `${sel} 未改成渐变`).toMatch(/linear-gradient/);
+    }
+    // 色值纪律（宪法强规 4）：本规则的渐变里不得出现字面色值
+    expect(body).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(body).not.toMatch(/rgba?\(/);
+  });
 });
 
 describe("D-05 S1 底部下划线式标签", () => {
