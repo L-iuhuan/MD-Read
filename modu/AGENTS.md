@@ -52,14 +52,21 @@
   实测：隔离目录建出完整 `EBWebView\{Default,BrowserMetrics,CertificateRevocation,…}`；
   且**真实 profile 的 9 个 leveldb 文件与备份逐字节一致**（事后独立复核）。**产品 `tauri.conf.json` 不用改**（8MB 红线不碰）。
 - **受信清单 `%APPDATA%\com.modu.reader\trusted-paths.json` 不在 WebView2 管辖内** ⇒ 靠**启动包装脚本**
-  （`.verify/phase3b/run-isolated.mjs`）：**启动前**快照（含"目录/文件原本是否存在"）+ **任何退出路径**都还原
+  （**入库工具** `modu/tests/tools/run-isolated.mjs`）：**启动前**快照（含"目录/文件原本是否存在"）+ **任何退出路径**都还原
   （原本不存在 ⇒ **删掉**，别写 `{}`，否则凭空造文件、下次快照对不上），并**还原后再读一次比 SHA**。
   ⚠ **快照若在应用启动之后拍 = 假还原**：`true` 只说明"前后一样"，而那个"前"**已经被本次启动污染**了
   —— 本会话真实踩过，它会一直给人"受信清单是干净的"错觉。
 - ⚠ 换新 profile 后**首屏更慢** ⇒ **所有探针必须先等就绪信号再动作**（如 `window.__moduDev` 出现，带超时），
   **不许固定 sleep**；超时信息要能区分"应用没就绪"与"dev 钩子没注入"（同"探针先确认前置条件再动作"的纪律）。
 - ⚠ 应用运行中 leveldb 被锁（读会 `EBUSY`）⇒ 要读**隔离 profile 的 leveldb 先停应用**；运行期只能读页面里的 `localStorage`。
-- 现成工具：`.verify/phase3b/{run-isolated.mjs（包装：前置检查+启动前快照+多路径还原）, probe-isolation.mjs（三项验收探针）, extract-recent2.mjs（leveldb 只读取证，注意 UTF-16LE 奇偶偏移）}`。
+- **现成工具（已入库 `modu/tests/tools/`，别再放 `.verify/` 里）**：
+  - `run-isolated.mjs` —— 启动包装：前置检查 → **启动前**快照 → 多退出路径还原 → 带 `WEBVIEW2_USER_DATA_FOLDER` 启动。
+    用法：`node tests/tools/run-isolated.mjs --iso <绝对隔离目录> --doc <md> [--config …] [--snapshot …]`
+  - `probe-isolation.mjs` —— 三项验收探针（等 `__moduDev` 带超时；按启动前快照还原并复核 SHA）。
+    用法：`node tests/tools/probe-isolation.mjs --doc <md> --iso <隔离目录> [--port 9222]`
+  - `extract-leveldb.mjs` —— leveldb **只读取证**（UTF-16LE 奇偶偏移都试；`--delete-prefix` 给删除/保留集，**从不删**）。
+    用法：`node tests/tools/extract-leveldb.mjs --dir <leveldb> --key modu-recent [--delete-prefix <前缀>]`
+  - 三者**全部参数化、无机器绝对路径**（换机器即用），输出写 `.verify/`（gitignored）；`pnpm run check` 不受影响（实测 511 passed）。
 
 ## 性能归因（已实测，别再走弯路）
 
