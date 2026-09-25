@@ -18,6 +18,17 @@
     margin: 18mm;
   }
 
+  /* 宽表自动横排用的命名页（2026-09-23 用户裁决「宽表自动横向打印」）。
+     实测（本机 WebView2 153.0.4234.48 + CDP `Page.printToPDF` + preferCSSPageSize:true）：命名页
+     **受支持**且同一份 PDF 内可混排竖/横 —— 页面级注入后导出量到 p1 594.96×841.92（竖）/
+     p2 841.92×594.96（横）/ p3 竖；对照组（同语料、只强制分页不加命名页）三页全竖（决定性对照）。
+     可印宽：竖版 ≈174mm≈658px、横版 ≈261mm≈987px（"mm⇒px"按 96dpi 换算属推断，
+     常量与来历见 render/print-ready.ts 顶部注释）。 */
+  @page wide {
+    size: A4 landscape;
+    margin: 18mm;
+  }
+
   /* 颜色保真（D5 ①）：背景/边框/行内 code 与链接的着色原样进 PDF。
      物理侧配套：CDP printBackground=true（等价旧 ShouldPrintBackgrounds(true)） */
   *,
@@ -67,6 +78,14 @@
   .mdc .table-wrap {
     overflow: visible;
     max-inline-size: none;
+  }
+
+  /* 宽表自动横排：类由导出流程按**实测边界**加（render/print-ready.ts 的 markLandscapeBlocks：
+     `658 < 内容宽 ≤ 987`，即"竖版放不下、横版放得下"）。`page` 只作用于打印，屏显零影响；
+     不横排的（>987）保持原样并由 overflowWarning 提醒（**不缩放、不拆列**）。
+     横版页上 `tr{break-inside:avoid}` 与 `thead{display:table-header-group}` 照常成立（同为打印层规则）。 */
+  .mdc .wide-page {
+    page: wide;
   }
 
   /* P1-4(b) 修复（2026-09-23 批次 2，真机看图判定后实施）：**pre 也是横向滚动容器**，

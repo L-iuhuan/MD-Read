@@ -120,6 +120,16 @@
 - `.katex-mathml { display: none }` 防 PDF 鬼影重复文字
 - 打印前必须 await 渲染完全部懒加载块
 - print.css 是 cjk.css 的唯一覆盖层，**禁止出现第三份打印样式**
+- **宽表自动横排**（用户裁决 2026-09-23，已实施）：**只有内容宽 `658 < w ≤ 987` 的 `.table-wrap`**
+  会在导出前被打上 `wide-page`，走 `@page wide { size: A4 landscape }` 横排（标记逻辑在
+  `src/render/print-ready.ts` 的 `markLandscapeBlocks`，**导出流程里调用**，屏显零影响）。
+  `658`/`987` = 竖版 174mm / 横版 261mm 按 96dpi 换算（**纸型是实测的**：竖 594.96×841.92pt、
+  横 841.92×594.96pt；mm⇒px 属推断）—— 改这两个数必须同步改那边注释里的推导线。
+  **`> 987px` 的宽表仍会被裁**（**不缩放、不拆列、不加 `transform`/`table-layout:fixed`** —— 超宽表方案
+  仍在用户裁决中），由导出前的中文提醒兜底（`overflowWarning` → 状态栏 `#st-saved`）。
+  命名页受支持是**实测**的（含"不加命名页 → 三页全竖"的决定性对照）；横版页上
+  `tr{break-inside:avoid}` + `thead{display:table-header-group}` 同样成立。详见
+  `docs/tasks/Phase3-批次2-宽表横排报告-2026-09-23.md`。
 
 ## 编码契约
 

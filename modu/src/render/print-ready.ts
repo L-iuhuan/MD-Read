@@ -137,21 +137,52 @@ export async function awaitPrintReady(
 }
 
 /**
- * 导出前"可能被截"的块（P1-4(b) 补，2026-09-23）。
+ * 宽表自动横排（2026-09-23 用户裁决「宽表自动横向打印」；命名页机制写在 print.css）。
  *
- * 口径（**实测依据**）：**可横向滚动的块** = `scrollWidth > clientWidth`（`.table-wrap` 与 `pre`）。
- * 它们正是"打印时按当前滚动位置出图、滚动外内容不可达"的那一类（a4-wide 语料实锤：
- * 长代码行尾部丢失 + 页面残留横向滚动条）。这里**不**直接拿"是否超过 A4 可印宽 658px"比 ——
- * 导出时版式是屏显宽度（窗口 ~1665px），用屏显宽度与 658 比会把所有元素都误报；
- * "会不会滚"才是与纸面无关的确定信号。返回面向使用者的中文标签列表（可含重复）。
+ * **数值来历（不许当魔法数）**：
+ * - `PORTRAIT_PRINTABLE_PX = 658`：A4 210mm − 2×18mm 边距 = 174mm，按 96dpi（3.7795px/mm）换算。
+ *   纸型与边距是**实测/既定**的（`pdfinfo` 量到竖版 594.96×841.92pt = A4；18mm 来自 print.css 的
+ *   `@page{margin:18mm}`）；**"174mm ⇒ 658px"这一步是推断**（按 CSS 96dpi 口径）。
+ * - `LANDSCAPE_PRINTABLE_PX = 987`：297mm − 36mm = 261mm 同上换算（横版纸型实测 841.92×594.96pt）。
+ * - **实测边界事实**：内在宽 **1870px** 的 12 列表格**即便横排也印不全**（横排导出后文本层仍无 `列12`）
+ *   ⇒ 横排只覆盖 `(658, 987]` 这一段；更宽的块**不横排、不缩放**，由 `overflowWarning` 提醒兜底
+ *   （超宽表方案仍在用户裁决中，见 `docs/tasks/Phase3-决策台账-2026-09-23.md` D-P3-2）。
+ * - `pre` **不进这两张清单**：print.css 已让 pre 打印换行（P1-4(b)），长代码行不再被裁。
  */
-export function overflowingBlocks(container: ParentNode): string[] {
-  const labels: string[] = []
-  for (const el of Array.from(container.querySelectorAll<HTMLElement>('.table-wrap, pre'))) {
-    if (el.scrollWidth <= el.clientWidth + 1) {
-      continue
+export const PORTRAIT_PRINTABLE_PX = 658
+export const LANDSCAPE_PRINTABLE_PX = 987
+
+/** 块的内容宽（CSS px）：优先量内部 `table` 的自然宽，回退到容器自身 scrollWidth。
+ *  屏显时容器可能比表宽（`overflow-x:auto` 的 wrap），故不能只看容器 scrollWidth。 */
+export function blockContentWidth(container: Element): number {
+  const table = container.querySelector('table')
+  const tableWidth = table === null ? 0 : table.scrollWidth
+  const wrapWidth = container instanceof HTMLElement ? container.scrollWidth : 0
+  return Math.max(tableWidth, wrapWidth)
+}
+
+/** 给"竖版放不下、横版放得下"的块打横排标记（`@page wide`）。幂等：每次按当前宽度重算并清掉不合格者。
+ *  返回被标记数量（供对账）。`page` 属性只影响打印，屏显零影响。 */
+export function markLandscapeBlocks(root: ParentNode): number {
+  let marked = 0
+  for (const box of Array.from(root.querySelectorAll<HTMLElement>('.table-wrap'))) {
+    const width = blockContentWidth(box)
+    const fits = width > PORTRAIT_PRINTABLE_PX && width <= LANDSCAPE_PRINTABLE_PX
+    box.classList.toggle('wide-page', fits)
+    if (fits) {
+      marked += 1
     }
-    labels.push(el.classList.contains('table-wrap') ? '宽表格' : '长代码行')
+  }
+  return marked
+}
+
+/** 横版也放不下的块（只能提醒、**不横排不缩放**）：返回面向使用者的中文标签。 */
+export function tooWideBlocks(root: ParentNode): string[] {
+  const labels: string[] = []
+  for (const box of Array.from(root.querySelectorAll<HTMLElement>('.table-wrap'))) {
+    if (blockContentWidth(box) > LANDSCAPE_PRINTABLE_PX) {
+      labels.push('宽表格')
+    }
   }
   return labels
 }
@@ -162,5 +193,5 @@ export function overflowWarning(labels: string[]): string | null {
     return null
   }
   const kinds = Array.from(new Set(labels)).join(' / ')
-  return `本文档有 ${labels.length} 处内容超出 A4 可印宽（${kinds}），PDF 中可能被截断`
+  return `本文档有 ${labels.length} 处表格比 A4 横版可印宽还宽（${kinds}），PDF 中可能被截断`
 }
