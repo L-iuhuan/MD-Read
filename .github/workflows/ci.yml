@@ -1,0 +1,100 @@
+# 墨读 CI —— 每次 push / PR 到 main：前端门禁 + Rust 单测 + 敏感信息门禁。
+#
+# ⚠️ runner 必须是 windows-latest：本项目 Windows-only（Tauri 2 + WebView2），
+#    ubuntu 上 cargo test 会因为缺 WebView2 直接失败。
+#
+# ⚠️ 本文件由 R-01/批次 1 编写：**未在 GitHub 上真跑过**（本机到 github.com 不稳，
+#    Actions 是否可跑取决于仓库侧）。这里只保证：YAML 语法有效、命令与**本机实测命令**逐字一致。
+#    本地等价命令（均已实测通过）：
+#      cd modu && pnpm install --frozen-lockfile && pnpm run check      # 483 passed | 1 skipped
+#      cd modu/src-tauri && cargo test                                  # 45 + 4 passed
+#      scripts\check-sensitive.cmd                                      # exit 0（无词条文件时降级并告警）
+#
+# 大件（MSI ≤8MB）走单独的手动工作流 `msi-size.yml`，不塞进每次 push。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 最小权限：CI 只读仓库
+permissions:
+  contents: read
+
+# 同一分支的新提交取消旧的跑批
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  frontend:
+    name: 前端门禁（tsc + eslint + vitest）
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: modu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: modu/pnpm-lock.yaml
+      - name: 安装依赖（严格按锁文件）
+        run: pnpm install --frozen-lockfile
+      - name: pnpm run check（tsc --noEmit ×2 + eslint + vitest）
+        run: pnpm run check
+
+  rust:
+    name: Rust 单测（cargo test）
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: modu/pnpm-lock.yaml
+      # `tauri::generate_context!` 在编译期会校验 frontendDist（../dist），
+      # 所以 cargo test 之前必须先产出前端产物，否则会以"dist 不存在"失败。
+      - name: 前端产物（generate_context! 需要 ../dist）
+        working-directory: modu
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: modu/src-tauri
+      - name: cargo test（含 R-01 受信路径单测）
+        working-directory: modu/src-tauri
+        run: cargo test
+
+  sensitive:
+    name: 敏感信息门禁
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 门禁扫的是 `git ls-files`，需要完整历史以拿到 tracked 清单
+          fetch-depth: 0
+      # 词条清单 scripts/.sensitive-extra.txt 是 gitignored 的，CI 里必然缺失：
+      # 脚本会降级成"只跑通用模式"并给出 WARNING，但**仍然返回 0**（不能因为没有词条就不跑）。
+      - name: 运行门禁（非零即失败）
+        shell: cmd
+        run: scripts\check-sensitive.cmd

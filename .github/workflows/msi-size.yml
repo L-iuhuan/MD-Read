@@ -1,0 +1,63 @@
+# 墨读 · 体积门禁（**手动触发**，不进每次 push 的主流程）
+#
+# 为什么单独放：`tauri build` 会从 GitHub 下载 WiX/NSIS（首次几百 MB、几分钟），
+# 而且 MSI 体积门禁（≤8MB）只在"准备发布"时才有意义。主 CI 里只保证代码门禁与单测。
+#
+# ⚠️ 同样**未在 GitHub 上真跑过**（本机网络到 github.com 不稳）：YAML 语法与命令已本地核对，
+#    本地等价命令：cd modu && pnpm install --frozen-lockfile && pnpm tauri build
+#    本地实测产物：MSI 4.24MB / NSIS 3.53MB（见 docs/tasks 的 M1 收尾报告）。
+
+name: MSI size gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_mb:
+        description: 'MSI 体积上限（MB）'
+        required: false
+        default: '8'
+
+permissions:
+  contents: read
+
+jobs:
+  msi:
+    name: 构建 MSI 并卡体积
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.8.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: modu/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: modu/src-tauri
+      - name: 依赖
+        working-directory: modu
+        run: pnpm install --frozen-lockfile
+      - name: 构建安装包（WiX/NSIS 首次会从 GitHub 下载）
+        working-directory: modu
+        run: pnpm tauri build
+      - name: MSI ≤ 上限？
+        shell: pwsh
+        run: |
+          $max = [double]${{ github.event.inputs.max_mb }}
+          $msi = Get-ChildItem -Path 'modu/src-tauri/target/release/bundle/msi/*.msi' -ErrorAction Stop
+          $mb = [math]::Round($msi.Length / 1MB, 2)
+          Write-Host "MSI: $($msi.Name) = $mb MB（上限 $max MB）"
+          if ($mb -gt $max) { Write-Error "体积超门禁：$mb MB > $max MB"; exit 1 }
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: modu-windows-installers
+          path: |
+            modu/src-tauri/target/release/bundle/msi/*.msi
+            modu/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
