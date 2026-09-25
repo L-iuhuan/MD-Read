@@ -2,7 +2,7 @@
 name = "modu"
 version = "0.1.0"
 description = "MoDu - a personal Windows Markdown reader and PDF exporter"
-authors = ["MD-Read <noreply@example.com>"]
+authors = ["LIUHUAN <noreply@example.com>"]
 license = "MIT"
 repository = "https://github.com/L-iuhuan/MD-Read"
 edition = "2021"
