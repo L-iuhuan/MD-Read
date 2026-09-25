@@ -201,6 +201,10 @@
    与左上角语言名分居两端，不遮代码行。按钮由 render/codecopy.ts 挂载，
    打印退场在 print.css；focus-visible 常显保键盘可达。 */
 .mdc pre[data-lang] { position: relative; }
+/* P2Q-34：复制钮的定位包含块必须换成**不随内容滚动的外层** —— pre 是横向滚动容器，
+   挂在它内部的绝对定位元素会跟着内容横向跑（实测 scrollLeft 0→256 时按钮位移 −256px）。
+   按钮由 render/codecopy.ts 挂到 .code-wrap（pre 的外套）上。 */
+.mdc .code-wrap { position: relative; }
 .mdc .code-copy {
   position: absolute;
   inset-block-start: 4px;

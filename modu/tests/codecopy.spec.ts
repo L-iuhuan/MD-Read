@@ -28,7 +28,7 @@ function statusEl(): HTMLElement {
 describe("按钮挂载", () => {
   it("给 pre[data-lang]（含 code）挂钮：class/title/aria/SVG 就位；无 code 者跳过", () => {
     attachCodeCopyButtons(document.getElementById("doc") as HTMLElement);
-    const btns = document.querySelectorAll("#doc pre .code-copy");
+    const btns = document.querySelectorAll("#doc .code-wrap .code-copy");
     expect(btns.length).toBe(2); // txt 块无 code 子节点、无 data-lang 块不挂
     const btn = btns[0] as HTMLElement;
     expect(btn.title).toBe("复制代码");
@@ -40,7 +40,7 @@ describe("按钮挂载", () => {
     const doc = document.getElementById("doc") as HTMLElement;
     attachCodeCopyButtons(doc);
     attachCodeCopyButtons(doc);
-    expect(document.querySelectorAll("#doc pre .code-copy").length).toBe(2);
+    expect(document.querySelectorAll("#doc .code-wrap .code-copy").length).toBe(2);
   });
 });
 

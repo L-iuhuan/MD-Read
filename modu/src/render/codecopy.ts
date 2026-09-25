@@ -63,13 +63,20 @@ function copyIcon(): SVGSVGElement {
   return svg;
 }
 
-/** 给 container 内每个 pre[data-lang]（且有 code 子节点）挂复制钮 */
+/** 给 container 内每个 pre[data-lang]（且有 code 子节点）挂复制钮。
+ *
+ *  P2Q-34：按钮必须挂在**不随内容滚动的外层** `div.code-wrap`（`position: relative`）。
+ *  此前直接 `pre.appendChild(btn)`，而 `pre` 是横向滚动容器（`overflow-x: auto`）——
+ *  绝对定位子元素的包含块是它的**内容盒**，于是横向滚动时按钮跟着内容跑：
+ *  实测 `pre.scrollLeft` 0 → 256 时按钮 `left` 1276 → 1020（位移 −256px，跑到视口外）。
+ */
 export function attachCodeCopyButtons(container: ParentNode): void {
   for (const pre of Array.from(
     container.querySelectorAll<HTMLPreElement>("pre[data-lang]"),
   )) {
-    if (pre.querySelector(":scope > .code-copy") !== null) {
-      continue; // 幂等
+    const wrapper = pre.parentElement;
+    if (wrapper !== null && wrapper.classList.contains("code-wrap")) {
+      continue; // 幂等（缓存重挂路径不双挂）
     }
     const code = pre.querySelector("code");
     if (code === null) {
@@ -85,6 +92,10 @@ export function attachCodeCopyButtons(container: ParentNode): void {
       "click",
       makeCopyHandler(() => code.textContent ?? "", defaultWriteText),
     );
-    pre.appendChild(btn);
+    const wrap = document.createElement("div");
+    wrap.className = "code-wrap";
+    pre.replaceWith(wrap);
+    wrap.appendChild(pre);
+    wrap.appendChild(btn);
   }
 }
