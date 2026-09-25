@@ -28,7 +28,10 @@ scripts/.sensitive-extra.txt
 
 # 过程产物：不进公开仓库（对使用者无价值，且是敏感信息的主要载体）
 # 文件仍保留在本地工作目录，仅从版本控制移出
-docs/tasks/
+docs/tasks/*
 docs/review/
 docs/demo/
 参考/
+
+# 批次报告入仓（仅报告；决策登记/台账/待办对账等先不动）
+!docs/tasks/Phase3-*报告*.md
