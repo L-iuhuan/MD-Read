@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   awaitPrintReady,
   isMermaidSettled,
+  pendingImages,
   pendingMermaid,
 } from "../src/render/print-ready";
 
@@ -47,7 +48,7 @@ describe("print-ready：等待与超时路径", () => {
     const result = await awaitPrintReady(makeDoc("rendered", "error"), {
       renderPending: () => Promise.resolve(),
     });
-    expect(result).toEqual({ timedOut: false });
+    expect(result).toEqual({ timedOut: false, fontsTimedOut: false, imageFailures: [] });
   });
 
   it("替身把 pending 图置为定稿 → 完成不超时", async () => {
@@ -58,7 +59,7 @@ describe("print-ready：等待与超时路径", () => {
         return Promise.resolve();
       },
     });
-    expect(result).toEqual({ timedOut: false });
+    expect(result).toEqual({ timedOut: false, fontsTimedOut: false, imageFailures: [] });
     expect(isMermaidSettled(root)).toBe(true);
   });
 
@@ -70,9 +71,78 @@ describe("print-ready：等待与超时路径", () => {
         renderPending: () => Promise.resolve(), // 点火但永不落定稿：模拟卡死
       });
       await vi.advanceTimersByTimeAsync(500);
-      await expect(promise).resolves.toEqual({ timedOut: true });
+      await expect(promise).resolves.toMatchObject({ timedOut: true });
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("print-ready：字体与图片等待（P1-4 补齐）", () => {
+  it("pendingImages 只算「有 src 且未 complete」的图（无 src 的装饰不算）", () => {
+    const root = document.createElement("div");
+    const noSrc = document.createElement("img");
+    const loading = document.createElement("img");
+    loading.setAttribute("src", "a.png");
+    const done = document.createElement("img");
+    done.setAttribute("src", "b.png");
+    Object.defineProperty(done, "complete", { value: true, configurable: true });
+    root.append(noSrc, loading, done);
+    expect(pendingImages(root)).toEqual([loading]);
+  });
+
+  it("图片 complete 置真后才返回（不再 pending）", async () => {
+    const root = makeDoc("rendered", "error");
+    const img = document.createElement("img");
+    img.setAttribute("src", "slow.png");
+    root.appendChild(img);
+    expect(pendingImages(root)).toHaveLength(1);
+    const promise = awaitPrintReady(root, { timeoutMs: 2000, renderPending: () => Promise.resolve() });
+    Object.defineProperty(img, "complete", { value: true, configurable: true }); // 模拟解码完成
+    await expect(promise).resolves.toEqual({ timedOut: false, fontsTimedOut: false, imageFailures: [] });
+  });
+
+  it("document.fonts.ready 永不 resolve → 到时限放行并标 fontsTimedOut（不卡死导出）", async () => {
+    vi.useFakeTimers();
+    const original = Object.getOwnPropertyDescriptor(document, "fonts");
+    try {
+      Object.defineProperty(document, "fonts", {
+        value: { ready: new Promise(() => undefined) },
+        configurable: true,
+      });
+      const promise = awaitPrintReady(makeDoc("rendered", "error"), {
+        timeoutMs: 60,
+        renderPending: () => Promise.resolve(),
+      });
+      await vi.advanceTimersByTimeAsync(300);
+      await expect(promise).resolves.toEqual({ timedOut: false, fontsTimedOut: true, imageFailures: [] });
+    } finally {
+      if (original === undefined) {
+        delete (document as { fonts?: unknown }).fonts;
+      } else {
+        Object.defineProperty(document, "fonts", original);
+      }
+      vi.useRealTimers();
+    }
+  });
+
+  it("document.fonts.ready 就绪 → fontsTimedOut=false", async () => {
+    const original = Object.getOwnPropertyDescriptor(document, "fonts");
+    try {
+      Object.defineProperty(document, "fonts", {
+        value: { ready: Promise.resolve() },
+        configurable: true,
+      });
+      const result = await awaitPrintReady(makeDoc("rendered", "error"), {
+        renderPending: () => Promise.resolve(),
+      });
+      expect(result.fontsTimedOut).toBe(false);
+    } finally {
+      if (original === undefined) {
+        delete (document as { fonts?: unknown }).fonts;
+      } else {
+        Object.defineProperty(document, "fonts", original);
+      }
     }
   });
 });

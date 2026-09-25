@@ -278,6 +278,12 @@ async function onExportClick(tabs: TabManager): Promise<void> {
   if (ready.timedOut) {
     flashStatus("部分图表未渲染完成，将按当前版式导出", "warn");
   }
+  // P1-4 补：字体/图片没在时限内就绪时提示（此前只有 mermaid 有等待与提示）
+  if (ready.fontsTimedOut) {
+    flashStatus("字体加载超时，部分字形可能按回退字体导出", "warn");
+  } else if (ready.imageFailures.length > 0) {
+    flashStatus(`有 ${ready.imageFailures.length} 张图片未就绪，将按当前版式导出`, "warn");
+  }
   let picked: string | null;
   try {
     picked = await invoke<string | null>("pick_save_path", {
