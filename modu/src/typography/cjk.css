@@ -105,6 +105,16 @@
     content-visibility: auto;
     contain-intrinsic-size: auto 2lh;
   }
+  /* P1（2026-09-23）：按文档形态**分层开启** —— 判据是 render/offscreen-policy.ts 的纯函数，
+     由 main.ts 在挂载时给 #doc 挂/不挂 .cv-off。
+     ⚠ 默认（没有 .cv-off）= 保持现状，所以"漏判/判错"最多回到今天的行为；
+       只有"无 KaTeX/Mermaid 且候选块 ≥ 2,000"时才关掉（实测交叉点：1,376 块两态持平、
+       2,353 块起关闭明显更快；公式文档相反 —— 开着打开快 558ms、p95 低 17%）。
+     净账与阈值依据见 docs/tasks/Phase2-P1分层开启报告-2026-09-23.md。 */
+  .mdc.cv-off > * {
+    content-visibility: visible;
+    contain-intrinsic-size: none;
+  }
 }
 
 /* ==========================================================================

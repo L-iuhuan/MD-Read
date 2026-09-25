@@ -376,6 +376,24 @@ describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态
     expect(mod).toMatch(/winner\.el\.id === activeId/);
     // 旧版那个「对全部 4,715 条链接各 toggle 一次」的循环不许回来
     expect(mainSrc).not.toMatch(/for \(const \[key, link\] of outlineLinks\)/);
+    // X2 补（P1 批次回归检查发现）：挂载后必须**现算一次**，否则"打开不动"时大纲不高亮
+    const mountBlock = /outlineFollow\.reset\(\);([\s\S]*?)enhanceView\(doc\)/.exec(mainSrc)?.[1] ?? "";
+    expect(mountBlock).toMatch(/outlineFollow\.update\(\)/);
+  });
+
+  it("P1：content-visibility 按文档形态分层，默认仍是「开着」", () => {
+    // 基础规则不动（= 默认开着），关闭只由 .cv-off 覆盖，且必须在 @media screen 内（打印契约）
+    const screenBlock = /@media screen \{([\s\S]*?)\n\}/.exec(cjk)?.[1] ?? "";
+    expect(screenBlock).toMatch(/\.mdc > \*\s*\{[^}]*content-visibility:\s*auto/);
+    expect(screenBlock).toMatch(/\.mdc\.cv-off > \*\s*\{[^}]*content-visibility:\s*visible/);
+    // 挂类在挂载时完成（adoptNode 之前量，否则 fragment 已被掏空）
+    expect(mainSrc).toMatch(/classList\.toggle\("cv-off", !keepOffscreenSkipping\(shapeOf\(ctx\.fragment\)\)\)/);
+    const mount = /function mountRendered\(ctx: MountContext\)[\s\S]*?adoptNode\(ctx\.fragment\)/.exec(mainSrc)?.[0] ?? "";
+    expect(mount).toMatch(/shapeOf\(ctx\.fragment\)/);
+    // 判据是纯函数且带阈值常量（测量依据写在 offscreen-policy.ts 顶部）
+    const policy = readFileSync("src/render/offscreen-policy.ts", "utf8");
+    expect(policy).toMatch(/export const LIGHT_BLOCKS_MAX = 2000/);
+    expect(policy).toMatch(/querySelector\("\.katex, \.mermaid"\)/);
   });
 });
 

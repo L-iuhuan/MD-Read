@@ -13,6 +13,7 @@ import {
 } from "@tauri-apps/api/window";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { renderDocument, type OutlineItem } from "./render/pipeline";
+import { keepOffscreenSkipping, shapeOf } from "./render/offscreen-policy";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
 import { attachCodeCopyButtons } from "./render/codecopy";
 import { awaitPrintReady } from "./render/print-ready";
@@ -679,6 +680,11 @@ async function boot(): Promise<void> {
   function mountRendered(ctx: MountContext): void {
     const doc = $<HTMLElement>("doc");
     ctx.tab.cachedFragment = null; // 挂载即消费：rerenderRead 等旁路入口同样作废旧缓存
+    // P1（2026-09-23）：按文档形态决定是否**保留** content-visibility 的离屏跳过。
+    // ⚠ 必须在 adoptNode 之前量：fragment 搬进 #doc 后就被掏空了。
+    // 判据是纯函数（render/offscreen-policy.ts），默认保留（= 今天的行为），
+    // 只有"确信是轻块文档"时才加 .cv-off 把它关掉。
+    doc.classList.toggle("cv-off", !keepOffscreenSkipping(shapeOf(ctx.fragment)));
     doc.replaceChildren();
     doc.appendChild(document.adoptNode(ctx.fragment)); // P5 批3：零序列化、零二次 parse
     setupExternalLinks(doc); // P5 批1 接线：外链交系统浏览器（幂等，data 标记防重注册）
@@ -687,6 +693,10 @@ async function boot(): Promise<void> {
     document.body.classList.remove("empty"); // 有文档了：大纲与 ☰ 回来
     mountOutline(ctx.outline);
     outlineFollow.reset(); // X2：正文已换 —— 重建标题元素列表（只查 DOM，不读几何）
+    // X2 补（2026-09-23，P1 批次回归检查发现）：**开箱即高亮**。
+    // 旧 IO 版在 observe 后会有一次初始回调；X2 的高亮只发生在滚动帧节流里，
+    // 于是"打开文档不动"时大纲一条都不亮（实测：H1 可见却 active=null）。
+    outlineFollow.update();
     enhanceView(doc); // 增强幂等：缓存直挂与重渲两路径都走（mermaid 懒观察在此重挂）
     attachCodeCopyButtons(doc); // 代码块复制钮（用户反馈批次）：幂等，缓存重挂不双挂
     findbar.close(); // 正文已换，旧命中作废，避免残留陈旧 mark
