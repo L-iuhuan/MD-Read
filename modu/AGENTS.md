@@ -120,16 +120,24 @@
 - `.katex-mathml { display: none }` 防 PDF 鬼影重复文字
 - 打印前必须 await 渲染完全部懒加载块
 - print.css 是 cjk.css 的唯一覆盖层，**禁止出现第三份打印样式**
-- **宽表自动横排**（用户裁决 2026-09-23，已实施）：**只有内容宽 `658 < w ≤ 987` 的 `.table-wrap`**
-  会在导出前被打上 `wide-page`，走 `@page wide { size: A4 landscape }` 横排（标记逻辑在
-  `src/render/print-ready.ts` 的 `markLandscapeBlocks`，**导出流程里调用**，屏显零影响）。
-  `658`/`987` = 竖版 174mm / 横版 261mm 按 96dpi 换算（**纸型是实测的**：竖 594.96×841.92pt、
+- **宽表打印三层**（用户裁决 2026-09-23，已实施；判据在 `src/render/print-ready.ts` 的 `markPrintBlocks`，
+  **导出流程里调用**，屏显零影响）：判据量的是**表自身的 `min-content` 宽**（临时 `inline-size:min-content`
+  同步读回再还原）—— 别退回 `max(表,容器)` 口径：`.mdc table{inline-size:100%}` 会把任何表撑到容器宽
+  （本机 ~734px），实测把一张 3 列小表也误判成宽表。
+  · `w ≤ 658` → 竖版自然宽；
+  · `658 < w ≤ 987` → 打 `wide-page` ⇒ `@page wide { size: A4 landscape }` **横排**（不压列）；
+  · `w > 987` → 再打 `squeeze-page` ⇒ `table-layout:fixed` + `inline-size:100%` + 单元格
+    `overflow-wrap:anywhere` **压列换行**（实测 12 列 1131px 表：**12 列全印出**、8 页横版、
+    表头每页重复、45 行无丢无重无腰斩；代价 = 每列约容 6 个汉字、长 token 断 3~4 行、45 行占 8 页）。
+  `658`/`987` = 竖版 174mm / 横版 261mm 按 96dpi 换算（**纸型实测**：竖 594.96×841.92pt、
   横 841.92×594.96pt；mm⇒px 属推断）—— 改这两个数必须同步改那边注释里的推导线。
-  **`> 987px` 的宽表仍会被裁**（**不缩放、不拆列、不加 `transform`/`table-layout:fixed`** —— 超宽表方案
-  仍在用户裁决中），由导出前的中文提醒兜底（`overflowWarning` → 状态栏 `#st-saved`）。
+  **禁缩放 / `transform` / 光栅化 / 拆列**。
+  ⚠ **「可能被截」的中文提醒已撤除**（2026-09-23）：压列后表格不丢列、`.mdc img{max-inline-size:100%}` 在、
+  `pre` 会换行 ⇒ **已无会静默丢内容的类别**，留着就是会撒谎的提示。**别再把它加回来**，
+  除非确实新增了会截断的类别（且先有真能触发它的用例）。
   命名页受支持是**实测**的（含"不加命名页 → 三页全竖"的决定性对照）；横版页上
   `tr{break-inside:avoid}` + `thead{display:table-header-group}` 同样成立。详见
-  `docs/tasks/Phase3-批次2-宽表横排报告-2026-09-23.md`。
+  `docs/tasks/Phase3-批次2-超宽表压列-2026-09-23.md`。
 
 ## 编码契约
 

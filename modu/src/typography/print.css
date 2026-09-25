@@ -80,12 +80,27 @@
     max-inline-size: none;
   }
 
-  /* 宽表自动横排：类由导出流程按**实测边界**加（render/print-ready.ts 的 markLandscapeBlocks：
-     `658 < 内容宽 ≤ 987`，即"竖版放不下、横版放得下"）。`page` 只作用于打印，屏显零影响；
-     不横排的（>987）保持原样并由 overflowWarning 提醒（**不缩放、不拆列**）。
+  /* 宽表自动横排：类由导出流程按**实测边界**加（render/print-ready.ts 的 markPrintBlocks：
+      `内容宽 > 658`，即"竖版放不下"）。`page` 只作用于打印，屏显零影响。
      横版页上 `tr{break-inside:avoid}` 与 `thead{display:table-header-group}` 照常成立（同为打印层规则）。 */
   .mdc .wide-page {
     page: wide;
+  }
+
+  /* 超宽表压列换行（用户裁决 ④「压列换行」，2026-09-23）：内容宽 > 987px 的表连横版都放不下，
+     导出前会被打上 `.squeeze-page`（render/print-ready.ts 的 markPrintBlocks，与 `.wide-page` 叠加
+     ⇒ 在横版页上压列，横版可印宽比竖版宽 1.5×，对超高列表更有利）。
+     只允许 `table-layout: fixed` + 单元格换行这一条正道：**不缩放、不 transform、不光栅化**。
+     只影响 `.squeeze-page`；`≤ 987px` 的表一个字都不动。 */
+  .mdc .squeeze-page table {
+    table-layout: fixed;
+    inline-size: 100%;
+  }
+  .mdc .squeeze-page th,
+  .mdc .squeeze-page td {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
   }
 
   /* P1-4(b) 修复（2026-09-23 批次 2，真机看图判定后实施）：**pre 也是横向滚动容器**，
@@ -94,10 +109,9 @@
      页面上还残留横向滚动条）。打印时改为换行 + 放开滚动：
      `pre-wrap` 提供换行点、`overflow-wrap: anywhere` 让**无空格的超长 token** 也能断，
      `overflow: visible` 让整块回到分页流。不改变字号/版式，属纯赚修复。
-     注意：**超宽**表格（内容宽 > 987px，连横版都放不下）仍是未决的产品取舍
-     （缩放 / 拆列 / 接受截断）—— 本文件对它**不做**任何缩放、transform 或
-     table-layout:fixed，由 overflowWarning 提醒兜底。中等宽表（658 < w ≤ 987）
-     的横排见上方 `@page wide` 与 `.mdc .wide-page`。 */
+     注意：**超宽**表格（内容宽 > 987px）由上方 `.mdc .squeeze-page` **压列换行**（用户裁决 ④，
+     2026-09-23 已实施）—— 本文件对它**不做**任何缩放、transform 或光栅化；
+     中等宽表（658 < w ≤ 987）走上方 `@page wide` 横排、不压列。 */
   .mdc pre {
     white-space: pre-wrap;
     overflow-wrap: anywhere;

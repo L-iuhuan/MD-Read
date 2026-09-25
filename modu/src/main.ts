@@ -15,12 +15,7 @@ import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { keepOffscreenSkipping, shapeOf } from "./render/offscreen-policy";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
 import { attachCodeCopyButtons } from "./render/codecopy";
-import {
-  awaitPrintReady,
-  markLandscapeBlocks,
-  overflowWarning,
-  tooWideBlocks,
-} from "./render/print-ready";
+import { awaitPrintReady, markPrintBlocks } from "./render/print-ready";
 import {
   createCloseGuard,
   createTabManager,
@@ -289,12 +284,10 @@ async function onExportClick(tabs: TabManager): Promise<void> {
   } else if (ready.imageFailures.length > 0) {
     flashStatus(`有 ${ready.imageFailures.length} 张图片未就绪，将按当前版式导出`, "warn");
   }
-  // P1-4(b)+宽表横排：中等宽的表自动横排（命名页 `@page wide`）；横版也放不下的只提醒、不缩放
-  markLandscapeBlocks(doc);
-  const overflowNote = overflowWarning(tooWideBlocks(doc));
-  if (overflowNote !== null) {
-    flashStatus(overflowNote, "warn");
-  }
+  // P1-4(b)+宽表：竖版放不下的表自动横排；连横版都放不下的再压列换行（用户裁决 ④）。
+  // 「可能被截」提醒已于 2026-09-23 撤除：压列后表格不丢列、图片有 max-inline-size:100%、
+  // pre 会换行 ⇒ 已无会静默丢内容的类别，留着就是会撒谎的提示。
+  markPrintBlocks(doc);
   let picked: string | null;
   try {
     picked = await invoke<string | null>("pick_save_path", {

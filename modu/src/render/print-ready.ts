@@ -137,61 +137,71 @@ export async function awaitPrintReady(
 }
 
 /**
- * 宽表自动横排（2026-09-23 用户裁决「宽表自动横向打印」；命名页机制写在 print.css）。
+ * 宽表横排 + 超宽表压列换行（2026-09-23 用户裁决：「宽表自动横向打印」+「④ 压列换行」；
+ * 命名页机制写在 print.css）。
  *
  * **数值来历（不许当魔法数）**：
  * - `PORTRAIT_PRINTABLE_PX = 658`：A4 210mm − 2×18mm 边距 = 174mm，按 96dpi（3.7795px/mm）换算。
  *   纸型与边距是**实测/既定**的（`pdfinfo` 量到竖版 594.96×841.92pt = A4；18mm 来自 print.css 的
  *   `@page{margin:18mm}`）；**"174mm ⇒ 658px"这一步是推断**（按 CSS 96dpi 口径）。
  * - `LANDSCAPE_PRINTABLE_PX = 987`：297mm − 36mm = 261mm 同上换算（横版纸型实测 841.92×594.96pt）。
- * - **实测边界事实**：内在宽 **1870px** 的 12 列表格**即便横排也印不全**（横排导出后文本层仍无 `列12`）
- *   ⇒ 横排只覆盖 `(658, 987]` 这一段；更宽的块**不横排、不缩放**，由 `overflowWarning` 提醒兜底
- *   （超宽表方案仍在用户裁决中，见 `docs/tasks/Phase3-决策台账-2026-09-23.md` D-P3-2）。
- * - `pre` **不进这两张清单**：print.css 已让 pre 打印换行（P1-4(b)），长代码行不再被裁。
+ * - 三层（实测支撑）：`w ≤ 658` 竖版自然宽；`658 < w ≤ 987` 横排即够（实测 734px 表横排后 6 列全印出）；
+ *   `w > 987` 连横版都放不下（实测 1870px 表横排后仍丢列）⇒ 再叠加**压列换行**（`table-layout:fixed`）。
+ * - `pre` **不进清单**：print.css 已让 pre 打印换行（P1-4(b)），长代码行不再被裁。
+ * - **图片**也不需要：`.mdc img { max-inline-size: 100% }` 已存在（复核过）。
+ * - 因此「可能被截」的提醒**已无真实触发条件**，于 2026-09-23 随本改动**删除**（不留会撒谎的提示）。
  */
 export const PORTRAIT_PRINTABLE_PX = 658
 export const LANDSCAPE_PRINTABLE_PX = 987
 
-/** 块的内容宽（CSS px）：优先量内部 `table` 的自然宽，回退到容器自身 scrollWidth。
- *  屏显时容器可能比表宽（`overflow-x:auto` 的 wrap），故不能只看容器 scrollWidth。 */
+/**
+ * 块的**内容宽**（CSS px，`w` 判据就靠它）：量**表自身的 `min-content` 宽**。
+ *
+ * 为什么必须是 min-content 而不是 scrollWidth：
+ * - `.mdc table { inline-size: 100% }` ⇒ 任何表在屏显上都会被**撑到容器宽**（本机 ~734px），
+ *   于是 `wrap.scrollWidth / table.scrollWidth` 对"小表"和"宽表"读数一样 —— 实测踩过：
+ *   一张 3 列小表被测成 734px ⇒ 被判成宽表。
+ * - 分页媒体按**纸宽重新排版**：只要表的 min-content ≤ 可印宽，auto 布局就能靠换行装下（不裁）；
+ *   只有 min-content > 可印宽时才会真被裁 ⇒ min-content 才是"会不会裁"的机理量。
+ * - 实现：临时把 `inline-size` 设成 `min-content` 并**同步**读回宽度后立刻还原（同一任务内完成，
+ *   不产生可见重排/闪烁）；`position:absolute` 之类的克隆会让样式继承走样，故不采用。
+ * - jsdom 无真实布局（`getBoundingClientRect().width` 恒 0）⇒ 回退到 `table.scrollWidth`（测试可桩）。
+ */
 export function blockContentWidth(container: Element): number {
   const table = container.querySelector('table')
-  const tableWidth = table === null ? 0 : table.scrollWidth
-  const wrapWidth = container instanceof HTMLElement ? container.scrollWidth : 0
-  return Math.max(tableWidth, wrapWidth)
+  if (table === null) {
+    return container instanceof HTMLElement ? container.scrollWidth : 0
+  }
+  const el = table as HTMLElement
+  const previous = el.style.inlineSize
+  el.style.inlineSize = 'min-content'
+  const measured = el.getBoundingClientRect().width
+  el.style.inlineSize = previous
+  return measured > 0 ? measured : el.scrollWidth
 }
 
-/** 给"竖版放不下、横版放得下"的块打横排标记（`@page wide`）。幂等：每次按当前宽度重算并清掉不合格者。
- *  返回被标记数量（供对账）。`page` 属性只影响打印，屏显零影响。 */
-export function markLandscapeBlocks(root: ParentNode): number {
-  let marked = 0
+/**
+ * 导出前给表格打打印标记（幂等：按当前宽度重算并清掉旧标记；`page` 只作用于打印，屏显零影响）：
+ * - `wide-page`（`w > 658`）：竖版放不下 → 走 `@page wide` 横排（横版可印宽 987）；
+ * - `squeeze-page`（`w > 987`）：连横版都放不下 → 叠加 `table-layout:fixed` 压列换行，
+ *   让整表收敛到可印宽内（用户裁决 ④「压列换行」）。
+ * 返回计数 `{ landscape, squeeze }` 供对账。
+ */
+export function markPrintBlocks(root: ParentNode): { landscape: number; squeeze: number } {
+  let landscape = 0
+  let squeeze = 0
   for (const box of Array.from(root.querySelectorAll<HTMLElement>('.table-wrap'))) {
     const width = blockContentWidth(box)
-    const fits = width > PORTRAIT_PRINTABLE_PX && width <= LANDSCAPE_PRINTABLE_PX
-    box.classList.toggle('wide-page', fits)
-    if (fits) {
-      marked += 1
+    const needsLandscape = width > PORTRAIT_PRINTABLE_PX
+    const needsSqueeze = width > LANDSCAPE_PRINTABLE_PX
+    box.classList.toggle('wide-page', needsLandscape)
+    box.classList.toggle('squeeze-page', needsSqueeze)
+    if (needsLandscape) {
+      landscape += 1
+    }
+    if (needsSqueeze) {
+      squeeze += 1
     }
   }
-  return marked
-}
-
-/** 横版也放不下的块（只能提醒、**不横排不缩放**）：返回面向使用者的中文标签。 */
-export function tooWideBlocks(root: ParentNode): string[] {
-  const labels: string[] = []
-  for (const box of Array.from(root.querySelectorAll<HTMLElement>('.table-wrap'))) {
-    if (blockContentWidth(box) > LANDSCAPE_PRINTABLE_PX) {
-      labels.push('宽表格')
-    }
-  }
-  return labels
-}
-
-/** 拼"可能被截"的中文提醒（无风险返回 null）。文案面向使用者、不露技术黑话。 */
-export function overflowWarning(labels: string[]): string | null {
-  if (labels.length === 0) {
-    return null
-  }
-  const kinds = Array.from(new Set(labels)).join(' / ')
-  return `本文档有 ${labels.length} 处表格比 A4 横版可印宽还宽（${kinds}），PDF 中可能被截断`
+  return { landscape, squeeze }
 }
