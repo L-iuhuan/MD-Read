@@ -43,6 +43,24 @@
   → 弹出原生文件对话框 → 用 `WM_CLOSE` 关掉"之后。**原生对话框会抢焦点** —— 而这正是"人在做别的事时
   顺手把它最小化"最容易发生的时刻。⇒ 与上面"人干的"这一解释**方向一致**，不构成代码缺陷的证据。
 
+## 测试隔离：localStorage / 受信清单（2026-09-23 实测，**别再用 `dataDirectory`**）
+
+- **`app.windows[].dataDirectory` 不可靠，别再用**：其文档语义是"相对 `appDataDir()/${label}`"且明说含 Windows，
+  但**实测什么都没建**（`%APPDATA%\com.modu.reader\main\.verify-*\` 为空），真实 profile 照旧被写
+  ⇒ 四个 overlay 里那行 `"dataDirectory": ".verify-cdp"` **从来不是隔离**。
+- **有效做法：启动前置 `WEBVIEW2_USER_DATA_FOLDER=<绝对隔离路径>`**（WebView2 官方 UDF 覆盖，**Tauri 不覆盖它**）。
+  实测：隔离目录建出完整 `EBWebView\{Default,BrowserMetrics,CertificateRevocation,…}`；
+  且**真实 profile 的 9 个 leveldb 文件与备份逐字节一致**（事后独立复核）。**产品 `tauri.conf.json` 不用改**（8MB 红线不碰）。
+- **受信清单 `%APPDATA%\com.modu.reader\trusted-paths.json` 不在 WebView2 管辖内** ⇒ 靠**启动包装脚本**
+  （`.verify/phase3b/run-isolated.mjs`）：**启动前**快照（含"目录/文件原本是否存在"）+ **任何退出路径**都还原
+  （原本不存在 ⇒ **删掉**，别写 `{}`，否则凭空造文件、下次快照对不上），并**还原后再读一次比 SHA**。
+  ⚠ **快照若在应用启动之后拍 = 假还原**：`true` 只说明"前后一样"，而那个"前"**已经被本次启动污染**了
+  —— 本会话真实踩过，它会一直给人"受信清单是干净的"错觉。
+- ⚠ 换新 profile 后**首屏更慢** ⇒ **所有探针必须先等就绪信号再动作**（如 `window.__moduDev` 出现，带超时），
+  **不许固定 sleep**；超时信息要能区分"应用没就绪"与"dev 钩子没注入"（同"探针先确认前置条件再动作"的纪律）。
+- ⚠ 应用运行中 leveldb 被锁（读会 `EBUSY`）⇒ 要读**隔离 profile 的 leveldb 先停应用**；运行期只能读页面里的 `localStorage`。
+- 现成工具：`.verify/phase3b/{run-isolated.mjs（包装：前置检查+启动前快照+多路径还原）, probe-isolation.mjs（三项验收探针）, extract-recent2.mjs（leveldb 只读取证，注意 UTF-16LE 奇偶偏移）}`。
+
 ## 性能归因（已实测，别再走弯路）
 
 - **滚动期的 `IntersectionObserverController::computeIntersections`（占墙钟 ~30%，6.8ms/帧）不是大纲的
