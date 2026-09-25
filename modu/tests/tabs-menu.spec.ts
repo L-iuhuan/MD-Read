@@ -1,7 +1,8 @@
 /**
  * D-05 新增功能 · 壳层两个下拉菜单（ui/tabs-menu.ts）的行为锚。
  *   ▾ 全部标签列表：两行式、当前项浅主色底、脏点、底部批量关闭；
- *   ⋯ 溢出菜单：被收起的「打开 / 最近」代理项 + 批量关闭；**只在顶栏拥挤时出现**；
+ *   ⋯ 溢出菜单：拥挤态收进来的常显动作代理项（最近 / Aa / ◐ / PDF）+ 批量关闭；
+ *              **只在顶栏拥挤时出现**；**没有「打开」项**（文件入口只剩标签条的 ＋）；
  *   两者共用：一次只开一个、点外部收起、aria-expanded 回显、溢出才显示 #tabs-nav。
  * jsdom 无布局引擎 → 溢出判定用 Object.defineProperty 直接给 scrollWidth/clientWidth；
  * 拥挤态（header.overflow）用 class 直接切，等价于 main.ts 的 ResizeObserver 行为。
@@ -20,8 +21,11 @@ const MENU_DOM = `
     <div id="tabs-menu" role="menu" hidden></div>
   </div>
   <div class="actions">
-    <button id="btn-open">打开</button>
+    <button id="btn-edit">编辑</button>
     <div id="recent-wrap"><button id="btn-recent">最近</button><div id="recent-menu" hidden></div></div>
+    <div class="settings-wrap"><button id="btn-settings">Aa</button><div id="settings-panel" hidden></div></div>
+    <button id="btn-theme">◐</button>
+    <button id="btn-export">PDF</button>
     <div id="overflow-wrap">
       <button id="btn-overflow" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
       <div id="overflow-menu" role="menu" hidden></div>
@@ -163,12 +167,17 @@ describe("▾ 全部标签列表", () => {
 });
 
 describe("⋯ 溢出菜单", () => {
-  it("两个代理项点的是顶栏原按钮（不复制打开逻辑）", () => {
+  it("代理项点的是顶栏原按钮（不复制打开/主题/导出逻辑），且没有「打开」项", () => {
     const h = setup([tab("a.md")], "a.md");
-    const openSpy = vi.fn();
-    const recentSpy = vi.fn();
-    h.el("btn-open").addEventListener("click", openSpy);
-    h.el("btn-recent").addEventListener("click", recentSpy);
+    const spies = {
+      "btn-recent": vi.fn(),
+      "btn-settings": vi.fn(),
+      "btn-theme": vi.fn(),
+      "btn-export": vi.fn(),
+    };
+    for (const [id, spy] of Object.entries(spies)) {
+      h.el(id).addEventListener("click", spy);
+    }
     // jsdom 的 .click() 不冒泡，而真实点击**会**冒泡到 document（菜单靠这条委托点外收起），
     // 故这里用 dispatchEvent 复刻真实路径。
     const realClick = (el: HTMLElement): void => {
@@ -178,15 +187,22 @@ describe("⋯ 溢出菜单", () => {
     h.el("btn-overflow").click();
     const menu = h.el("overflow-menu");
     const items = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
-    expect(items.map((el) => el.textContent)).toEqual(["打开", "最近"]);
-    realClick(items[0] as HTMLElement);
-    expect(openSpy).toHaveBeenCalledTimes(1);
-    expect(menu.hidden).toBe(true); // 先收菜单，再把点击交给原按钮
+    expect(items.map((el) => el.textContent)).toEqual(["最近", "Aa", "◐", "PDF"]);
+    expect(items.map((el) => el.textContent)).not.toContain("打开");
 
-    h.el("btn-overflow").click();
-    const again = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
-    realClick(again[1] as HTMLElement);
-    expect(recentSpy).toHaveBeenCalledTimes(1);
+    // 逐项点一遍：每个代理项各命中一次自己的原按钮，且点完菜单先收起
+    const ids = ["btn-recent", "btn-settings", "btn-theme", "btn-export"] as const;
+    for (let i = 0; i < ids.length; i += 1) {
+      if (menu.hidden) {
+        h.el("btn-overflow").click();
+      }
+      const again = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
+      realClick(again[i] as HTMLElement);
+      expect(menu.hidden).toBe(true); // 先收菜单，再把点击交给原按钮
+    }
+    for (const [id, spy] of Object.entries(spies)) {
+      expect(spy, `${id} 未被代理点击命中`).toHaveBeenCalledTimes(1);
+    }
   });
 });
 

@@ -447,28 +447,32 @@ function setupWindowControls(): void {
   void win.onCloseRequested((event) => closeGuard(event));
 }
 
-/* ---- 顶栏拥挤态（D-05 定稿）----
+/* ---- 顶栏拥挤态（D-05 定稿，2026-09-23 批收口）----
    判据：**标签条的可分宽度**（不是标签内容宽度）。低于 --w-tabs-min(420px) 时
-   顶栏收成「编辑 + ⋯」，被收起的「打开 / 最近」进 ⋯ 菜单（ui/tabs-menu.ts）。
+   顶栏收成「编辑 + ⋯」，被收起的「最近 / Aa / ◐ / PDF」进 ⋯ 菜单（ui/tabs-menu.ts）。
    滞回：收在 420、放到 min + TABS_EXPAND_MARGIN。**余量要大于「收起动作组实际让出的
    宽度」，不是大于两个动作组的宽度差**——后者是错的（旧注释写「约 8px」，那是动作组
    自身宽度，不是让出量）。
-   ⚠ 让出量随「⋯ 按钮显隐策略」变过，引用旧数值前先看这里：⋯ **只在拥挤态出现**（本批
-   改动，见 ui/tabs-menu.ts 的 crowded()），于是非拥挤态一端不再有它的占位，让出量从
-   旧值 130px 降到 **74px**（2026-09-25 真机实测，同一窗口宽度下手工翻态同步读：
-   1100px 展开 504 → 收起 578；900px 收起 378 → 展开 304；两个宽度逐位一致 74px；
-   其中可归因于 #actions 的 69px，余 5px 未完全归因）。
-   余量 48（旧值）时展开判据是 strip > 468：1000~1060px 窗口下展开态 358~418 会收起、
+   ⚠ 让出量随「拥挤态收起哪些按钮」变过，引用旧数值前先看这里：
+   · 旧一版只收「打开 / 最近」，实测让出 74px（2026-09-25），当时余量 140 够用；
+   · 本版拥挤态**只剩编辑 + ⋯**（多收 Aa / ◐ / PDF），2026-09-23 本批真机实测
+     让出量涨到 **161px**（1680×1200、8 标签、同一帧内手工翻态同步读：
+     展开态 #tabbar 1140px → 收起态 1301px；其中可归因于 #actions 的 156.09px，
+     余 4.91px 归 gap 槽）。**161 > 140，旧余量已不成立**：边界扫描实测
+     940~956px 窗口宽度区间内 .overflow 以约 24Hz 自激（700ms 采样 17 次翻转）。
+   · 故本批把余量抬到 **240**（240 > 161，死区 79px）。抬后同一扫描区间 0 翻转，
+     且最窄可展开窗口从 944px 移到 1052px —— 窄窗常驻收起，是安全侧。
+     还原判据：strip > 420 + 240 = 660，等效「展开态 > 821」；收起判据「< 420」，
+     两者之间 79px 死区 > 0，任何宽度都收敛。
+   余量 48（更旧值）时展开判据是 strip > 468：1000~1060px 窗口下展开态 358~418 会收起、
    收起态 488~548 又 > 468 → 立刻重开 → 2.2~2.5Hz 自激（实测 13~15 次翻转 / 3s×30）。
-   140 > 130 > 74：展开判据 strip > 560 等效于「展开态 > 486」，而收起判据是
-   「展开态 < 420」，两判据之间死区 ≥ 66px → 900/1100px 各 3s×30 实测零翻转。
    观察对象是 **#tab-list**：顶栏与标签条的宽度都由 flex 算法定，「标签条被挤窄」
    既可能来自窗口变窄，也可能来自标签变多/导航组出现；而 #tab-list 的宽度在
    这些情况下都会变，且**不受 .overflow 类本身的宽窄影响**（这是关键：
    观察一个会因自身判定而变宽变窄的元素会自激）。初值也现算一次——
    ResizeObserver 的首次回调是异步的，而窗口很窄时启动的第一帧就应该已经是收起态。 */
 const TABS_MIN_DEFAULT = 420;
-const TABS_EXPAND_MARGIN = 140;
+const TABS_EXPAND_MARGIN = 240;
 
 function tabsMinWidth(): number {
   const raw = getComputedStyle(document.documentElement).getPropertyValue("--w-tabs-min");
@@ -718,8 +722,9 @@ async function boot(): Promise<void> {
   const tabs = createTabs(editorSession, mountRendered);
   activeTabs = tabs;
   $("btn-edit").addEventListener("click", () => editorSession?.toggle());
-  $("btn-open").addEventListener("click", () => void onOpenClick(tabs));
-  $("btn-newtab").addEventListener("click", () => void onOpenClick(tabs)); // 标签栏「+」= 打开
+  // 文件入口只有标签条的「＋」（#btn-newtab）。原先与它并列的那枚「打开」按钮已删——
+  // 两枚按钮本就绑同一个 onOpenClick，做的是同一件事（用户定稿「保留一个加号」）。
+  $("btn-newtab").addEventListener("click", () => void onOpenClick(tabs));
   exportButton = document.getElementById("btn-export") as HTMLButtonElement | null;
   exportButton?.addEventListener("click", () => void onExportClick(tabs));
   setupRecentMenu((path) => void openPath(tabs, path));
@@ -738,13 +743,16 @@ async function boot(): Promise<void> {
   // 开发期真机探针入口（D-05 多标签验收用）。为什么不复用既有入口：
   // 开第二个及以后的标签必须**真的走 read_file**（受控语料的自动保存会写回原文件），
   // 所以不能靠上次的渲染缓存或拖放伪造；而磁盘上的草稿副本只能经这条真实读文件链进来。
-  // 只在 vite dev（DEV 为真）挂载，生产构建里恒 undefined；不引入 any，不做错误静默。
+  // 本批新增 syncMenus：顶栏拥挤态的手工翻转实测（探针切 .overflow 类后要重算 ⋯ 显隐，
+  // 而 hidden 的**语义来源**是 tabs-menu.ts 的 sync，不是那个类本身——不调它就测不到
+  // 真实收藏行为）。同样只在 vite dev 挂载，生产构建里恒 undefined。
   if (import.meta.env.DEV) {
     window.__moduDev = {
       openFile: (path: string) => openPath(tabs, path),
       openFileInBackground: (path: string) => openPath(tabs, path, false),
       closeAllTabs: () => tabs.closeAll(),
       tabCount: () => tabs.count(),
+      syncMenus: () => tabs.syncMenus(),
     };
   }
 }

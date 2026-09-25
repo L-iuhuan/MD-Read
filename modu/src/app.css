@@ -68,9 +68,9 @@
    · 新增 ⋯ 溢出菜单与 ▾ 全部标签列表（TS 在 ui/tabs-menu.ts）：
      两行式条目（文件名 + 弱化目录）、当前项浅主色底、底部「关闭其他/全部标签」；
    · 拥挤态（.topbar.overflow）：标签条可分宽度 < --w-tabs-min(420px) 时收成「编辑 + ⋯」，
-     判据与滞回接线在 main.ts 的 setupShellOverflow（滞回余量 TABS_EXPAND_MARGIN = 140，
-     必须大于收起实际让出的宽度，否则自激）；非拥挤态**没有 ⋯**（打开 / 最近已在条上）；
-   · 大纲活动项由「左侧 3px 硬色条」改为「浅主色底圆角矩形 + 主色文字 + 600 字重」，
+     判据与滞回接线在 main.ts 的 setupShellOverflow（滞回余量 TABS_EXPAND_MARGIN，
+     必须大于收起实际让出的宽度，否则自激）；非拥挤态**没有 ⋯**，
+     两态各自的可见集合见 §5 与 ui/tabs-menu.ts 顶部注释；   · 大纲活动项由「左侧 3px 硬色条」改为「浅主色底圆角矩形 + 主色文字 + 600 字重」，
      层级只用缩进 + 字重/字号；
    · 状态栏 11.5px（--fs-status）+ 上沿改 --hair；
    · B2 轻分层：三级表面（chrome/card/paper）全走 token，暗色三档分离，
@@ -412,21 +412,26 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 .actions > button.is-accent:hover:not(:disabled) { background: var(--accent-tint-hover); }
 
 /* --- 拥挤态：标签条可用宽度低于 --w-tabs-min(420px) 时收成「编辑 + ⋯」---
-   由 main.ts 的 ResizeObserver 在 header 上切 .overflow 类（带 140px 滞回，防抖动）。
-   滞回余量必须**大于收起动作组实际让出的宽度**（实测 130px − ⋯ 自身占位，见下），
-   否则收起→重开无限循环；48px 的旧余量在 1000~1060px 窗口下实测 2.2~2.5Hz 自激。
-   常显项（编辑 / Aa / ◐ / PDF）留在条上不动 —— 它们是任何宽度下都必须点得到的；
-   被收起的是「打开 / 最近」，它们进 ⋯ 菜单（见 §7c）。
+   由 main.ts 的 ResizeObserver 在 header 上切 .overflow 类（带滞回，防抖动）。
+   滞回余量必须**大于收起动作组实际让出的宽度**，否则收起→重开无限循环；
+   48px 的旧余量在 1000~1060px 窗口下实测 2.2~2.5Hz 自激（余量实测值见 main.ts
+   TABS_EXPAND_MARGIN 处的本批读数）。
 
-   ⋯ 按钮**只在拥挤态出现**（tabs-menu.ts 的 sync() 按 header.overflow 置 hidden）：
-   非拥挤态下「打开 / 最近」本来就在条上，⋯ 摆在那里是重复且无上下文的按钮。
-   下面这条只负责「非拥挤态连占位都不留」——空的 .overflow-wrap 会白吃 #actions
-   的一个 gap 槽（--size-1），留着会让 PDF 与窗口三钮之间多出一小段空档。
-   按钮的 hidden 仍由 JS 同步（语义与可测性的唯一来源，jsdom 里没有本样式表）。 */
+   本批收口（用户定稿）：**拥挤态只剩「编辑 + ⋯」**——最近 / Aa / ◐ / PDF 与标签批量
+   操作全部收进 ⋯ 菜单（ui/tabs-menu.ts），标签条拿回它们的宽度。非拥挤态这四枚是
+   常显按钮，⋯ 整个不出现（连占位都不留，见下）。
+   收起清单与按钮皮无关，故这里只写「隐身」；⋯ 菜单里点的是**同一批 DOM 按钮的代理
+   点击**（proxyClick），逻辑不复制第二份。 */
 .topbar.overflow #act-sep { display: none; }
-.topbar.overflow #btn-open,
-.topbar.overflow .recent-wrap { display: none; }
+.topbar.overflow .recent-wrap,
+.topbar.overflow .settings-wrap,
+.topbar.overflow #btn-theme,
+.topbar.overflow #btn-export { display: none; }
 .topbar:not(.overflow) .overflow-wrap { display: none; }
+
+/* 非拥挤态无 ⋯（连占位都不留）：空的 .overflow-wrap 会白吃 #actions 的一个 gap 槽
+   （--size-1），留着会让 PDF 与窗口三钮之间多出一小段空档。
+   按钮的 hidden 仍由 JS 同步（语义与可测性的唯一来源，jsdom 里没有本样式表）。 */
 
 /* 开关状态回显（主题态挂在 <html data-theme> 上，既有契约直接读）。
    Aa 面板打开时按钮同样点灯：这是状态回显，不是装饰。填充与描边一起换，

@@ -2,22 +2,25 @@
  * 壳层两个下拉菜单（D-05 新增功能）：
  *   ▾ 全部标签列表 —— 两行式（文件名 + 弱化目录）、当前项浅主色底、脏点；
  *                     底部「关闭其他标签 / 关闭全部标签」。
- *   ⋯ 溢出菜单     —— 顶栏拥挤（标签条可用宽度 < --w-tabs-min）时收进来的动作：
- *                     「打开 / 最近」的代理项 + 标签批量操作。
+ *   ⋯ 溢出菜单     —— 顶栏拥挤（标签条可用宽度 < --w-tabs-min）时收进来的动作。
  *                     ⚠ 按钮本身**只在拥挤态出现**（非拥挤态 hidden，见 crowded()）：
- *                     非拥挤态下「打开 / 最近」本来就在条上，⋯ 在那儿是重复且无上下文的
- *                     按钮。已知取舍：非拥挤态没有「关闭其他 / 全部标签」的入口
- *                     （用户知情；▾ 菜单里仍有，但它只在标签真有溢出时才出现）。
+ *                     非拥挤态这些动作本来就在条上，⋯ 在那儿是重复按钮。
+ *
+ * 本批（2026-09-23）两态可见集合（用户定稿）：
+ *   非拥挤：#actions 里 编辑 / 最近 / Aa / ◐ / PDF，**无 ⋯**；
+ *   拥挤  ：只有 编辑 与 ⋯，其余全部收进 ⋯ 菜单（顺序见 PROXY_ITEMS + 两条批量关闭）。
+ * 文件入口只有标签条的 `＋`（#btn-newtab）——与它重复的那枚「打开」按钮已删，
+ * 故 ⋯ 菜单里**没有「打开」项**（代理到已删除的按钮只会静默失效）。
  *
  * 为什么独立一文件而不是塞进 app/tabs.ts：tabs.ts 已 460+ 行（超 400 铁律，本批
  * 不扩大改动面），菜单是**壳层 DOM** 而非标签状态机，放 ui/ 与 findbar/settings 同层。
  * 两个菜单都是 index.html 里的常驻空容器（默认 hidden），内容每次打开现填 ——
  * 样式来源唯一（app.css §7c），不靠运行时注入 <style>。
  *
- * 「代理点击」的做法与理由：被收进 ⋯ 的「打开 / 最近」按钮仍然留在 DOM 里
+ * 「代理点击」的做法与理由：被收进 ⋯ 的按钮仍然留在 DOM 里
  * （只是 `.topbar.overflow` 下 display:none），它们的 click 监听器仍在原处。
- * 菜单项只做 `proxy.click()`，**不复制一份打开逻辑** —— 复制会让「打开文件」出现
- * 两条实现，是迟早会分叉的那种债。
+ * 菜单项只做 `proxy.click()`，**不复制一份打开/导出/主题逻辑** —— 复制会让同一件事
+ * 出现两条实现，是迟早会分叉的那种债。
  */
 import type { Tab } from "../app/tabs";
 
@@ -40,6 +43,14 @@ export interface TabMenusDeps {
   closeOthers(): void;
   closeAll(): void;
 }
+
+/** ⋯ 菜单里的「代理项」：文案 + 顶栏原按钮 id（点击 = 点那枚原按钮，逻辑不复制） */
+const PROXY_ITEMS: ReadonlyArray<readonly [label: string, id: string]> = [
+  ["最近", "btn-recent"],
+  ["Aa", "btn-settings"],
+  ["◐", "btn-theme"],
+  ["PDF", "btn-export"],
+];
 
 /** 目录部分（去掉文件名，去掉末尾分隔符）；没有目录时返回空串 → 不渲染第二行 */
 export function dirOf(path: string): string {
@@ -178,7 +189,7 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
     }
   }
 
-  /** ⋯ 溢出菜单：被收起的「打开 / 最近」代理项 + 标签批量操作 */
+  /** ⋯ 菜单底部的标签批量操作（分隔线 + 两条动作） */
   function renderOverflowActions(): void {
     if (overflowMenu === null) {
       return;
@@ -198,15 +209,14 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
     }
   }
 
+  /** ⋯ 溢出菜单：被收起的常显动作（代理点击原按钮）+ 标签批量操作。
+   *  一次只开一个 / 点外部收起由本文件的共用逻辑保证；这里只管填内容。 */
   function renderOverflow(): void {
     if (overflowMenu === null) {
       return;
     }
     overflowMenu.textContent = "";
-    for (const [label, id] of [
-      ["打开", "btn-open"],
-      ["最近", "btn-recent"],
-    ] as const) {
+    for (const [label, id] of PROXY_ITEMS) {
       const item = makeItem();
       item.textContent = label;
       item.addEventListener("click", () => {

@@ -14,8 +14,8 @@
     "windows": [
       {
         "title": "墨读 MoDu",
-        "width": 1100,
-        "height": 750,
+        "width": 1680,
+        "height": 1200,
         "minWidth": 720,
         "minHeight": 480,
         "center": true,

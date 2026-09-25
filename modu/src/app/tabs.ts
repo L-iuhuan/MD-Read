@@ -87,6 +87,9 @@ export interface TabManager {
   hasDirty(): boolean;
   /** 未保存标签快照（P0-7：关窗口前逐个落盘取用） */
   dirtyTabs(): Tab[];
+  /** 壳层菜单（▾ / ⋯）的显隐重算。CDP 探针手工翻转顶栏拥挤态后调用；
+   *  正常路径由 renderBar / syncNav 自动触发，无需外部调用。 */
+  syncMenus(): void;
 }
 
 /** 关闭守卫（P0-7）用户三选一：保存 / 放弃 / 取消 */
@@ -578,5 +581,8 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     paths: () => tabs.map((tab) => tab.path),
     hasDirty: () => tabs.some((tab) => tab.dirty),
     dirtyTabs: () => tabs.filter((tab) => tab.dirty),
+    /** 顶栏拥挤态实测用（CDP 探针手工切 .overflow 类后要重算 ⋯ 显隐）：把壳层菜单的
+     *  sync 透出来。取用方只有 main.ts 的 DEV 探针钩子；生产路径不调它。 */
+    syncMenus: () => menus?.sync(),
   };
 }

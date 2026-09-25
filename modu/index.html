@@ -46,7 +46,9 @@
         <div id="actions" class="actions">
           <!-- 强调按钮：全条唯一的软底主色按钮（其余动作都是纸面填充的发丝线按钮） -->
           <button id="btn-edit" type="button" class="is-accent" title="编辑 / 阅读（Ctrl+E）" aria-label="切换编辑与阅读模式" disabled>编辑</button>
-          <button id="btn-open" type="button" title="打开 Markdown 文件">打开</button>
+          <!-- 「打开」按钮已删（本批）：它与标签条的 #btn-newtab（＋）绑同一处理函数
+               （main.ts 注释原文「标签栏「+」= 打开」），两者做同一件事；＋ 恒在标签条上
+               且 sticky 钉在可视区右端，是**唯一的文件入口**。-->
           <div id="recent-wrap" class="recent-wrap">
             <button id="btn-recent" type="button" title="最近打开的文件">最近</button>
             <div id="recent-menu" class="recent-menu" hidden></div>
@@ -140,18 +142,15 @@
             </div>
           </div>
           <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
-          <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>PDF</button>
-          <!-- ⋯ 溢出菜单（D-05 新增功能）：**只在拥挤态可见**，收进「打开 / 最近」与标签
-               批量操作（按钮显隐由 ui/tabs-menu.ts 按 header.overflow 同步）。
-               常显项（编辑 / Aa / ◐ / PDF）留在条上，保证任何时候都点得到。
-               已知取舍：非拥挤态没有「关闭其他 / 全部标签」的入口（用户知情）。▾ 全部
-               标签列表里仍有这两项，但 ▾ 也只在标签真有溢出时才出现。
+          <button id="btn-export" type="button" title="导出 PDF" disabled>PDF</button>
+          <!-- ⋯ 溢出菜单（D-05 新增功能）：**只在拥挤态可见**。本批收口后拥挤态只剩
+               「编辑 + ⋯」，其余动作（最近 / Aa / ◐ / PDF）与标签批量操作全收进这里；
+               非拥挤态它们是常显按钮，⋯ 整个不出现（含占位，见 app.css §5）。
                ⚠ DOM 位置固定在本动作区**末尾**（PDF 之后、窗口三钮之前）——用户实测
-                 「编辑右边的按钮是什么？」的根因就是它原先夹在 #btn-edit 与 #btn-open
-                 之间：非拥挤态下「打开 / 最近」本来就可见，⋯ 摆在那儿是重复且无上下文的
-                 按钮。菜单是 .overflow-wrap 的绝对定位子元素（右对齐到按钮右沿，见 app.css
-                 §7c），移到末尾后右边缘距窗口右边界仍有整排窗口三钮的余量，故拥挤/非拥挤
-                 两态都不会出窗。 -->
+                 「编辑右边的按钮是什么？」的根因就是它原先夹在 #btn-edit 与已删除的
+                 那枚「打开」按钮之间。菜单是 .overflow-wrap 的绝对定位子元素（右对齐到
+                 按钮右沿，见 app.css §7c），移到末尾后右边缘距窗口右边界仍有整排窗口
+                 三钮的余量，故拥挤/非拥挤两态都不会出窗。 -->
           <div id="overflow-wrap" class="overflow-wrap">
             <button id="btn-overflow" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
             <div id="overflow-menu" class="overflow-menu" role="menu" aria-label="更多操作" hidden></div>
@@ -194,7 +193,7 @@
           <nav id="outline-list" class="outline-list"></nav>
         </aside>
         <main id="content" class="content">
-          <div id="empty-hint" class="empty-hint">拖入 .md 文件，或点「打开」</div>
+          <div id="empty-hint" class="empty-hint">拖入 .md 文件，或点标签条上的「＋」</div>
           <article id="doc" class="mdc" hidden></article>
           <!-- M3 编辑态（F7）：CM6 常驻容器，与 #doc 互斥显隐；高度由 editor.ts 内联撑满 -->
           <div id="editor-pane" class="editor-pane" hidden aria-label="源码编辑区"></div>

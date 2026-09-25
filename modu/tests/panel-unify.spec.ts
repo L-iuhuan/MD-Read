@@ -44,7 +44,8 @@ describe("P1 最近下拉条目不再被顶栏按钮权重压过", () => {
   });
 
   it("index.html 里的动作区入口钮确实落在上述结构内（直属 + 三个包装层）", () => {
-    const directIds = ["btn-edit", "btn-open", "btn-theme", "btn-export"];
+    // 本批起文件入口只剩标签条的「＋」，动作区里不再有并列的「打开」按钮
+    const directIds = ["btn-edit", "btn-theme", "btn-export"];
     for (const id of directIds) {
       // 直属按钮：`<button id="…"` 紧跟换行/缩进，且不嵌在包装 div 里
       expect(html).toMatch(new RegExp(`<button id="${id}"`));
@@ -52,6 +53,9 @@ describe("P1 最近下拉条目不再被顶栏按钮权重压过", () => {
     expect(html).toMatch(/<div id="recent-wrap" class="recent-wrap">\s*<button id="btn-recent"/);
     expect(html).toMatch(/<div class="settings-wrap">\s*<button id="btn-settings"/);
     expect(html).toMatch(/<div id="overflow-wrap" class="overflow-wrap">\s*<button id="btn-overflow"/);
+    // 反向锚：与「＋」重复的动作区「打开」按钮不得回来（含 id 与文案两种写法）
+    expect(html).not.toMatch(/btn-open/);
+    expect(html).not.toMatch(/>打开<\/button>/);
     // D-05：☰ 与标签条在动作区**之外**（左组），不参与这套按钮皮
     const stripped = html.replace(/<!--[\s\S]*?-->/g, "");
     expect(stripped).toMatch(/<button id="btn-outline"[^>]*>☰<\/button>\s*<div id="tabbar"/);
@@ -234,8 +238,13 @@ describe("D-05 T1 单栏合并顶栏", () => {
 
   it("拥挤态：标签条可用宽度阈值走 token，收起的动作在 CSS 里明确隐身", () => {
     expect(tokensBody).toMatch(/--w-tabs-min:\s*420px/);
-    expect(appBody).toMatch(/\.topbar\.overflow #btn-open/);
-    expect(appBody).toMatch(/\.topbar\.overflow \.recent-wrap\s*\{[^}]*display:\s*none/);
+    // 本批收口：拥挤态只剩「编辑 + ⋯」——最近 / Aa / ◐ / PDF 全部隐身
+    for (const sel of ["\\.recent-wrap", "\\.settings-wrap", "#btn-theme", "#btn-export"]) {
+      expect(appBody, `拥挤态未隐身 ${sel}`).toMatch(
+        new RegExp(`\\.topbar\\.overflow ${sel}`),
+      );
+    }
+    expect(appBody).not.toMatch(/\.topbar\.overflow #btn-open/);
     expect(mainSrc).toMatch(/setupShellOverflow/);
     expect(mainSrc).toMatch(/ResizeObserver/);
   });

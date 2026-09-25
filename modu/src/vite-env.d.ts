@@ -11,6 +11,8 @@ interface ModuDevHook {
   openFileInBackground(path: string): Promise<void>;
   closeAllTabs(): void;
   tabCount(): number;
+  /** 重算壳层菜单显隐（顶栏拥挤态手工翻转后必须调，见 app/tabs.ts 的 syncMenus） */
+  syncMenus(): void;
 }
 
 interface Window {

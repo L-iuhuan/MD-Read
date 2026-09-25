@@ -3,7 +3,7 @@ mod print;
 mod single;
 
 use std::sync::Mutex;
-use tauri::{Emitter, Manager, State};
+use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2, ICoreWebView2NavigationStartingEventArgs,
     ICoreWebView2NavigationStartingEventHandler, ICoreWebView2NavigationStartingEventHandler_Impl,
@@ -19,6 +19,116 @@ struct PendingFiles(Mutex<Vec<String>>);
 /// 前端同一份清单在 `src/app/md-ext.ts`（跨语言无法共享代码，注释互为引用，
 /// 对拍见 tests/md-ext.spec.ts 对 tauri.conf.json 的 fileAssociations.ext）。
 const MD_EXTENSIONS: [&str; 3] = ["md", "markdown", "mdx"];
+
+/* ---- 默认窗口尺寸（按主屏工作区 clamp，2026-09-23 批）----
+   阅读应用原默认 1100×750 太小（每次都要手动拖大），但直接写 1680×1200 会在
+   小屏 / 高 DPI / 远程会话里开到工作区之外。故：config 声明期望尺寸，启动时按
+   **主显示器工作区**（已扣任务栏）夹取一遍，再在工作区内居中——
+   位置一律由工作区算出，不硬编码相对屏幕的某一点。
+   契约同步写在 AGENTS.md「默认窗口」条；CDP overlay 各自钉住尺寸。 */
+/// 期望宽度（= tauri.conf.json 的 window.width，也是宽度上界）
+const WIN_W_DEFAULT: u32 = 1680;
+/// 期望高度（= tauri.conf.json 的 window.height，也是高度上界）
+const WIN_H_DEFAULT: u32 = 1200;
+/// 宽度至少让出的横向余量（工作区宽 − 本值；给屏幕边缘留白）
+const WIN_W_RESERVED: f64 = 400.0;
+/// 高度至少让出的纵向余量（工作区高 − 本值；给任务栏与窗口边缘留白）
+const WIN_H_RESERVED: f64 = 80.0;
+/// 兜底下限，与 config 的 minWidth / minHeight 一致（仅极小工作区时生效）
+const WIN_W_FLOOR: f64 = 720.0;
+/// 兜底下限（高度），同上
+const WIN_H_FLOOR: f64 = 480.0;
+
+/// 主显示器工作区（物理像素）与缩放系数；缩放系数非法时按 1 处理。
+struct WorkArea {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    scale: f64,
+}
+
+/// 窗口目标几何（逻辑像素）：尺寸 + 工作区内的居中位置
+struct WinPlacement {
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+}
+
+/// 夹取函数（纯函数，可单测）：把工作区（物理像素）换算成逻辑像素后求目标尺寸与居中位置。
+/// 尺寸三层夹取：① 不超期望上界；② 工作区 − 保留余量（首选）；③ 兜底下限——
+/// 极小工作区下宁可略微超出，也不把窗口压到读不了字。
+fn window_placement(area: &WorkArea) -> WinPlacement {
+    let s = if area.scale.is_finite() && area.scale > 0.0 {
+        area.scale
+    } else {
+        1.0
+    };
+    let avail_w = area.width / s;
+    let avail_h = area.height / s;
+    let width = f64::from(WIN_W_DEFAULT)
+        .min((avail_w - WIN_W_RESERVED).max(WIN_W_FLOOR))
+        .max(WIN_W_FLOOR);
+    let height = f64::from(WIN_H_DEFAULT)
+        .min((avail_h - WIN_H_RESERVED).max(WIN_H_FLOOR))
+        .max(WIN_H_FLOOR);
+    WinPlacement {
+        width,
+        height,
+        x: area.x / s + (avail_w - width) / 2.0,
+        y: area.y / s + (avail_h - height) / 2.0,
+    }
+}
+
+/// 取主显示器的工作区读数（物理像素 + 缩放系数）。
+fn primary_work_area(monitor: &tauri::Monitor) -> WorkArea {
+    let work = monitor.work_area();
+    WorkArea {
+        x: f64::from(work.position.x),
+        y: f64::from(work.position.y),
+        width: f64::from(work.size.width),
+        height: f64::from(work.size.height),
+        scale: monitor.scale_factor(),
+    }
+}
+
+/// 把窗口调整到目标尺寸并在主屏工作区内居中。尺寸已相符时不重复 set（免得每次
+/// 启动都触发一次无谓的重排）；位置**总是**显式给——Tauri 的 `center()` 依赖
+/// 窗口当前尺寸在事件循环里的更新时机（set_size 是异步派发），显式给位置不赌时序。
+fn adjust_window_size(app: &tauri::App, monitor: &tauri::Monitor) -> tauri::Result<()> {
+    let Some(window) = app.get_webview_window("main") else {
+        println!("[window] GATHER 未找到 main 窗口，跳过尺寸夹取");
+        return Ok(());
+    };
+    let area = primary_work_area(monitor);
+    let target = window_placement(&area);
+    println!(
+        "[window] GATHER 主屏工作区=({},{} {}×{}) scale={} → 目标逻辑尺寸={}×{} 位置=({},{})",
+        area.x,
+        area.y,
+        area.width,
+        area.height,
+        area.scale,
+        target.width,
+        target.height,
+        target.x.round(),
+        target.y.round()
+    );
+    let current = window.inner_size()?;
+    let want_w = target.width.round();
+    let want_h = target.height.round();
+    if f64::from(current.width) != want_w || f64::from(current.height) != want_h {
+        window.set_size(LogicalSize::new(want_w, want_h))?;
+    }
+    window.set_position(LogicalPosition::new(target.x.round(), target.y.round()))?;
+    let now = window.inner_size()?;
+    println!(
+        "[window] GATHER 夹取完成：set={}×{} 现行物理={}×{}",
+        want_w, want_h, now.width, now.height
+    );
+    Ok(())
+}
 
 /// 是否是 Markdown 路径：取文件名比对扩展名，大小写不敏感（只看扩展名，不碰文件系统）。
 /// 先切文件名再取扩展名：`C:\a.md\file` 这类「目录名带点」的路径不能误判。
@@ -83,6 +193,12 @@ pub fn run() {
         ])
         .setup(|app| {
             attach_nav_guard(app); // 整窗导航兜底：趁启动挂上 WebView2 事件（见函数注释）
+            // 默认窗口尺寸：按主屏工作区夹取后居中（见上方 WIN_* 常量说明与 AGENTS.md 契约）
+            match app.primary_monitor() {
+                Ok(Some(monitor)) => adjust_window_size(app, &monitor)?,
+                Ok(None) => println!("[window] GATHER 取不到主显示器，沿用 config 尺寸"),
+                Err(error) => println!("[window] GATHER 主显示器查询失败（{error}），沿用 config 尺寸"),
+            }
             let pending = md_paths(&std::env::args().collect::<Vec<String>>());
             app.manage(PendingFiles(Mutex::new(pending.clone())));
             // 事件照发（供未来多标签等场景）；竞态由 take_pending_files 兜底。
@@ -249,7 +365,10 @@ fn read_uri(args: &ICoreWebView2NavigationStartingEventArgs) -> windows_core::Re
 
 #[cfg(test)]
 mod asset_path_tests {
-    use super::{has_md_extension, md_paths, usable_image_paths, validate_image_path};
+    use super::{
+        has_md_extension, md_paths, usable_image_paths, validate_image_path, window_placement,
+        WorkArea,
+    };
 
     /// 建一个临时文件用于「存在且是普通文件」的正例。
     fn temp_file(name: &str) -> std::path::PathBuf {
@@ -360,5 +479,73 @@ mod asset_path_tests {
 
         let none = vec![r"C:\apps\modu.exe".to_string(), "--no-watch".to_string()];
         assert!(md_paths(&none).is_empty(), "无 Markdown 参数时为空列表");
+    }
+
+    /// 默认窗口（2026-09-23 批）：本机 2560×1392 工作区（100% 缩放）→ 1680×1200。
+    #[test]
+    fn window_targets_default_size_on_a_large_work_area() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1392.0, scale: 1.0 };
+        let p = window_placement(&area);
+        assert_eq!((p.width, p.height), (1680.0, 1200.0), "大工作区取期望上界");
+        assert_eq!((p.x, p.y), (440.0, 96.0), "工作区内居中：(2560-1680)/2, (1392-1200)/2");
+    }
+
+    /// 小工作区：宽度吃「工作区 − 400」、高度吃「工作区 − 80」，绝不超出工作区。
+    #[test]
+    fn window_shrinks_to_work_area_minus_reserved_margins() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 };
+        let p = window_placement(&area);
+        assert_eq!((p.width, p.height), (880.0, 720.0), "1280-400 / 800-80");
+        assert_eq!((p.x, p.y), (200.0, 40.0), "仍居中");
+        assert!(p.width <= area.width && p.height <= area.height, "不得超出工作区");
+    }
+
+    /// 高 DPI：物理像素先除缩放系数再夹取（2560 物理 / 1.5 = 1706.67 逻辑宽）。
+    #[test]
+    fn window_scales_physical_work_area_before_clamping() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1440.0, scale: 1.5 };
+        let p = window_placement(&area);
+        // 逻辑可用 1706.67×960 → 宽 min(1680, 1306.67)=1306.67，高 min(1200, 880)=880
+        assert!((p.width - 1306.6667).abs() < 0.01, "实测 {}", p.width);
+        assert_eq!(p.height, 880.0);
+        assert!(p.width <= 1706.67 && p.height <= 960.0);
+    }
+
+    /// 第二显示器：工作区原点非零时，居中位置必须跟着工作区走（不贴回主屏原点）。
+    #[test]
+    fn window_centers_inside_a_shifted_work_area() {
+        let area = WorkArea { x: 2560.0, y: 0.0, width: 1920.0, height: 1080.0, scale: 1.0 };
+        let p = window_placement(&area);
+        assert_eq!((p.width, p.height), (1520.0, 1000.0), "1920-400 / 1080-80");
+        assert_eq!((p.x, p.y), (2760.0, 40.0), "2560+(1920-1520)/2, 0+(1080-1000)/2");
+    }
+
+    /// 极小工作区：三层夹取的最后一道是兜底下限（宁可靠边也不压到读不了字）。
+    #[test]
+    fn window_keeps_the_floor_on_a_tiny_work_area() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 640.0, height: 400.0, scale: 1.0 };
+        let p = window_placement(&area);
+        assert_eq!((p.width, p.height), (720.0, 480.0), "兜底下限 = config 的 minWidth/minHeight");
+    }
+
+    /// 缩放系数非法（0 / NaN / 负 / 无穷）按 1 处理，不得出现除零 → 无穷 → NaN 尺寸。
+    #[test]
+    fn window_falls_back_to_scale_one_on_a_bad_scale_factor() {
+        for scale in [0.0, -2.0, f64::NAN, f64::INFINITY] {
+            let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1392.0, scale };
+            let p = window_placement(&area);
+            assert!(p.width.is_finite() && p.height.is_finite(), "scale={scale} 尺寸必须有限");
+            assert!(p.width >= 720.0 && p.width <= 1680.0, "scale={scale} 宽度越界：{}", p.width);
+            assert!(p.height >= 480.0 && p.height <= 1200.0, "scale={scale} 高度越界：{}", p.height);
+            assert!(p.x.is_finite() && p.y.is_finite(), "scale={scale} 位置必须是有限数");
+        }
+        for scale in [0.0, -2.0] {
+            let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1392.0, scale };
+            assert_eq!(
+                (window_placement(&area).width, window_placement(&area).height),
+                (1680.0, 1200.0),
+                "scale={scale} 应退化为 1"
+            );
+        }
     }
 }
