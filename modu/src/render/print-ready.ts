@@ -17,6 +17,8 @@
  *   不放行会把导出按钮卡死在极端文档上。
  */
 
+import { renderMermaidEl } from './mermaid'
+
 export interface PrintReadyResult {
   timedOut: boolean
   /** 字体就绪等待是否到时限放行（超时仍继续导出，只由调用方提示） */
@@ -27,7 +29,7 @@ export interface PrintReadyResult {
 
 export interface PrintReadyOptions {
   timeoutMs?: number
-  /** 强渲单个未定稿 .mermaid；默认动态加载 mermaid.ts 的 renderMermaidEl（测试注入替身） */
+  /** 强渲单个未定稿 .mermaid；默认用 mermaid.ts 的 renderMermaidEl（**静态导入**：view.ts 已静态依赖它，动态导入拆不动包 —— 批次 3-6 实测）；本项是测试注入替身 */
   renderPending?: (el: HTMLElement) => Promise<void>
 }
 
@@ -107,7 +109,9 @@ async function imagesSettled(container: ParentNode, deadline: number): Promise<s
 }
 
 async function defaultRenderPending(el: HTMLElement): Promise<void> {
-  const { renderMermaidEl } = await import('./mermaid')
+  // ⚠ 这里原先是 `await import('./mermaid')`（**无效动态导入**，批次 3-6 实测）：
+  //   `view.ts` 已静态导入 `./mermaid` ⇒ 该模块本就在首屏 chunk 里，动态导入拆不出任何东西，
+  //   rolldown 会因此报 `INEFFECTIVE_DYNAMIC_IMPORT`。改成静态导入后**运行时零差异**。
   await renderMermaidEl(el)
 }
 
