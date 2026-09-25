@@ -22,28 +22,43 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** 在 `from` 之后按 UTF-16LE 两种偏移解析 JSON 数组；成功返回 {entries, encoding} */
+/**
+ * 在 `from` 之后解析 JSON 数组：**两种字节编码 × 两种偏移**都试（⚠ 看不见 ≠ 不存在）。
+ * 纯 ASCII 值（如 `[]`）Chromium 用 **1 字节 Latin1/UTF-8** 存；含非 Latin1 字符（如中文路径）才用 **UTF-16LE**。
+ * 只试 UTF-16LE 会让 `modu-recent = []` **完全不可见** —— 真实翻车：live 值 `[]` 看不见，
+ * 于是报出"最新的 UTF-16 数组"（历史版本 10 条），据此得出"数据被污染"的**假警报**。
+ * 返回值带 `attempts`：**这个值是用哪种解码试出来的**，供调用方在输出里自证。
+ */
 export function parseArrayAfter(buf, from) {
   const region = buf.subarray(from, Math.min(buf.length, from + 12000));
-  for (const parity of [0, 1]) {
-    const text = region.subarray(parity).toString('utf16le');
-    const start = text.indexOf('[');
-    if (start === -1) continue;
-    let depth = 0;
-    for (let i = start; i < Math.min(text.length, start + 20000); i += 1) {
-      depth += text[i] === '[' ? 1 : text[i] === ']' ? -1 : 0;
-      if (depth === 0) {
-        try {
-          const parsed = JSON.parse(text.slice(start, i + 1).replace(/\u0000/g, ''));
-          if (Array.isArray(parsed)) return { entries: parsed.map(String), encoding: `utf16le(parity=${parity})` };
-        } catch {
-          /* 试下一种 */
+  const attempts = [];
+  for (const [dec, label] of [
+    ['utf16le', 'utf16le'],
+    ['latin1', 'latin1'],
+  ]) {
+    for (const parity of dec === 'utf16le' ? [0, 1] : [0]) {
+      const name = `${label}(parity=${parity})`;
+      attempts.push(name);
+      const text = region.subarray(parity).toString(dec);
+      const start = text.indexOf('[');
+      if (start === -1) continue;
+      let depth = 0;
+      for (let i = start; i < Math.min(text.length, start + 20000); i += 1) {
+        depth += text[i] === '[' ? 1 : text[i] === ']' ? -1 : 0;
+        if (depth === 0) {
+          try {
+            const parsed = JSON.parse(text.slice(start, i + 1).replace(/\u0000/g, ''));
+            if (Array.isArray(parsed))
+              return { entries: parsed.map(String), encoding: name, attempts };
+          } catch {
+            /* 试下一种 */
+          }
+          break;
         }
-        break;
       }
     }
   }
-  return null;
+  return { entries: null, encoding: null, attempts };
 }
 
 /**
@@ -55,6 +70,7 @@ export function readLiveValue(dir, key) {
   const marker = Buffer.from(`\u0000\u0001${key}`, 'utf8');
   const hits = [];
   const files = [];
+  const attemptsSeen = new Set();
   for (const f of readdirSync(dir)) {
     const full = path.join(dir, f);
     let st;
@@ -71,7 +87,8 @@ export function readLiveValue(dir, key) {
     let at = buf.indexOf(marker);
     while (at !== -1) {
       const parsed = parseArrayAfter(buf, at + marker.length);
-      hits.push({ file: f, mtime: st.mtimeMs, offset: at, entries: parsed?.entries ?? null, encoding: parsed?.encoding ?? null });
+      attemptsSeen.add(parsed.attempts.join(" | "));
+      hits.push({ file: f, mtime: st.mtimeMs, offset: at, entries: parsed.entries, encoding: parsed.encoding });
       at = buf.indexOf(marker, at + marker.length);
     }
   }
@@ -91,6 +108,8 @@ export function readLiveValue(dir, key) {
     valueCount: live === null ? null : live.entries.length,
     historicalHits: parsible.length - (live === null ? 0 : 1),
     allHits: hits.length,
+    /** 试过哪些解码（看不见 ≠ 不存在：没找到时靠它自证「我真的试过了」） */
+    decodeAttempts: [...attemptsSeen],
     files,
     encodingVerdict:
       live === null

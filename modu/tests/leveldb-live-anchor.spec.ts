@@ -1,13 +1,16 @@
 /**
  * leveldb"live 值"选择锚（回归防护，2026-09-23）。
  *
- * 背景（真实翻车）：`extract-leveldb.mjs` 曾用"**取条数最多的一次命中**"当 live 值 ——
- * 而 **leveldb 会保留被覆盖的历史版本**（compaction 前一直在）⇒ 它挑中了历史版本（10 条测试路径），
- * 据此判定"用户数据被污染、要清理"，**白做数轮**；**页面 live 值其实是 `[]`**。
+ * 背景（真实翻车两连）：
+ * 1. `extract-leveldb.mjs` 曾按"**取条数最多的一次命中**"当 live 值 —— 而 leveldb 保留被覆盖的历史版本
+ *    ⇒ 挑中历史版本（10 条测试路径）⇒ 假警报"用户数据被污染"，白做数轮。
+ * 2. 更根本的一条：它**只试 UTF-16LE** 解码 —— 而**纯 ASCII 值（如 `[]`）Chromium 用 1 字节 Latin1 存**
+ *    ⇒ `[]` 对它**完全不可见**，于是报出"最新的 UTF-16 数组"（旧值）✗。
  *
- * 本锚造一个**含两个版本的假 leveldb**（旧文件 N 条、新文件 `[]`，新文件 mtime 最新），
- * 断言工具报 **`[]`**（而不是 N 条），并要求输出里说明"live 值是怎么选出来的"。
- * 夹具写在 `.verify/`（gitignore），测试自建自删。
+ * ⚠ **代表性要求（Lead 指出，已验到字节级）**：旧夹具用 `Buffer.from(JSON.stringify(v),'utf16le')`
+ * 把 `[]` 也写成 UTF-16LE（`5B 00 5D 00`）⇒ **只试 utf16le 的解析器照样能读出来** ⇒ 锚在合成世界一直绿。
+ * 因此本锚**按真实编码规则构造**：`[]` 用 **Latin1/1 字节**、含中文的值用 **UTF-16LE**；
+ * 并**双向**断言"**按时间序取最后一条、与编码无关**"。
  */
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
@@ -17,54 +20,61 @@ import { afterAll, describe, expect, it } from 'vitest';
 const FIXTURE = path.join('.verify', 'leveldb-live-fixture');
 const KEY = 'modu-recent';
 
-/** 写一个"像 leveldb 块"的文件：前导垃圾 + `\x00\x01<key>` 标记 + UTF-16LE 的 JSON 值 */
-function writeVersion(file: string, entries: string[], mtimeOffsetMs: number): void {
+/** 追加一条 `<marker><key><value>` 记录；`encoding` 决定值的**字节形态**（按真实编码规则） */
+function appendRecord(file: string, value: unknown, encoding: 'latin1' | 'utf16le', mtimeOffsetMs: number): void {
   const marker = Buffer.from(`\u0000\u0001${KEY}`, 'utf8');
-  const value = Buffer.from(JSON.stringify(entries), 'utf16le');
-  writeFileSync(file, Buffer.concat([Buffer.from('X'.repeat(64), 'utf8'), marker, value]));
+  const valueBuf = Buffer.from(JSON.stringify(value), encoding === 'latin1' ? 'latin1' : 'utf16le');
+  writeFileSync(file, Buffer.concat([marker, valueBuf]), { flag: 'a' });
   const t = new Date(Date.now() + mtimeOffsetMs);
   utimesSync(file, t, t);
 }
 
-describe('leveldb live 值选择锚（防"把历史版本当现状"）', () => {
+function runTool(dir: string) {
+  const raw = execFileSync('node', ['tests/tools/extract-leveldb.mjs', '--dir', dir, '--key', KEY], { encoding: 'utf8' });
+  return JSON.parse(raw) as {
+    value: string[] | null;
+    valueCount: number | null;
+    historicalHits: number;
+    rule: string;
+    liveSource: { file: string; encoding: string } | null;
+    decodeAttempts?: string[];
+  };
+}
+
+describe('leveldb live 值选择锚（防"历史版本当现状" + 防"只试一种编码"）', () => {
   afterAll(() => {
     rmSync(FIXTURE, { recursive: true, force: true });
   });
 
-  it('旧文件 10 条 + 新文件 [] ⇒ 工具必须报 []（不是 10 条），并说明 live 值的来源', () => {
+  it('较新的是 Latin1 的 []、较旧的是 UTF-16LE 中文数组 ⇒ 必须报 []（编码不得影响选择）', () => {
     rmSync(FIXTURE, { recursive: true, force: true });
     mkdirSync(FIXTURE, { recursive: true });
-    writeVersion(path.join(FIXTURE, '000001.ldb'), Array.from({ length: 10 }, (_, i) => `D:\\old\\file-${i}.md`), -60_000);
-    writeVersion(path.join(FIXTURE, '000010.log'), [], 0);
+    appendRecord(path.join(FIXTURE, '000001.ldb'), ['D:\\旧目录\\计划.md', 'D:\\旧目录\\纪要.md'], 'utf16le', -120_000);
+    appendRecord(path.join(FIXTURE, '000010.log'), [], 'latin1', 0);
 
-    const raw = execFileSync('node', ['tests/tools/extract-leveldb.mjs', '--dir', FIXTURE, '--key', KEY], { encoding: 'utf8' });
-    const parsed = JSON.parse(raw) as {
-      value: unknown;
-      valueCount: number;
-      historicalHits: number;
-      rule: string;
-      liveSource: { file: string } | null;
-    };
-
-    // ⚠ 这两条是本锚的要点：live 值必须是**新文件**里的那个（[]），历史版本只计数
+    const parsed = runTool(FIXTURE);
     expect(parsed.valueCount, `live 值取错了：liveSource=${JSON.stringify(parsed.liveSource)}`).toBe(0);
     expect(parsed.value).toEqual([]);
-    expect(parsed.historicalHits).toBeGreaterThan(0);
-    // 输出里必须能看出"这个 live 值是怎么选出来的"
-    expect(parsed.rule).toContain('最新活动文件');
-    expect(parsed.liveSource?.file).toBe('000010.log');
+    expect(parsed.liveSource?.encoding).toContain('latin1');
+    // 输出必须自证"试过哪些解码"（看不见 ≠ 不存在）
+    expect(parsed.decodeAttempts?.join(',')).toContain('latin1');
+    expect(parsed.decodeAttempts?.join(',')).toContain('utf16le');
   });
 
-  it('反例：若新文件的 mtime 比旧文件更旧 ⇒ 按规则仍取 mtime 最新的那个（旧文件里条数多的反而"更新"时才取它）', () => {
+  it('反例：较新的是 UTF-16LE 中文数组、较旧的是 Latin1 [] ⇒ 必须报**新的那条**（不许偏向 Latin1）', () => {
     rmSync(FIXTURE, { recursive: true, force: true });
     mkdirSync(FIXTURE, { recursive: true });
-    writeVersion(path.join(FIXTURE, '000001.ldb'), ['D:\\older\\only.md'], -120_000);
-    writeVersion(path.join(FIXTURE, '000010.log'), ['D:\\newer\\a.md', 'D:\\newer\\b.md'], 0);
+    appendRecord(path.join(FIXTURE, '000001.ldb'), [], 'latin1', -120_000);
+    appendRecord(path.join(FIXTURE, '000010.log'), ['D:\\新目录\\上午.md'], 'utf16le', 0);
 
-    const raw = execFileSync('node', ['tests/tools/extract-leveldb.mjs', '--dir', FIXTURE, '--key', KEY], { encoding: 'utf8' });
-    const parsed = JSON.parse(raw) as { value: string[]; valueCount: number; liveSource: { file: string } | null };
-    expect(parsed.valueCount).toBe(2);
-    expect(parsed.value).toEqual(['D:\\newer\\a.md', 'D:\\newer\\b.md']);
-    expect(parsed.liveSource?.file).toBe('000010.log');
+    const parsed = runTool(FIXTURE);
+    expect(parsed.valueCount).toBe(1);
+    expect(parsed.value).toEqual(['D:\\新目录\\上午.md']);
+    expect(parsed.liveSource?.encoding).toContain('utf16le');
+  });
+
+  it('规则自证：live 值 = 最新活动文件里的最后一次命中（与编码无关）', () => {
+    const parsed = runTool(FIXTURE);
+    expect(parsed.rule).toContain('最新活动文件');
   });
 });

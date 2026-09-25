@@ -19,6 +19,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseArrayAfter } from './extract-leveldb.mjs';
+
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const args = {};
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -85,6 +87,7 @@ function leveldbMode() {
   const MARKER = Buffer.from(`\u0000\u0001${key}`, 'utf8');
   const ORIGIN_RE = /(https?:\/\/[^\u0000\s"']{1,80}|tauri:\/\/[^\u0000\s"']{1,80}|asset:\/\/[^\u0000\s"']{1,80}|file:\/\/[^\u0000\s"']{1,80})/;
   const perOrigin = new Map();
+  const attemptsSeen = new Set();
   const files = [];
   for (const f of readdirSync(dir).filter((x) => !statSync(path.join(dir, x)).isDirectory())) {
     const mt = statSync(path.join(dir, f)).mtimeMs;
@@ -96,32 +99,11 @@ function leveldbMode() {
       const back = buf.subarray(Math.max(0, at - 120), at).toString('utf8');
       const m = ORIGIN_RE.exec(back);
       const origin = m === null ? '(未识别)' : m[1];
-      // 值：marker 之后按 UTF-16LE 两种偏移试解析 JSON 数组
-      const region = buf.subarray(at + MARKER.length, Math.min(buf.length, at + MARKER.length + 12000));
-      let entries = null;
-      let enc = null;
-      for (const parity of [0, 1]) {
-        const text = region.subarray(parity).toString('utf16le');
-        const start = text.indexOf('[');
-        if (start === -1) continue;
-        let depth = 0;
-        for (let i = start; i < Math.min(text.length, start + 20000); i += 1) {
-          depth += text[i] === '[' ? 1 : text[i] === ']' ? -1 : 0;
-          if (depth === 0) {
-            try {
-              const parsed = JSON.parse(text.slice(start, i + 1).replace(/\u0000/g, ''));
-              if (Array.isArray(parsed)) {
-                entries = parsed.map(String);
-                enc = `utf16le(parity=${parity})`;
-              }
-            } catch {
-              /* 继续 */
-            }
-            break;
-          }
-        }
-        if (entries !== null) break;
-      }
+      // 值：**两种字节编码 × 两种偏移**都试（与 extract-leveldb.mjs 同一实现，避免两处口径漂移）
+      const parsedValue = parseArrayAfter(buf, at + MARKER.length);
+      const entries = parsedValue.entries;
+      const enc = parsedValue.encoding;
+      attemptsSeen.add(parsedValue.attempts.join(" | "));
       const prev = perOrigin.get(origin) ?? { origin, hits: [], file: f };
       prev.hits.push({ file: f, offset: at, mtime: mt, encoding: enc, count: entries === null ? null : entries.length, entries });
       perOrigin.set(origin, prev);
@@ -148,7 +130,7 @@ function leveldbMode() {
       files: [...new Set(o.hits.map((h) => h.file))],
     };
   });
-  return { mode: 'leveldb', dir, files, origins };
+  return { mode: 'leveldb', dir, files, origins, decodeAttempts: [...attemptsSeen] };
 }
 
 const result = args.page === true ? await pageMode() : leveldbMode();
