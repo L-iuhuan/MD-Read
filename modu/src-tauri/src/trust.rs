@@ -58,7 +58,7 @@ pub fn deny_message(action: &str, raw: &str, reason: DenyReason) -> String {
         DenyReason::NotAFile => format!("无法{action}{what}：{raw}（不是文件）"),
         DenyReason::Missing => format!("无法{action}{what}：{raw}（文件不存在或已被移动）"),
         DenyReason::Untrusted => format!(
-            "无法{action}文件：{raw}（该文件不在本次已打开的清单中，请用「打开文件」重新选择）"
+            "无法{action}{what}：{raw}（该文件不在本次已打开的清单中，请用「打开文件」重新选择）"
         ),
     }
 }
