@@ -176,7 +176,11 @@ function installDataLineRule(engine: MarkdownIt): void {
 export const md: MarkdownIt = new MarkdownIt({
   html: false, // D6 红线：禁止内联 HTML 直通
   linkify: true,
-  typographer: true,
+  // 用户裁决（2026-09-23，规格级）：**关掉 typographer** —— 不静默改掉有字面含义的文本。
+  // 与"禁裸 `$…$`（防 `$1,000` 被当公式）"同源：`--flag`、`1--2`、"key": value 都必须与源码一致；
+  // 中文破折号本是 `——`，自动变西文 en dash 既非原样也非中文化。
+  // ⚠️ 别改回 true（golden-HTML 对拍与 AGENTS.md 均锁这条）。
+  typographer: false,
   breaks: true, // D1 台账显式决策：软换行即 <br>
 })
   .use(anchor, { slugify: cjkSlugify })

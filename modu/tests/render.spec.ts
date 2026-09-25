@@ -4,6 +4,7 @@
  * ⑧ 为 M1-E2 回归（mathprotect + emoji 扩词）。
  */
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { renderDocument } from '../src/render/pipeline'
 // 语料经 Vite ?raw 内联为字符串（jsdom 环境下 import.meta.url 非 file 协议，不走 fs）
 import corpusSrc from './corpus/语料.md?raw'
@@ -149,9 +150,17 @@ describe('⑦ GFM 结构件', () => {
     expect(doc.body.textContent).toContain('🔥')
   })
 
-  it('typographer：直引号转中文弯引号', () => {
-    expect(html).toContain('“')
-    expect(html).toContain('”')
+  it('typographer 已关（用户裁决 2026-09-23）：引号/破折号/省略号一律与源码逐字一致', () => {
+    // 旧断言是"直引号 → 弯引号"；用户裁决关闭 typographer 后，渲染结果必须**不改字面文本**。
+    // 静态锚：markdown.ts 里 typographer 必须是 false（防后人又打开）。
+    const markdownSrc = readFileSync('src/render/markdown.ts', 'utf8')
+    expect(markdownSrc).toMatch(/typographer:\s*false/)
+    expect(markdownSrc).not.toMatch(/typographer:\s*true/)
+    // 行为锚：弯引号/西文 en dash/省略号都不得出现（语料里没有它们）
+    expect(html).not.toContain('“')
+    expect(html).not.toContain('”')
+    expect(html).not.toContain('\u2013') // en dash
+    expect(html).not.toContain('\u2026') // …
   })
 
   it('代码块：ts 定向高亮、无语言纯转义、mermaid 图占位', () => {
