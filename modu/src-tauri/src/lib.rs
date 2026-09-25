@@ -377,16 +377,31 @@ pub fn usable_image_paths(paths: &[String]) -> Vec<(std::path::PathBuf, String)>
 /// 目前的实际暴露面（**推断**，未逐一实测）：① CSP `connect-src 'self' ipc:` 让图片内容读不出去；
 /// ② 没有 canvas 读回通路；③ 但"能不能显示任意本地图片"本身已是越权（存在性/尺寸可被 onload 计时当探针）。
 /// ⇒ 它比 `trust` 机制松，属宪法红线 1（渲染层按已被攻陷设防）的相关面。
-/// **收紧方案（待批次 2 裁决，勿擅自改）**：要求图片落在「含已受信文档的目录」之下或「受信目录」之下；
-/// 风险点是 markdown 里写绝对路径引用文档目录之外图片的写法会被一并拒掉，需先取语料核实。
+/// ✅ **批次 2 已收紧（2026-09-23）**：现在还要过 `trust::TrustedPaths::image_allowed` ——
+/// 图片必须落在**含受信文档的目录**之下（同目录/子目录，markdown 的相对引用天然满足）或**受信目录**之下；
+/// 不满足者与"非图片/相对/缺失"一样**静默跳过**（保持 P0-3 缺图不连坐）。前置核实：全仓语料**没有**
+/// 任何图片引用、也没有绝对路径图片引用 ⇒ 影响面为零。验收（真机）：受信文档旁的图片 → 授权成功、
+/// `<img>` loaded；受信目录之外的图片 → **不授权、`<img>` error**。
 ///
 /// 非 `pub`：`pub` 会让 `#[tauri::command]` 给生成的 `__cmd__*` 宏加 `#[macro_export]`，
 /// 与本文件内的 `generate_handler!` 重导入同名宏冲突（E0255）；同 `take_pending_files`。
 #[tauri::command]
-fn allow_asset_paths(app: tauri::AppHandle, paths: Vec<String>) -> Result<(), String> {
+fn allow_asset_paths(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::trust::TrustedPaths>,
+    paths: Vec<String>,
+) -> Result<(), String> {
     for (path, raw) in usable_image_paths(&paths) {
+        // ⚠️ 必须先规范化：`validate_image_path` 只做形状校验（绝对/扩展名/存在/是文件），**不规范化**；
+        // 而受信集合的键是 `fs::canonicalize` 形态（Windows 带 `\\?\` 前缀）—— 不归一化则"同目录图片"
+        // 会被全部误判为不在邻域内（2026-09-23 真机抓到的接线 bug，单测因为直接传 canonical 而没覆盖到）。
+        let canonical = std::fs::canonicalize(&path).unwrap_or(path);
+        // 批次 2 收紧：不在"受信文档邻域 / 受信目录"内的图片一律不授权（静默跳过 = 缺图不连坐）
+        if !state.image_allowed(&canonical) {
+            continue;
+        }
         app.asset_protocol_scope()
-            .allow_file(&path)
+            .allow_file(&canonical)
             .map_err(|e| format!("无法授权图片访问：{raw}（{e}）"))?;
     }
     Ok(())

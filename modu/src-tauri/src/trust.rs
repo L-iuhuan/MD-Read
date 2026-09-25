@@ -118,6 +118,29 @@ pub fn is_trusted_dir(candidate: &Path, dirs: &HashSet<String>) -> bool {
     })
 }
 
+/// **纯策略**：图片（已规范化）是否有资格被授权 asset 协议（R-01 · 批次 2 收紧）。
+///
+/// 规则：落在 **①某个「含受信文档的目录」之下**（同目录或子目录），或 **②某个受信目录之下**。
+/// 与 `is_trusted` 的差别：图片**不必**自己出现在受信集合里（用户从不"打开"图片），
+/// 但它必须与某份**受信文档**同处一棵目录树 —— markdown 的相对图片引用天然满足这条。
+///
+/// 收紧前的实测问题：`allow_asset_paths` 只校验"绝对路径 + 图片扩展名 + 存在 + 是文件"，
+/// 于是被攻陷的渲染层可以授权**任意本地图片**并让 webview 加载（实测：文档目录之外的图片
+/// 授权前 `error`、授权后 `loaded`）。本函数把"能被授权的图片"限制在受信文档的邻域内。
+pub fn image_allowed(image: &Path, files: &HashSet<String>, dirs: &HashSet<String>) -> bool {
+    if is_trusted(image, files, dirs) {
+        return true; // 图片本身就在受信集合/受信目录之下（少见但合理）
+    }
+    let key = key_of(image);
+    let image_path = Path::new(&key);
+    files.iter().any(|file| {
+        Path::new(file)
+            .parent()
+            .map(|dir| dir.is_absolute() && image_path.starts_with(dir))
+            .unwrap_or(false)
+    })
+}
+
 /// 「注册」侧校验通过的产物：可写进集合的规范化键 + 回传给前端的原始串。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Trusted {
@@ -267,9 +290,17 @@ impl TrustedPaths {
         }
     }
 
+    /// asset 协议授权前的资格判定：图片（canonical）必须与某份受信文档同树，或在受信目录之内。
+    /// 清单不可用时**保守拒绝**（缺图由渲染层 error 监听提示，不连坐同批其余图片）。
+    pub fn image_allowed(&self, canonical: &Path) -> bool {
+        match (self.files.lock(), self.dirs.lock()) {
+            (Ok(files), Ok(dirs)) => image_allowed(canonical, &files, &dirs),
+            _ => false,
+        }
+    }
+
     /// 当前受信条目数（诊断用：报告与实际拒绝行为对账）。
-    pub fn counts(&self) -> (usize, usize) {
-        let files = self.files.lock().map(|guard| guard.len()).unwrap_or(0);
+    pub fn counts(&self) -> (usize, usize) {        let files = self.files.lock().map(|guard| guard.len()).unwrap_or(0);
         let dirs = self.dirs.lock().map(|guard| guard.len()).unwrap_or(0);
         (files, dirs)
     }

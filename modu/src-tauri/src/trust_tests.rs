@@ -211,3 +211,46 @@ fn chinese_paths_and_spaces_survive_trust_round_trip() {
     let (files, dirs) = trust.counts();
     assert_eq!((files, dirs), (1, 0));
 }
+
+#[test]
+fn image_allowed_only_beside_a_trusted_document_or_under_a_trusted_dir() {
+    let doc_dir = temp_dir("图片同目录");
+    let doc = doc_dir.join("笔记.md");
+    write(&doc, "x");
+    let beside = doc_dir.join("同目录图.png");
+    write(&beside, "png");
+    let sub = doc_dir.join("assets");
+    std::fs::create_dir_all(&sub).expect("子目录");
+    let in_sub = sub.join("深层图.png");
+    write(&in_sub, "png");
+    let outside_dir = temp_dir("图片外部");
+    let outside = outside_dir.join("别处图.png");
+    write(&outside, "png");
+    let prefix_sibling = temp_dir("图片同目录-后缀");
+    let in_prefix_sibling = prefix_sibling.join("前缀相似图.png");
+    write(&in_prefix_sibling, "png");
+
+    let canon = |p: &Path| std::fs::canonicalize(p).expect("canonicalize");
+    let trust = TrustedPaths::in_memory();
+    // 还没有任何受信文档 → 一律不放行
+    assert!(!trust.image_allowed(&canon(&beside)), "无受信文档时不得放行任何图片");
+    trust.trust_existing(&doc.to_string_lossy()).expect("注册文档");
+    assert!(trust.image_allowed(&canon(&beside)), "受信文档**同目录**的图片应放行");
+    assert!(trust.image_allowed(&canon(&in_sub)), "受信文档**子目录**的图片应放行");
+    assert!(!trust.image_allowed(&canon(&outside)), "受信文档目录**之外**的图片不得放行");
+    assert!(
+        !trust.image_allowed(&canon(&in_prefix_sibling)),
+        "目录名仅前缀相同（`X` vs `X-后缀`）不得命中"
+    );
+    // 文档仍可正常读写（确认收紧没改坏原有集合语义）
+    assert!(trust.allowed_for_read(&doc.to_string_lossy()).is_ok());
+    // ⚠️ 口径锚：**非规范化**路径不得命中 —— 调用方（`allow_asset_paths`）必须先 `canonicalize`，
+    //    否则"文档同目录的图片"会被全部误拒（2026-09-23 真机抓到的接线 bug）。
+    assert!(
+        !trust.image_allowed(&beside),
+        "非 canonical 路径不得命中：集合键是 canonical 形态（Windows 带 \\\\?\\ 前缀）"
+    );
+    // 受信目录也能放行（D-11 文件夹工作区/另存的落点）
+    trust.trust_dir(&outside_dir.to_string_lossy()).expect("注册受信目录");
+    assert!(trust.image_allowed(&canon(&outside)), "受信目录之内的图片应放行");
+}
