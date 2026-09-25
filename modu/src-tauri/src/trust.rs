@@ -80,6 +80,13 @@ pub fn classify_name(raw: &str) -> Result<&Path, DenyReason> {
 
 /// 规范化键：Windows 路径大小写不敏感 + 统一分隔符形态。
 /// `canonicalize` 已在调用方完成（此处只做键化，纯函数、可直测）。
+///
+/// ⚠️ **键在 Windows 上带 `\\?\` 扩展长度前缀**（例如 `\\?\d:\docs\a.md`），这是**刻意**的：
+/// 注册（`trust_existing`）与查询（`allowed_for_read` / `allowed_for_save`）两侧都过同一个
+/// `fs::canonicalize`，于是形态天然对齐，集合比较不会因为"一边带前缀、一边不带"而错配。
+/// **不要把前缀剥掉、也不要改成人类可读的 `D:\...` 形态** —— 那会引入第二种路径形态，
+/// 而"注册 A / 查询 B 都通过"正是白名单最经典的失效方式。持久化清单不面向用户，不必好看。
+/// （Lead 2026-09-23 裁决：接受单一规范形态。）
 pub fn key_of(canonical: &Path) -> String {
     canonical.to_string_lossy().to_lowercase()
 }
