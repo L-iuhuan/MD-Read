@@ -29,6 +29,7 @@ import { mdExtensions } from "./app/md-ext";
 import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
 import { setupFindbar, closeTopmostOverlay, type Findbar } from "./ui/findbar";
+import { setupEmptyState, type EmptyState } from "./ui/empty-state";
 import { askCloseChoice } from "./ui/close-confirm";
 import { installBootWatchdog, revealBootFailure } from "./ui/boot-error";
 import { setupSettings, readAutosavePref } from "./ui/settings";
@@ -63,6 +64,8 @@ let editorSession: EditSession | null = null;
 let activeTabs: TabManager | null = null;
 /** P5 批2：全局 Esc / Ctrl+P / 导出入口都要操作 findbar，模块级引用（boot 时赋值） */
 let activeFindbar: Findbar | null = null;
+/** 空态（欢迎页）实例：resetToWelcome 时重画最近列表，故需模块级引用 */
+let activeEmptyState: EmptyState | null = null;
 /** ⇩PDF 按钮（HTML 初始 disabled，由 JS 在有文档时启用——不动 HTML 的约定） */
 let exportButton: HTMLButtonElement | null = null;
 
@@ -196,6 +199,7 @@ function resetToWelcome(): void {
   doc.hidden = true;
   $("empty-hint").hidden = false;
   document.body.classList.add("empty"); // 空态判据（唯一来源）：CSS 据此隐大纲与 ☰
+  activeEmptyState?.refresh(); // 空态回来了：最近列表按最新存储重画（无则整块不显示）
   mountOutline([]);
   followObserver?.disconnect();
   visibleHeadings.clear();
@@ -748,6 +752,11 @@ async function boot(): Promise<void> {
   // 文件入口只有标签条的「＋」（#btn-newtab）。原先与它并列的那枚「打开」按钮已删——
   // 两枚按钮本就绑同一个 onOpenClick，做的是同一件事（用户定稿「保留一个加号」）。
   $("btn-newtab").addEventListener("click", () => void onOpenClick(tabs));
+  // 空态（欢迎页）接线：主行动按钮与「＋」是同一件事（onOpenClick），最近条目走 openPath
+  activeEmptyState = setupEmptyState({
+    onOpen: () => void onOpenClick(tabs),
+    onPick: (path) => void openPath(tabs, path),
+  });
   exportButton = document.getElementById("btn-export") as HTMLButtonElement | null;
   exportButton?.addEventListener("click", () => void onExportClick(tabs));
   setupRecentMenu((path) => void openPath(tabs, path));

@@ -198,7 +198,42 @@
           <nav id="outline-list" class="outline-list"></nav>
         </aside>
         <main id="content" class="content">
-          <div id="empty-hint" class="empty-hint">拖入 .md 文件，或点标签条上的「＋」</div>
+          <!-- 空态（首访欢迎页，2026-09-23 第二批落地·用户选 V1「克制」稿）：
+               此前这里只有一行灰字提示，且提示指向的「＋」在空态里根本不可见 ——
+               **空态没有任何可见的文件入口**，这是本批的根本修复。
+               结构：品牌词标 → 主行动按钮 → 两枚入口提示（拆开）→ 最近打开（可空）→ 快捷键脚注。
+               判据仍是 body.empty（与 .empty .outline / .empty #btn-outline 同源，不另立第二套）。
+               #empty-recent 无最近时带 hidden（全局 [hidden] 兜底规则保证它真不显示）。 -->
+          <div id="empty-hint" class="empty-hint">
+            <section class="empty-panel" aria-label="欢迎">
+              <div class="empty-brand">
+                <div class="empty-wordmark">墨读</div>
+                <div class="empty-rule" aria-hidden="true"></div>
+                <div class="empty-sub">本地 Markdown 阅读器</div>
+              </div>
+              <button id="empty-open" type="button" class="empty-primary">打开 Markdown 文件</button>
+              <div class="empty-entries">
+                <div class="empty-entry">
+                  <span class="empty-ico" aria-hidden="true">⇣</span>
+                  <span class="empty-entry-text"><b>拖入 .md 文件</b><span>松手即开</span></span>
+                </div>
+                <div class="empty-entry">
+                  <span class="empty-ico" aria-hidden="true">⏎</span>
+                  <span class="empty-entry-text"><b>双击 .md 关联打开</b><span>已在系统关联</span></span>
+                </div>
+              </div>
+              <div id="empty-recent" class="empty-recent" hidden>
+                <div class="empty-recent-head">
+                  <span>最近打开</span>
+                  <span id="empty-recent-count"></span>
+                </div>
+                <div id="empty-recent-list" class="empty-recent-list"></div>
+              </div>
+              <div class="empty-foot">
+                打开文档后按 <code>Ctrl+E</code> 进入编辑，<code>Ctrl+P</code> 导出 PDF
+              </div>
+            </section>
+          </div>
           <article id="doc" class="mdc" hidden></article>
           <!-- M3 编辑态（F7）：CM6 常驻容器，与 #doc 互斥显隐；高度由 editor.ts 内联撑满 -->
           <div id="editor-pane" class="editor-pane" hidden aria-label="源码编辑区"></div>

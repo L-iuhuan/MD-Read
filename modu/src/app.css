@@ -1012,16 +1012,22 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   background: var(--bg-app);
 }
 
-/* 欢迎页（首访空态）：居中引导，不喧宾夺主 —— 一枚发丝线词标 + 一行提示。
-   空态没有纸面（#doc 仍 hidden），所以这里直接坐在画布上，不铺白底。
-   标记选型取舍：先用过「56px 方框内放大号墨字」的做法，放弃——墨是 15 画字，
-   放大到 26px 当装饰标记时笔画密度过高（且合成加粗会糊），在小尺寸/低 DPI 下不可读；
-   改用产品名词标（15px/600 发丝线胶囊）：信息更明确，也不虚构一套图标语言。*/
+/* 空态（首访欢迎页）：2026-09-23 第二批按用户选定的 **V1「克制」** 设计稿落地。
+   旧形态（一枚 15px 灰胶囊词标 + 一行灰提示）的三个问题：无品牌感、无主行动、
+   信息密度过低，且提示语指着一个（当时）不可见的「＋」。现在的四段式：
+   品牌词标 → 主行动按钮 → 两枚入口提示（拆开）→ 最近打开卡片（可空）。
+   取值纪律：全部走 token（描边 --border / 细线 --line/--hair / 卡片 --bg-surface +
+   --shadow-2 + --radius-3，控件 --radius-2，内嵌项 --radius-1），零字面色值。
+   与设计稿的对应：稿子 .empty 栏宽 420px、词标 26px/600 字距 .32em、主按钮 40px 高、
+   两枚提示卡并排、最近卡两行式 —— 这里逐项同值（提示卡与最近条目直接复用 §7c 的
+   .menu-item 列表语言，全站只此一套「两行式条目」）。 */
 .empty-hint {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: center;          /* 老浏览器兜底（不认识下一行的 safe 关键字）*/
+  justify-content: safe center;     /* 内容高于窗口时退回 start：否则顶端会被裁掉且滚不到 */
+  overflow-y: auto;                 /* 窗口再矮也不会丢失内容（可滚）*/
   gap: var(--size-4);
   min-block-size: 100%;
   padding: var(--size-6);
@@ -1029,19 +1035,104 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   font-size: var(--fs-body);      /* 跟随用户字号设置，与正文同一档 */
   color: var(--text-muted);
 }
-.empty-hint::before {
-  content: "墨读";
-  padding: var(--size-1) var(--size-3) var(--size-1) calc(var(--size-3) + .18em);
-  /* 字号随 --fs-body 联动（beta 实锤：原先写死 15px，用户调大正文字号时词标不跟手）。
-     用 em 而非 calc：本元素的父级 .empty-hint 已是 var(--fs-body)，.9375em = 15px@16px，
-     与旧值逐像素相同，且随字号等比放大。不用 rem：rem 跟的是根字号（恒 16px），
-     改了也不动，等于没改。 */
-  font-size: .9375em;
+.empty-panel {
+  inline-size: 420px;             /* 稿子栏宽；窄窗由 max-inline-size 收 */
+  max-inline-size: 100%;
+}
+.empty-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.empty-wordmark {
+  /* 稿子：26px/600、字距 .32em（右侧补 .32em 的 text-indent 抵消尾隙）。
+     用 em 而非 px：随用户正文字号设置等比放大（旧胶囊词标同款理由）。 */
+  font-size: 1.625em;
   font-weight: 600;
-  letter-spacing: .18em;          /* 右内边距多留 .18em，补掉字距的尾隙 */
-  color: var(--text-muted);
-  border: 1px solid var(--border-strong);
+  letter-spacing: .32em;
+  text-indent: .32em;
+  color: var(--text);
+}
+.empty-rule { inline-size: 44px; block-size: 1px; background: var(--line); }
+.empty-sub { font-size: .78125em; letter-spacing: .04em; color: var(--text-muted); }
+
+.empty-primary {
+  margin-block-start: var(--size-6);
+  display: block;
+  inline-size: 100%;
+  block-size: 40px;
+  font: inherit;
+  font-size: .875em;
+  font-weight: 600;
+  color: var(--accent-text-hover);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
   border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1);
+}
+.empty-primary:hover { background: var(--accent-tint-hover); }
+.empty-primary:active { background: var(--bg-active); }
+
+.empty-entries { margin-block-start: var(--size-4); display: flex; gap: var(--size-2); }
+.empty-entry {
+  flex: 1 1 0;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: 9px 12px;
+  text-align: start;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+.empty-ico { flex: none; inline-size: 18px; text-align: center; color: var(--accent-solid); }
+.empty-entry-text { min-inline-size: 0; }
+.empty-entry-text b { display: block; font-weight: 600; font-size: .78125em; color: var(--text); }
+.empty-entry-text span { font-size: .71875em; color: var(--fg-dim); }
+
+/* 最近打开：卡片语言（纸面底 + 1px --border + radius-3 + --shadow-2），条目复用 .menu-item */
+.empty-recent {
+  margin-block-start: var(--size-5);
+  text-align: start;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.empty-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px;
+  font-size: .6875em;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--hair);
+}
+.empty-recent-list { padding: var(--size-1); }
+
+.empty-foot { margin-block-start: var(--size-5); font-size: .71875em; color: var(--fg-dim); }
+.empty-foot code {
+  font-family: var(--font-mono);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  padding: 1px 5px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+}
+
+/* 矮窗降级（设计稿的「窄窗降级规则」）：窗口高度不足 ~700px 时压掉纵向节奏 ——
+   设计稿只需 563px 高，但本应用最小窗口高 480px（减顶栏 48 + 状态栏 22 = 410）。
+   V1 用的是文字词标（不是 V2 的印面），故没有「印面降尺寸」这一步，
+   降级点落在字形/间距/控件高度上。 */
+@media (max-height: 700px) {
+  .empty-wordmark { font-size: 1.375em; }
+  .empty-rule { display: none; }
+  .empty-primary { margin-block-start: var(--size-5); block-size: 36px; }
+  .empty-entries { margin-block-start: var(--size-3); }
+  .empty-entry { padding: 7px 10px; }
+  .empty-recent { margin-block-start: var(--size-4); }
+  .empty-recent-list .menu-item { padding-block: 6px; }
+  .empty-foot { margin-block-start: var(--size-4); }
 }
 
 /* ==========================================================================

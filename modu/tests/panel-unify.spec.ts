@@ -302,6 +302,41 @@ describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态
     expect(body).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(body).not.toMatch(/rgba?\(/);
   });
+
+  it("空态 V1 落地：主行动按钮 + 两枚入口提示 + 最近卡片（无则 hidden），旧胶囊词标已去", () => {
+    expect(htmlStripped).toMatch(/<button id="empty-open"[^>]*>打开 Markdown 文件<\/button>/);
+    expect(htmlStripped).toMatch(/<b>拖入 \.md 文件<\/b>/);
+    expect(htmlStripped).toMatch(/<b>双击 \.md 关联打开<\/b>/);
+    expect(htmlStripped).toMatch(/<div id="empty-recent" class="empty-recent" hidden>/);
+    expect(htmlStripped).toMatch(/id="empty-recent-list"/);
+    // 旧形态：灰胶囊词标（::before content:"墨读"）与「点标签条上的＋」那句提示都不许回来
+    expect(appBody).not.toMatch(/\.empty-hint::before/);
+    expect(appBody).not.toMatch(/content:\s*"墨读"/);
+    expect(htmlStripped).not.toMatch(/拖入 \.md 文件，或点标签条上的/);
+    // 入口提示与最近条目复用全站唯一一套两行式列表语言
+    expect(htmlStripped).toMatch(/<div class="empty-entry">/);
+  });
+
+  it("空态样式的色值纪律：所有 .empty-* 规则的声明块里零字面色值", () => {
+    const blocks = appBody.match(/\.empty-[\w-]+[^{]*\{[^}]*\}/g) ?? [];
+    expect(blocks.length).toBeGreaterThanOrEqual(8);
+    for (const block of blocks) {
+      expect(block, `空态规则出现字面色值：${block.slice(0, 60)}`).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    }
+    // 卡片语言四件套（与 §6/§7c 浮层同一套）
+    expect(appBody).toMatch(/\.empty-recent\s*\{[^}]*border-radius:\s*var\(--radius-3\)/);
+    expect(appBody).toMatch(/\.empty-recent\s*\{[^}]*box-shadow:\s*var\(--shadow-2\)/);
+    expect(appBody).toMatch(/\.empty-entry\s*\{[^}]*border-radius:\s*var\(--radius-2\)/);
+  });
+
+  it("空态矮窗降级：max-height 断点里压词标与纵向节奏（V1 是文字词标，无印面降级）", () => {
+    const mq = /@media \(max-height: 700px\)\s*\{([\s\S]*?)\n\}/.exec(appBody)?.[1] ?? "";
+    expect(mq).not.toBe("");
+    expect(mq).toMatch(/\.empty-wordmark\s*\{[^}]*font-size/);
+    expect(mq).toMatch(/\.empty-primary\s*\{[^}]*block-size:\s*36px/);
+    // 内容高于窗口时不许被裁掉也滚不到：容器得能滚
+    expect(appBody).toMatch(/\.empty-hint\s*\{[^}]*overflow-y:\s*auto/);
+  });
 });
 
 describe("D-05 S1 底部下划线式标签", () => {
