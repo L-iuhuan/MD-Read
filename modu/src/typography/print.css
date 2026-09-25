@@ -1,10 +1,12 @@
 /**
  * print.css —— 唯一打印覆盖层（宪法：打印样式只允许存在于本文件，新增打印样式只许写这里，
- * 防 Print Studio 时代多份打印样式漂移重演）。M4·导出 PDF：WebView2 PrintToPdf 走
+ * 防 Print Studio 时代多份打印样式漂移重演）。M4·导出 PDF：CDP Page.printToPDF 走
  * Chromium 打印管线，本文件即 PDF 版式契约（物理侧配套见 src-tauri/src/print.rs）。
  *
  * 红线（Print Studio 尸检，违者返工）：
- * - 禁 @page margin-box（@bottom-center / counter(page)）——Chromium 从未实现；
+ * - 禁 @page margin-box（@bottom-center / counter(page)）——历史上 Chromium 未实现，
+ *   131+ 已支持；但本项目经评审决定不使用（理由：保持打印契约的单一覆盖层，并与
+ *   WebView2 PrintSettings 的行为一致）。页码改由 CDP Page.printToPDF 的 footerTemplate 提供；
  * - 禁光栅化路径（jsPDF/html2canvas）——公式变糊根因；
  * - 页边距只由 @page 管，body / #doc 一律不写页边距——
  *   「@page{margin:0}+body padding」会让分页处裁内容（毒资产，判死不搬）。
@@ -17,7 +19,7 @@
   }
 
   /* 颜色保真（D5 ①）：背景/边框/行内 code 与链接的着色原样进 PDF。
-     物理侧配套：PrintSettings ShouldPrintBackgrounds=true */
+     物理侧配套：CDP printBackground=true（等价旧 ShouldPrintBackgrounds(true)） */
   *,
   *::before,
   *::after {

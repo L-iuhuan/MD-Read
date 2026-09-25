@@ -8,7 +8,7 @@
 
 ## 环境怪癖（两台开发机）
 
-- **双机**：内网机（公司内网）/ 外网机（家机外网），代码走 git（`pull --rebase` 再 push）。git 身份未配，首次 push 前找用户定。
+- **双机**：内网机（公司内网）/ 外网机（家机外网），代码走 git（`pull --rebase` 再 push）。提交身份为中性 `MD-Read <noreply@example.com>`（仓库 local 已配；历史已重写为该身份；**不要**改回个人身份）。
 - **公司机已配镜像**：crates 走清华 sparse（`~/.cargo/config.toml` + 用户级 `RUSTUP_DIST_SERVER`），npm 走 npmmirror。**不要**改回官方源（index.crates.io 4.4s/次）。
 - **PowerShell 5.1 stderr 坑**：原生长程序（rustup/cargo/tauri）进度写 stderr，`$ErrorActionPreference='Stop'` + `2>&1` 会假死中断——用 `*> file.log` 重定向再看尾行。已在 rustup 安装时翻车一次。
 - **PATH 陷阱**：agent 宿主进程在装 Rust 之前启动，其子进程 PATH 无 `~/.cargo/bin`——每个新 shell 会话先 `$env:PATH="$env:USERPROFILE\.cargo\bin;"+$env:PATH`（rustup 写的是用户级 PATH，宿主重启后自动生效）。
@@ -28,7 +28,7 @@
 
 ## PDF 规则（Print Studio 尸检结论，违者返工）
 
-- 禁 `@page` margin-box（`@bottom-center`/`counter(page)`）——Chromium 从未实现
+- 禁 `@page` margin-box（`@bottom-center`/`counter(page)`）——**历史上 Chromium 未实现，131+ 已支持；但本项目经评审决定不使用**（理由：保持打印契约的单一覆盖层，并与 WebView2 `PrintSettings` 的行为一致）。页码走 CDP `Page.printToPDF` 的 `footerTemplate`（见 print.rs）
 - 禁 jsPDF/html2canvas 光栅化路径——公式变糊根因
 - `@page { size: A4; margin: 18mm }`，body 不放页边距；表格行级分页 `tr{break-inside:avoid}` + `thead{display:table-header-group}`
 - `.katex-mathml { display: none }` 防 PDF 鬼影重复文字

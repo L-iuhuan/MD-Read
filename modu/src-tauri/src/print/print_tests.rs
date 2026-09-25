@@ -15,7 +15,7 @@ fn case_dir(case: &str) -> PathBuf {
     dir
 }
 
-/// 替身导出：把 PDF 字节写进临时路径（等价 PrintToPdf 落盘产物）。
+/// 替身导出：把 PDF 字节写进临时路径（等价 CDP `Page.printToPDF` 落盘产物）。
 fn fake_print(temp: &Path, bytes: &[u8]) {
     std::fs::write(temp, bytes).expect("写临时文件不应失败");
 }

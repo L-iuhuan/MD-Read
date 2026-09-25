@@ -1,7 +1,7 @@
 /**
  * 墨读 M2 应用壳：多标签 + 最近文件 + 文档内查找 + 大纲滚动跟随。
  * M3-A 增编辑态（F7）：CM6 会话在 editor/，此处只做接线（Ctrl+E/S/F、✎ 按钮）。
- * M4 增导出 PDF（⇩ 按钮）：等待渲染完备 → 存路径 → PrintToPdf 直出，逻辑在 render/print-ready 与 Rust print.rs。
+ * M4 增导出 PDF（⇩ 按钮）：等待渲染完备 → 存路径 → CDP `Page.printToPDF` 直出，逻辑在 render/print-ready 与 Rust print.rs。
  * 排版在 typography/，渲染在 render/，标签/最近在 app/，查找在 ui/——此处只做接线。
  */
 import { invoke } from "@tauri-apps/api/core";
@@ -272,7 +272,7 @@ async function onOpenClick(tabs: TabManager): Promise<void> {
   await openEachMd(pickedPaths, (path, activate) => openPath(tabs, path, activate));
 }
 
-/* ---- 导出 PDF（M4）：等待渲染完备 → 存路径 → PrintToPdf 直出 ---- */
+/* ---- 导出 PDF（M4）：等待渲染完备 → 存路径 → CDP `Page.printToPDF` 直出 ---- */
 
 /** 默认存档名：当前文件名去 .md/.markdown 扩展 + .pdf */
 function defaultPdfName(path: string): string {
