@@ -261,6 +261,38 @@ impl TrustedPaths {
         self.allowed(raw, "保存")
     }
 
+    /// **列目录入口（D-11 文件夹工作区）**：只有**已在受信集合里的目录**（受信目录本身，或它之下的子目录）
+    /// 才能被列出。判定与读路径**同源**（`is_trusted_dir` ⇒ 按路径分量），并且 **fail-closed**：
+    /// · 能规范化 ⇒ 直接判是否受信；
+    /// · 规范化失败（不存在 / 不可读）⇒ **只有父目录受信**才给"缺失/不可读"这类**可行动**文案；
+    ///   其余一律 `Untrusted` —— **不因"存在与否"给出不同答复**（不泄露存在性）✓
+    pub fn allowed_for_list_dir(&self, raw: &str) -> Result<PathBuf, String> {
+        let dirs = self
+            .dirs
+            .lock()
+            .map_err(|_| "授权清单暂时不可用，请稍后重试".to_string())?;
+        match std::fs::canonicalize(raw) {
+            Ok(canonical) => {
+                if is_trusted_dir(&canonical, &dirs) {
+                    Ok(canonical)
+                } else {
+                    Err(deny_message("浏览", raw, DenyReason::Untrusted))
+                }
+            }
+            Err(_) => {
+                let parent = Path::new(raw)
+                    .parent()
+                    .and_then(|p| std::fs::canonicalize(p).ok());
+                match parent {
+                    Some(parent_canonical) if is_trusted_dir(&parent_canonical, &dirs) => {
+                        Err(deny_message("浏览", raw, DenyReason::Missing))
+                    }
+                    _ => Err(deny_message("浏览", raw, DenyReason::Untrusted)),
+                }
+            }
+        }
+    }
+
     fn allowed(&self, raw: &str, action: &str) -> Result<PathBuf, String> {
         classify_name(raw).map_err(|reason| deny_message(action, raw, reason))?;
         let files = self.files.lock().map_err(|_| "授权清单暂时不可用，请稍后重试".to_string())?;

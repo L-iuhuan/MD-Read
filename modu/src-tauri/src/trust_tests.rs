@@ -254,3 +254,44 @@ fn image_allowed_only_beside_a_trusted_document_or_under_a_trusted_dir() {
     trust.trust_dir(&outside_dir.to_string_lossy()).expect("注册受信目录");
     assert!(trust.image_allowed(&canon(&outside)), "受信目录之内的图片应放行");
 }
+
+/// D-11 提交①：`..` 逃逸必须**显式**被拒 —— **读**与**列目录**两条路径都测。
+/// （此前只靠"相对路径一律拒 + canonicalize 归一"**间接**覆盖 ⇒ 间接覆盖最容易静默回归 ✗）
+#[test]
+fn dotdot_escape_is_rejected_explicitly_for_read_and_for_list_dir() {
+    let root = temp_dir("穿越");
+    let inside = root.join("工作区");
+    std::fs::create_dir_all(&inside).expect("工作区应可创建");
+    write(&root.join("外面.md"), "# 外面的文件\n");
+    let trust = TrustedPaths::in_memory();
+    trust.trust_dir(&inside.to_string_lossy()).expect("注册受信目录应成功");
+
+    let escaped_read = inside.join("..").join("外面.md");
+    assert!(trust.allowed_for_read(&escaped_read.to_string_lossy()).is_err(), "`..` 逃出的读必须被拒（即使目标真实存在）");
+    let escaped_dir = inside.join("..");
+    assert!(trust.allowed_for_list_dir(&escaped_dir.to_string_lossy()).is_err(), "`..` 逃出的列目录必须被拒");
+    assert!(trust.allowed_for_list_dir(&inside.to_string_lossy()).is_ok(), "正对照：受信目录本身应可列");
+}
+
+/// D-11 提交①：列目录判定的四条 —— 受信目录本身 ✓ / 其子目录 ✓ / 兄弟（字符串前缀相似）✗ / 目录外 ✗；
+/// 并断言拒绝文案**不含英文 OS 错误**（fail-closed、不泄露存在性）。
+#[test]
+fn list_dir_allows_trusted_dir_and_descendants_only() {
+    let root = temp_dir("列目录");
+    let books = root.join("books");
+    let sub = books.join("sub");
+    let sibling = root.join("books-elsewhere");
+    for d in [&books, &sub, &sibling] { std::fs::create_dir_all(d).expect("目录应可创建"); }
+    let trust = TrustedPaths::in_memory();
+    trust.trust_dir(&books.to_string_lossy()).expect("注册受信目录应成功");
+
+    assert!(trust.allowed_for_list_dir(&books.to_string_lossy()).is_ok(), "受信目录本身可列");
+    assert!(trust.allowed_for_list_dir(&sub.to_string_lossy()).is_ok(), "其子目录可列");
+    assert!(trust.allowed_for_list_dir(&sibling.to_string_lossy()).is_err(), "兄弟目录（字符串前缀相似）不得可列 —— 必须按路径分量");
+    assert!(trust.allowed_for_list_dir(&root.to_string_lossy()).is_err(), "受信目录之上不得可列");
+
+    let ghost = root.join("不存在的目录");
+    let err = trust.allowed_for_list_dir(&ghost.to_string_lossy()).expect_err("目录外一律拒");
+    assert!(!err.contains("No such file"), "拒绝文案不得含英文 OS 错误：{err}");
+    assert!(!err.is_empty(), "拒绝必须给出中文可行动文案");
+}
