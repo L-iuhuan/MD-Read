@@ -229,6 +229,11 @@
 
 ## 流程
 
+- **推送前跑 `pnpm run check:full`**（= `check` + **`build`**）：`check` 只做 tsc/eslint/vitest，**不构建、不压 CSS** ⇒
+  CSS 注释里写进 `*/` 这类坏**本地永远看不见**（2026-09-23 实例：`tokens.css` 注释含 `--ok-*/--warn-*/--danger-*`，
+  其中 `*/` **提前终止注释** ⇒ lightningcss 压缩报 `Unexpected token Delim('*')` ⇒ `vite build` 挂 ⇒ `dist/` 产不出 ⇒
+  rust job 连带挂 —— **是 CI 先发现的** ✗）。同类形态还要扫 `--x-*/--y-*`（注释里出现注释结束符）。
+
 - 每里程碑收工给凭证：改了什么/验证输出/遗留风险；tag 规范 `m0-done`…`m5-done`
 - 提交信息 `类型: 中文描述`（feat/fix/docs/chore）
 - 渲染改动过 golden-HTML 对拍（固定语料含金额串/引号/data-line）

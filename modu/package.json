@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && eslint . && vitest run"
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && eslint . && vitest run",
+    "check:full": "pnpm run check && pnpm run build",
   },
   "dependencies": {
     "@codemirror/commands": "6.11.1",
