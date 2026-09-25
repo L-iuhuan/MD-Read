@@ -196,7 +196,8 @@
   --alert-note-bg: color-mix(in oklab, var(--accent-solid) 10%, var(--bg-quote));
   --alert-tip-line: var(--green-11);
   --alert-tip-bg: color-mix(in oklab, var(--green-11) 12%, var(--bg-quote));
-  /* IMPORTANT 与 NOTE 同族（都是 accent）⇒ 底更深（18% vs 10%）+ CSS 里再加"更粗 + double"边框做非颜色差异 */
+  /* IMPORTANT 与 NOTE 同族（都是 accent）⇒ 底更深（18% vs 10%）+ **前缀字形**（◆ vs ※）做**非颜色差异**
+     （曾试 `6px double` 边框 —— 实测无效、CSS 已删；见 cjk.css 同处注释）*/
   --alert-important-line: var(--accent-solid);
   --alert-important-bg: color-mix(in oklab, var(--accent-solid) 18%, var(--bg-quote));
   --alert-warning-line: var(--amber-12);
