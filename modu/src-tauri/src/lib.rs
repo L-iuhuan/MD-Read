@@ -1,9 +1,10 @@
 pub mod fs;
 mod print;
 mod single;
+pub mod trust;
 
 use std::sync::Mutex;
-use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
+use tauri::{DragDropEvent, Emitter, LogicalPosition, LogicalSize, Manager, State, WindowEvent};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2, ICoreWebView2NavigationStartingEventArgs,
     ICoreWebView2NavigationStartingEventHandler, ICoreWebView2NavigationStartingEventHandler_Impl,
@@ -262,6 +263,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fs::read_file,
             fs::save_file,
+            fs::pick_markdown_files,
             take_pending_files,
             allow_asset_paths,
             print::spike_log,
@@ -269,6 +271,18 @@ pub fn run() {
             print::export_pdf,
             print::pick_save_path
         ])
+        // R-01：OS 拖放是**不可伪造**的注册入口之一（渲染层无法自证），在 Rust 侧收口。
+        .on_window_event(|window, event| {
+            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+                let Some(state) = window.app_handle().try_state::<trust::TrustedPaths>() else {
+                    return;
+                };
+                let raws: Vec<String> =
+                    paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+                let granted = fs::trust_all_existing(&state, &raws);
+                println!("[trust] 拖放注册 {granted}/{} 个 Markdown 文件", raws.len());
+            }
+        })
         .setup(|app| {
             attach_nav_guard(app); // 整窗导航兜底：趁启动挂上 WebView2 事件（见函数注释）
             // 默认窗口尺寸：按主屏工作区夹取后居中（见上方 WIN_* 常量说明与 AGENTS.md 契约）
@@ -279,6 +293,17 @@ pub fn run() {
             }
             let pending = md_paths(&std::env::args().collect::<Vec<String>>());
             app.manage(PendingFiles(Mutex::new(pending.clone())));
+            // R-01：受信清单（持久化）。argv/文件关联进来的路径**在 Rust 侧登记**——
+            // 渲染层调不调 allow 都改变不了"这个文件是不是用户双击/命令行给的"。
+            app.manage(fs::load_trusted_store(app.handle()));
+            if let Some(trust) = app.try_state::<trust::TrustedPaths>() {
+                let granted = fs::trust_all_existing(&trust, &pending);
+                let (files, dirs) = trust.counts();
+                println!(
+                    "[trust] 启动：argv 注册 {granted}/{}，清单现有 {files} 文件 / {dirs} 目录",
+                    pending.len()
+                );
+            }
             // 事件照发（供未来多标签等场景）；竞态由 take_pending_files 兜底。
             // 载荷是**筛过的 Markdown 列表**：前端监听器直接按列表逐个开标签。
             if !pending.is_empty() {

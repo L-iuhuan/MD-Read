@@ -71,8 +71,7 @@ describe("P0-6 · isMarkdownPath（共用扩展名判据）", () => {
   });
 });
 
-describe("P0-6 · 三处清单必须同集（漂移即红）", () => {
-  it("tauri.conf.json 的 fileAssociations.ext 与 MD_EXTENSIONS 逐项一致", () => {
+describe("P0-6 · 三处清单必须同集（漂移即红）", () => {  it("tauri.conf.json 的 fileAssociations.ext 与 MD_EXTENSIONS 逐项一致", () => {
     expect(associationExtensions()).toEqual([...MD_EXTENSIONS]);
   });
 
@@ -89,14 +88,31 @@ describe("P0-6 · 三处清单必须同集（漂移即红）", () => {
     expect(items).toEqual([...MD_EXTENSIONS]);
   });
 
-  it("三入口共用一份清单：drop.ts 不再自写扩展名、main.ts 对话框取 mdExtensions()", () => {
+  it("R-01 起对话框在 Rust 侧：main.ts 走 pick_markdown_files，扩展名清单落到 trust.rs", () => {
     const drop = readFileSync("src/app/drop.ts", "utf8");
     const main = readFileSync("src/main.ts", "utf8");
     expect(drop).toMatch(/from "\.\/md-ext"/);
     expect(drop).not.toMatch(/endsWith\(/); // 判据不再散落在 drop.ts
-    expect(main).toMatch(/extensions:\s*mdExtensions\(\)/);
-    expect(main).not.toMatch(/extensions:\s*\[/); // 对话框不许再写死一份
-    expect(main).toMatch(/multiple:\s*true/); // P0-6：对话框支持多选
+    // R-01：受信登记必须在 Rust 侧（渲染层不许自证授权），故对话框搬走、不再由 main.ts 传 filter
+    expect(main).toMatch(/invoke<string\[\]>\("pick_markdown_files"\)/);
+    expect(main).not.toMatch(/@tauri-apps\/plugin-dialog/);
+    expect(main).not.toMatch(/extensions:\s*\[/); // 不许再写死一份
+  });
+
+  it("Rust 侧扩展名清单（trust.rs MARKDOWN_EXTENSIONS）与 TS / tauri.conf.json 逐项一致", () => {
+    const rust = readFileSync("src-tauri/src/trust.rs", "utf8");
+    const declaration = /pub const MARKDOWN_EXTENSIONS: \[&str; (\d+)\] = \[([^\]]*)\];/.exec(rust);
+    expect(declaration, "trust.rs 应声明 MARKDOWN_EXTENSIONS").not.toBeNull();
+    const count = Number(declaration?.[1]);
+    const items = (declaration?.[2] ?? "")
+      .split(",")
+      .map((raw) => raw.trim().replace(/^"|"$/g, ""))
+      .filter((raw) => raw !== "");
+    expect(count).toBe(items.length);
+    expect(items).toEqual([...MD_EXTENSIONS]);
+    // 对话框 filter 也必须是同一份（写死在 fs.rs 的数组里 → 在这里对拍）
+    const fs = readFileSync("src-tauri/src/fs.rs", "utf8");
+    expect(fs).toMatch(/add_filter\("Markdown", &\["md", "markdown", "mdx"\]\)/);
   });
 
   it("Rust 侧多文件解析：take_pending_files + md_paths（旧的单文件契约已迁移）", () => {

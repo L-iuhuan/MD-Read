@@ -1,13 +1,22 @@
 //! 文件读写与编码契约：读取时 BOM 优先、chardetng 兜底检测；写回时保持原编码与
 //! 原字节形态（BOM/行尾不丢失）——D7 红线："保持原编码与原字节形态，禁止静默转换"。
+//!
+//! R-01 / P1-6：读写在**受信路径集合**内才放行（见 `crate::trust` 的信任模型与
+//! `docs/tasks/Phase2-前-决策登记-2026-09-23.md` 的 D-09/D-10）。
+//! 注册只能由 OS/用户动作触发（Rust 侧对话框 / 拖放 / argv / 持久化清单），
+//! **没有任何渲染层可调的注册命令** —— 否则攻陷页面可以自证授权。
 
 use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use encoding_rs::Encoding;
 use serde::Serialize;
+use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
+
+use crate::trust::{deny_message, DenyReason, TrustedPaths};
 
 /// 读取结果：解码后的文本 + 实际使用的编码名（encoding_rs 规范名，可直接回传 save_file）
 /// + BOM/CRLF 保真标志（写回时据此恢复原字节形态）。
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct LoadedFile {
     pub text: String,
     pub encoding: String,
@@ -50,10 +59,20 @@ fn decode_bytes(bytes: &[u8]) -> (String, String, bool) {
     (text.into_owned(), encoding.name().to_string(), bom)
 }
 
+/// IO 错误 → 面向使用者的中文原因（**不把 `os error 2` 这类英文塞进 UI**）。
+fn io_reason(error: &std::io::Error) -> &'static str {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "文件不存在或已被移动",
+        std::io::ErrorKind::PermissionDenied => "没有访问权限",
+        std::io::ErrorKind::IsADirectory => "不是文件",
+        _ => "读取失败（文件可能被占用或已损坏）",
+    }
+}
+
 /// 读取文件并检测编码与字节形态（BOM/CRLF）。错误信息面向使用者，含路径与原因。
-#[tauri::command]
-pub fn read_file(path: String) -> Result<LoadedFile, String> {
-    let bytes = std::fs::read(&path).map_err(|e| format!("无法读取文件：{path}（{e}）"))?;
+/// 受信校验在命令层（`read_file`）完成，这里只处理已放行的路径。
+pub fn read_file_at(path: &str) -> Result<LoadedFile, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("无法读取文件：{path}（{}）", io_reason(&e)))?;
     let (text, encoding, bom) = decode_bytes(&bytes);
     let (crlf_count, lf_count) = count_line_endings(&bytes);
     Ok(LoadedFile {
@@ -62,6 +81,18 @@ pub fn read_file(path: String) -> Result<LoadedFile, String> {
         bom,
         crlf: crlf_count > lf_count,
     })
+}
+
+/// 读入口：**先过受信校验**（返回规范化路径，读写都用它落盘），再读盘。
+pub fn read_file_checked(trust: &TrustedPaths, raw: &str) -> Result<LoadedFile, String> {
+    let canonical = trust.allowed_for_read(raw)?;
+    read_file_at(&canonical.to_string_lossy())
+}
+
+/// `read_file` 命令：渲染层唯一读入口（受信集合外的路径一律拒，文案见 `trust::deny_message`）。
+#[tauri::command]
+pub fn read_file(state: tauri::State<TrustedPaths>, path: String) -> Result<LoadedFile, String> {
+    read_file_checked(&state, &path)
 }
 
 /// 按编码取对应 BOM 字节。GB18030 等无 BOM 概念的编码返回空切片
@@ -82,16 +113,122 @@ fn bom_bytes_for(encoding: &Encoding) -> &'static [u8] {
 /// 编码名必须来自读取时的检测结果；未知编码名直接报错，绝不回退 UTF-8。
 /// bom=true 时写回前补原 BOM（UTF-8 → EF BB BF，UTF-16LE/BE → 各自魔数）；
 /// GB18030 无 BOM 概念，bom=true 时忽略并按无 BOM 写（仍返回成功）。
-#[tauri::command]
-pub fn save_file(path: String, text: String, encoding: String, bom: bool) -> Result<(), String> {
+pub fn save_file_at(path: &str, text: &str, encoding: &str, bom: bool) -> Result<(), String> {
     let encoding = Encoding::for_label(encoding.as_bytes())
         .ok_or_else(|| format!("无法识别的编码名称：{encoding}"))?;
-    let (encoded, _used, _had_errors) = encoding.encode(&text);
+    let (encoded, _used, _had_errors) = encoding.encode(text);
     let bom_prefix: &[u8] = if bom { bom_bytes_for(encoding) } else { &[] };
     let mut out = Vec::with_capacity(bom_prefix.len() + encoded.len());
     out.extend_from_slice(bom_prefix);
     out.extend_from_slice(encoded.as_ref());
-    std::fs::write(&path, out).map_err(|e| format!("无法写入文件：{path}（{e}）"))
+    std::fs::write(path, out).map_err(|e| format!("无法保存文件：{path}（{}）", io_reason(&e)))
+}
+
+/// 写入口：**先过受信校验**（未受信的文件一个字节都不写），再落盘。
+pub fn save_file_checked(
+    trust: &TrustedPaths,
+    raw: &str,
+    text: &str,
+    encoding: &str,
+    bom: bool,
+) -> Result<(), String> {
+    let canonical = trust.allowed_for_save(raw)?;
+    save_file_at(&canonical.to_string_lossy(), text, encoding, bom)
+}
+
+/// `save_file` 命令：渲染层唯一写入口（autosave / 关窗落盘 / 编辑态保存都经此）。
+#[tauri::command]
+pub fn save_file(
+    state: tauri::State<TrustedPaths>,
+    path: String,
+    text: String,
+    encoding: String,
+    bom: bool,
+) -> Result<(), String> {
+    save_file_checked(&state, &path, &text, &encoding, bom)
+}
+
+/// 打开文件对话框（Rust 侧）并把用户**亲手选中**的 Markdown 文件登记为受信。
+///
+/// 为什么把对话框从渲染层搬到 Rust：`plugin-dialog` 的 JS `open()` 只把结果交给渲染层，
+/// Rust 无法判断"这个路径是不是用户选的"；一旦存在渲染层可调的注册命令，攻陷页面就能
+/// `注册任意路径 → 读取任意文件`（设计稿 §7.2）。放在 Rust 侧后，受信的唯一来源是
+/// **用户在原生对话框里的真实选择**（渲染层最多能让对话框弹出来，弹出来也必须用户点）。
+///
+/// 取消 → 返回空列表（前端静默结束）；选中了但校验失败 → 返回中文原因（不静默吞掉）。
+#[tauri::command]
+pub async fn pick_markdown_files(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, TrustedPaths>,
+) -> Result<Vec<String>, String> {
+    let dialog_app = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app
+            .dialog()
+            .file()
+            .set_title("打开 Markdown 文件")
+            .add_filter("Markdown", &["md", "markdown", "mdx"])
+            .blocking_pick_files()
+    })
+    .await
+    .map_err(|error| format!("打开文件对话框失败：{error}"))?;
+    let Some(files) = picked else {
+        return Ok(Vec::new()); // 用户取消
+    };
+    let mut granted: Vec<String> = Vec::new();
+    let mut first_error: Option<String> = None;
+    for file in files {
+        let Ok(path) = file.into_path() else {
+            continue;
+        };
+        let raw = path.to_string_lossy().into_owned();
+        match state.trust_existing(&raw) {
+            Ok(canonical) => granted.push(canonical.to_string_lossy().into_owned()),
+            Err(message) => {
+                if first_error.is_none() {
+                    first_error = Some(message);
+                }
+            }
+        }
+    }
+    if granted.is_empty() {
+        if let Some(message) = first_error {
+            return Err(message);
+        }
+    }
+    Ok(granted)
+}
+
+/// 注册受信目录（工作区/另存为父目录）。**当前无渲染层入口**：留给 D-11 文件夹工作区
+/// 与将来的「另存为」接线；此处不放 `#[tauri::command]`，避免出现"渲染层可自证授权"的洞。
+pub fn trust_directory(state: &TrustedPaths, raw: &str) -> Result<(), String> {
+    state.trust_dir(raw).map(|_| ())
+}
+
+/// 撤销受信（关标签时尽力而为；不调也安全——能进集合的前提就是用户真打开过）。
+pub fn forget_trusted(state: &TrustedPaths, raw: &str) {
+    state.forget(raw);
+}
+
+/// 供 `lib.rs` 的拖放/argv 处理器使用的批量注册：返回成功注册的文件数（失败逐条忽略）。
+pub fn trust_all_existing(state: &TrustedPaths, paths: &[String]) -> usize {
+    paths.iter().filter(|raw| state.trust_existing(raw).is_ok()).count()
+}
+
+/// 把 OS 传来的路径转成面向使用者的中文提示（拖放失败时用）。
+pub fn untrusted_hint(raw: &str) -> String {
+    deny_message("读取", raw, DenyReason::Untrusted)
+}
+
+/// 取不到应用配置目录时的兜底：内存集合（本次会话仍可用，重启后重来）。
+pub fn load_trusted_store(app: &tauri::AppHandle) -> TrustedPaths {
+    match app.path().app_config_dir() {
+        Ok(dir) => TrustedPaths::load(dir.join("trusted-paths.json")),
+        Err(error) => {
+            println!("[trust] 取不到配置目录（{error}），受信清单仅存在于本次会话");
+            TrustedPaths::in_memory()
+        }
+    }
 }
 
 /// 安全收口的配置回归锁（P1-6 子项 1/2）。放在 fs.rs 而非 lib.rs：lib.rs 由其它车道持有，
@@ -148,3 +285,10 @@ mod shipped_config_guard {
         );
     }
 }
+
+/// R-01：读写接入受信校验后的行为（含"被拒时不改磁盘"）。
+#[cfg(test)]
+#[path = "fs_trust_tests.rs"]
+mod fs_trust_tests;
+
+

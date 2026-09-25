@@ -11,7 +11,6 @@ import {
   getCurrentWindow,
   type Window as TauriWindow,
 } from "@tauri-apps/api/window";
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { keepOffscreenSkipping, shapeOf } from "./render/offscreen-policy";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
@@ -27,7 +26,6 @@ import {
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { openEachMd } from "./app/drop";
 import { createOutlineFollow } from "./app/outline-follow";
-import { mdExtensions } from "./app/md-ext";
 import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
 import { setupFindbar, closeTopmostOverlay, type Findbar } from "./ui/findbar";
@@ -235,21 +233,19 @@ async function openPath(tabs: TabManager, path: string, activate = true): Promis
   }
 }
 
-/** 打开对话框（P0-6）：filter 取共用扩展名清单（与关联注册/拖放/命令行同一份），
- *  并允许多选——多选的路径与拖放同路径逐个开标签，仅末项激活渲染。 */
+/** 打开对话框：**对话框在 Rust 侧**（R-01）——用户亲手选中的文件由 Rust 登记为受信路径，
+ *  渲染层拿不到"凭空登记"的能力（否则攻陷页面可 `登记任意路径 → 读任意文件`）。
+ *  filter/多选由 Rust 命令设定（`md/markdown/mdx`，与关联注册/拖放/命令行同一份清单）。 */
 async function onOpenClick(tabs: TabManager): Promise<void> {
-  const picked = await openFileDialog({
-    title: "打开 Markdown 文件",
-    multiple: true,
-    directory: false,
-    filters: [{ name: "Markdown", extensions: mdExtensions() }],
-  });
-  // 泛型 OpenDialogReturn 依赖字面量 multiple/directory，这里按运行时形状收窄更直白
-  const pickedPaths: string[] = typeof picked === "string" ? [picked] : (picked ?? []);
-  if (pickedPaths.length === 0) {
-    return; // 用户取消：静默结束
+  try {
+    const pickedPaths = await invoke<string[]>("pick_markdown_files");
+    if (pickedPaths.length === 0) {
+      return; // 用户取消：静默结束
+    }
+    await openEachMd(pickedPaths, (path, activate) => openPath(tabs, path, activate));
+  } catch (error) {
+    showError(error);
   }
-  await openEachMd(pickedPaths, (path, activate) => openPath(tabs, path, activate));
 }
 
 /* ---- 导出 PDF（M4）：等待渲染完备 → 存路径 → CDP `Page.printToPDF` 直出 ---- */
