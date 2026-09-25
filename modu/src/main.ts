@@ -26,6 +26,7 @@ import {
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
+import { prevalidateMermaid } from "./render/mermaid";
 import { openEachMd } from "./app/drop";
 import { createOutlineFollow } from "./app/outline-follow";
 import { setupExternalLinks } from "./app/links";
@@ -631,6 +632,16 @@ async function boot(): Promise<void> {
     // 于是"打开文档不动"时大纲一条都不亮（实测：H1 可见却 active=null）。
     outlineFollow.update();
     enhanceView(doc); // 增强幂等：缓存直挂与重渲两路径都走（mermaid 懒观察在此重挂）
+  // A5：**空闲**时预校验 mermaid 语法（不阻塞首屏）。改前实测：坏图在折叠线以下时完全静默 ✗
+  //    用 mermaid 自己的 parse（禁手写正则）；已定稿节点会被 prevalidateMermaid 跳过 ✓
+  const runPrevalidate = (): void => {
+    void prevalidateMermaid(doc);
+  };
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(runPrevalidate, { timeout: 2000 });
+  } else {
+    setTimeout(runPrevalidate, 0); // 无 idle API（测试/jsdom）时退回宏任务
+  }
     attachCodeCopyButtons(doc); // 代码块复制钮（用户反馈批次）：幂等，缓存重挂不双挂
     findbar.close(); // 正文已换，旧命中作废，避免残留陈旧 mark
     document.title = `${ctx.tab.title} — 墨读`; // 文档名（顶栏那份已按 D-05 删除）

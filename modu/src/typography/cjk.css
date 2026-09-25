@@ -387,12 +387,17 @@
 /* 渲染失败态：虚线框 + attr() 显示 mermaid.ts 落的中文错误信息 */
 .mdc .mermaid[data-mmd-error] {
   border-style: dashed;
+  /* A5：诊断线索要**可辨别**。改前实测：虚线框继承色 + `::before` 是 --text-muted（灰 rgb(105,112,122)），
+     读者几乎看不出这是错误态 ✗ ⇒ 现在走 token（不新造字面色值；派生量用 color-mix） */
+  border-color: var(--red-11);
+  background: color-mix(in oklab, var(--red-11) 6%, transparent);
 }
 .mdc .mermaid[data-mmd-error]::before {
   content: attr(data-mmd-error);
   display: block;
   margin-block-end: var(--size-2);
-  color: var(--text-muted);
+  /* A5：由 --text-muted 改为错误色（**不是唯一通道**：上一行的文本 + 属性里的可读文案都在） */
+  color: var(--red-11);
   font-weight: 600;
 }
 

@@ -31,6 +31,13 @@ function currentMermaidTheme(): MermaidTheme {
 
 function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message
+  // A5：mermaid 抛的是**对象型**错误（{ message, str, hash… }）⇒ String(err) 会得到 `[object Object]` ✗
+  //   实际翻车：报错文案就是 `[object Object]`，读者拿不到任何信息
+  if (typeof err === 'object' && err !== null) {
+    const o = err as { message?: unknown; str?: unknown }
+    if (typeof o.message === 'string' && o.message !== '') return o.message
+    if (typeof o.str === 'string' && o.str !== '') return o.str
+  }
   return String(err)
 }
 
@@ -147,4 +154,54 @@ export function refreshMermaidTheme(theme: AppTheme): void {
   const nodes = Array.from(document.querySelectorAll<HTMLElement>('.mermaid[data-rendered="1"]'))
   if (nodes.length === 0) return
   void rerenderNodes(nodes)
+}
+
+/**
+ * A5 · 提前校验（**只用 mermaid 自己的 parse，不渲染**）：把语法错的块在**滚动/导出之前**标出来。
+ *
+ * 改前实测：坏图在**折叠线以下**时 `[data-mmd-error]` = 0 ⇒ 完全静默（只有滚到它、或导出时才报）✗
+ * 设计要点：
+ *  · **不手写正则**（宪法）：走 `api.parse(src)`，语法错会 reject；
+ *  · **idle 调度由调用方负责**（main.ts 用 requestIdleCallback）⇒ 不拖首屏；
+ *  · **已定稿**（`data-rendered` / `data-mmd-error`）的节点跳过 ⇒ 与懒渲染/主题重画不打架；
+ *  · 校验**通过**的节点只落 `data-mmd-valid`（不在 DOM 上留痕影响渲染）✓
+ *  · 校验**失败**的节点：保留源码文本（导出兜底不变）+ `data-mmd-error`（可读文案）+ `data-mmd-invalid`（供样式/锚）✓
+ *  · `deps.parse` 是**测试注入缝**（不传则用真实 mermaid）✓
+ */
+export interface PrevalidateDeps {
+  /** 注入的解析器（测试用）；不传则用真实 mermaid 的 parse */
+  parse?: (src: string) => Promise<unknown>
+}
+
+export async function prevalidateMermaid(
+  container: HTMLElement,
+  deps: PrevalidateDeps = {},
+): Promise<{ checked: number; invalid: number }> {
+  const nodes = Array.from(container.querySelectorAll<HTMLElement>('.mermaid')).filter(isPending)
+  if (nodes.length === 0) return { checked: 0, invalid: 0 }
+  let parse = deps.parse
+  if (parse === undefined) {
+    let api: MermaidApi
+    try {
+      api = await initMermaid()
+    } catch {
+      return { checked: 0, invalid: 0 } // 模块加载失败：交给懒渲染路径按原样报错
+    }
+    parse = (src: string) => api.parse(src)
+  }
+  let invalid = 0
+  for (const el of nodes) {
+    const src = el.dataset.src ?? el.textContent ?? ''
+    el.dataset.src = src
+    try {
+      await parse(src)
+      el.setAttribute('data-mmd-valid', '1')
+    } catch (err) {
+      el.textContent = src // 源码文本必须还在（导出/阅读兜底）
+      el.setAttribute('data-mmd-error', `图表语法错误：${errorMessage(err)}`)
+      el.setAttribute('data-mmd-invalid', '1')
+      invalid += 1
+    }
+  }
+  return { checked: nodes.length, invalid }
 }
