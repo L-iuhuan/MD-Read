@@ -89,7 +89,17 @@
    ⚠ 必须包 @media screen（2026-09-22 导出截断回归修复）：曾用 print.css 同名
    规则还原 visible，但 contain-intrinsic-size:auto 在打印时取"最后记忆尺寸，
    无则 0"——从未上屏的块记忆为空 → 全部塌缩 0 高 → PDF 只剩 1 页 26KB。
-   包进 screen 后打印媒体下本规则彻底不参与，无需还原仗。 */
+   包进 screen 后打印媒体下本规则彻底不参与，无需还原仗。
+
+   ⚠ 2026-09-23（X2 批次）实测补充：**这条规则是滚动期头号成本
+   `IntersectionObserverController::computeIntersections` 的主因**（墙钟 ~30%，6.8ms/帧；
+   本语料候选 9,429 个）。它与大纲的 IntersectionObserver **无关**：
+   去掉标题观察器后该计数器仍是 1,790.6ms/6s，手工加回"观察 4,715 个标题"只 +0.8ms/帧，
+   而把本规则关掉后它降到 4.7ms（Layout/Paint 随之上来）。
+   ⇒ 想优化滚动性能时，先看 `docs/tasks/Phase2-content-visibility权衡提案-2026-09-23.md`
+   的净账（开着/关掉/换参数三种情形），**不要**再去动大纲那条链路
+   （X2 已把它从 4,715 个观察目标改成实时二分）；也**不要**相信
+   《性能实验报告-2026-09-23》§3.3① 的旧归因（报告文首已加勘误）。 */
 @media screen {
   .mdc > * {
     content-visibility: auto;
