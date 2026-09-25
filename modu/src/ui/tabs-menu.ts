@@ -2,7 +2,7 @@
  * 壳层两个下拉菜单（D-05 新增功能）：
  *   ▾ 全部标签列表 —— 两行式（文件名 + 弱化目录）、当前项浅主色底、脏点；
  *                     底部「关闭其他标签 / 关闭全部标签」。
- *   ⋯ 溢出菜单     —— 顶栏拥挤（标签条可用宽度 < --w-tabs-min）时收进来的动作。
+ *   ⋯ 溢出菜单     —— 顶栏拥挤（标签总宽含＋ > 视口宽 − --w-chrome-reserve）时收进来的动作。
  *                     ⚠ 按钮本身**只在拥挤态出现**（非拥挤态 hidden，见 crowded()）：
  *                     非拥挤态这些动作本来就在条上，⋯ 在那儿是重复按钮。
  *
@@ -119,8 +119,9 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
   const header = document.getElementById("titlebar");
   const wrappers = [listMenu, overflowMenu].filter((el): el is HTMLElement => el !== null);
 
-  /** 拥挤态判据：顶栏是否带 .overflow（由 main.ts 的 setupShellOverflow 依标签条
-   *  可用宽度切类，带 140px 滞回）。⋯ 只在拥挤态出现 —— 非拥挤态它是重复按钮。 */
+  /** 拥挤态判据：顶栏是否带 .overflow（由 main.ts 的 setupShellOverflow 按
+   *  「标签装不下了」切类——判据与开合状态无关，故不再需要大额滞回）。
+   *  ⋯ 只在拥挤态出现 —— 非拥挤态它是重复按钮。 */
   function crowded(): boolean {
     return header !== null && header.classList.contains("overflow");
   }

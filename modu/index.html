@@ -30,11 +30,16 @@
         <button id="btn-outline" type="button" title="显示/隐藏大纲" aria-label="显示或隐藏大纲">☰</button>
         <!-- 标签条：占满整条栏高（align-self: stretch 由 CSS 给 —— 不 stretch 会让下划线与
              分隔线错位 10~20px，见 app.css §3 的实测值）。标签之间 1px×14px 细分隔线；
-             ‹ › ▾ 导航组只在「标签确有溢出」时出现；＋ 新建钉在可视区右端（sticky）。
-             非活动标签与「关闭其他/全部标签」经 ⋯ / ▾ 菜单可达，键盘焦点不会被单行滚动藏掉。 -->
-        <div id="tabbar" class="tabbar" data-tauri-drag-region hidden>
-          <div id="tab-list" class="tab-list" role="tablist" data-tauri-drag-region></div>
-          <button id="btn-newtab" type="button" title="打开文件（新标签）" aria-label="打开文件（新标签）">＋</button>
+             ‹ › ▾ 导航组只在「标签确有溢出」时出现。
+             ＋ 是 #tab-list 的**最后一个孩子**（不是它的兄弟）——这是本批的核心改动：
+             只有身在滚动容器内部，`position: sticky; inset-inline-end: 0` 才同时给出
+             用户要的两段语义：装得下时在流内紧跟最后一枚标签，装不下/往左滚时钉在
+             滚动视口右缘（#tabs-nav、#actions 都在它之后，故钉子位置恒在这些按钮左侧）。
+             非活动标签与「关闭其他/全部标签」经 ⋯ / ▾ 菜单可达，键盘焦点不会被单行滚动藏掉。
+             ⚠ 标签条**不再带 hidden**（空态也要显示）：空态里 #tab-list 只有 ＋ 一个孩子，
+             它自然落在 ☰ 右侧——这也是空态唯一的可见文件入口。 -->
+        <div id="tabbar" class="tabbar" data-tauri-drag-region>
+          <div id="tab-list" class="tab-list" role="tablist" data-tauri-drag-region><button id="btn-newtab" type="button" title="打开文件（新标签）" aria-label="打开文件（新标签）">＋</button></div>
         </div>
         <div id="tabs-nav" class="tabs-nav" hidden>
           <button id="tabs-prev" type="button" title="向左滚动标签（左侧还有标签）" aria-label="向左滚动标签条" disabled>‹</button>

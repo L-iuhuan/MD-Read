@@ -236,8 +236,12 @@ describe("D-05 T1 单栏合并顶栏", () => {
     }
   });
 
-  it("拥挤态：标签条可用宽度阈值走 token，收起的动作在 CSS 里明确隐身", () => {
-    expect(tokensBody).toMatch(/--w-tabs-min:\s*420px/);
+  it("拥挤态：判据走 token，收起的动作在 CSS 里明确隐身", () => {
+    // 2026-09-23 第二批：判据换成「标签装不下」——旧的「标签条可分宽度下限」
+    // --w-tabs-min(420px) 已废弃（那个量只随窗口宽度变 ⇒ 折叠不可达；
+    // 且随 .overflow 自己变宽 ⇒ 阈值再准也自激）。
+    expect(tokensBody).not.toMatch(/--w-tabs-min\s*:/);
+    expect(tokensBody).toMatch(/--w-chrome-reserve:\s*\d+px/);
     // 本批收口：拥挤态只剩「编辑 + ⋯」——最近 / Aa / ◐ / PDF 全部隐身
     for (const sel of ["\\.recent-wrap", "\\.settings-wrap", "#btn-theme", "#btn-export"]) {
       expect(appBody, `拥挤态未隐身 ${sel}`).toMatch(
@@ -247,6 +251,39 @@ describe("D-05 T1 单栏合并顶栏", () => {
     expect(appBody).not.toMatch(/\.topbar\.overflow #btn-open/);
     expect(mainSrc).toMatch(/setupShellOverflow/);
     expect(mainSrc).toMatch(/ResizeObserver/);
+    // 标签增删不改变标签条宽度 ⇒ 旧实现只盯 ResizeObserver，漏了「又多了一个标签」
+    expect(mainSrc).toMatch(/MutationObserver/);
+  });
+});
+
+describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态一致", () => {
+  const htmlStripped = html.replace(/<!--[\s\S]*?-->/g, "");
+
+  it("＋ 是 #tab-list 的最后一个孩子（不是它的兄弟）——sticky 两段语义的前提", () => {
+    expect(htmlStripped).toMatch(/<div id="tab-list"[^>]*>\s*<button id="btn-newtab"/);
+    expect(htmlStripped).not.toMatch(/<\/div>\s*<button id="btn-newtab"/);
+  });
+
+  it("标签条不再带 hidden：空态也显示（空态 ＋ 是唯一可见的文件入口）", () => {
+    expect(htmlStripped).toMatch(/<div id="tabbar" class="tabbar" data-tauri-drag-region>/);
+    expect(htmlStripped).not.toMatch(/<div id="tabbar"[^>]*\shidden/);
+    expect(tabsSrc).toMatch(/bar\.hidden = false/);
+  });
+
+  it("空态（body.empty）同时隐大纲与 ☰，且不再用 :has() 判空态", () => {
+    expect(appBody).toMatch(/\.empty \.outline\s*\{\s*display:\s*none/);
+    expect(appBody).toMatch(/\.empty #btn-outline\s*\{\s*display:\s*none/);
+    expect(appBody).not.toMatch(/:has\(#empty-hint/);
+    expect(mainSrc).toMatch(/classList\.add\("empty"\)/);
+    expect(mainSrc).toMatch(/classList\.remove\("empty"\)/);
+  });
+
+  it("拥挤态判据只用与开合无关的量（视口宽 + 标签总宽），不再读标签条自己的宽度", () => {
+    const fn = /function setupShellOverflow[\s\S]*?\n\}/.exec(mainSrc)?.[0] ?? "";
+    expect(fn).not.toBe("");
+    expect(fn).toMatch(/document\.documentElement\.clientWidth/);
+    expect(fn).toMatch(/desiredTabsWidth/);
+    expect(fn).not.toMatch(/bar\.clientWidth/);
   });
 });
 

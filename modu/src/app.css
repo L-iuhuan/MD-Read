@@ -64,13 +64,18 @@
    · S1 底部下划线标签：平标签、align-self: stretch（下划线贴栏底、分隔线居中于文字，
      实测数值见报告 §5）、标签之间 1px×14px 细分隔线（活动/悬停两侧不画）、
      活动 = 字重 600 + 底部 2px 主色线（左右各内缩 6px）、脏点 ● 与 ✕ 互斥；
-   · ‹ › ▾ 导航组（只在标签溢出时出现）+ ＋ 钉在可视区右端（sticky）；
+   · ‹ › ▾ 导航组（只在标签溢出时出现）+ ＋ 是 .tab-list 的最后一个孩子（sticky）：
+     装得下时紧跟末标签，装不下/往左滚时钉在滚动视口右缘（导航组与动作区都在它之后，
+     故钉住的位置恒在这些按钮**左侧**）——见 §1c；
    · 新增 ⋯ 溢出菜单与 ▾ 全部标签列表（TS 在 ui/tabs-menu.ts）：
      两行式条目（文件名 + 弱化目录）、当前项浅主色底、底部「关闭其他/全部标签」；
-   · 拥挤态（.topbar.overflow）：标签条可分宽度 < --w-tabs-min(420px) 时收成「编辑 + ⋯」，
-     判据与滞回接线在 main.ts 的 setupShellOverflow（滞回余量 TABS_EXPAND_MARGIN，
-     必须大于收起实际让出的宽度，否则自激）；非拥挤态**没有 ⋯**，
-     两态各自的可见集合见 §5 与 ui/tabs-menu.ts 顶部注释；   · 大纲活动项由「左侧 3px 硬色条」改为「浅主色底圆角矩形 + 主色文字 + 600 字重」，
+   · 拥挤态（.topbar.overflow）：**标签装不下了**（标签总宽含＋ > 视口宽 − --w-chrome-reserve）
+     时收成「编辑 + ⋯」，判据接线在 main.ts 的 setupShellOverflow。
+     ⚠ 旧判据「标签条可分宽度 < --w-tabs-min(420px)」已于 2026-09-23 第二批整体废弃：
+     那个量只随窗口宽度变（与标签数量无关）⇒ 1680×1200 下永久不触发；且随 .overflow
+     自己变宽（收起动作组让出 161px）⇒ 阈值再准也自激。新判据两项都与开合无关。
+     非拥挤态**没有 ⋯**，两态各自的可见集合见 §5 与 ui/tabs-menu.ts 顶部注释；
+   · 大纲活动项由「左侧 3px 硬色条」改为「浅主色底圆角矩形 + 主色文字 + 600 字重」，
      层级只用缩进 + 字重/字号；
    · 状态栏 11.5px（--fs-status）+ 上沿改 --hair；
    · B2 轻分层：三级表面（chrome/card/paper）全走 token，暗色三档分离，
@@ -275,8 +280,14 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 .tab-close:hover { background: var(--bg-active); color: var(--text); }
 .tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
-/* ＋ 新建：钉在可视区右端（sticky），标签从它背后滑过 —— 设计稿里它紧跟末标签，
-   但标签一多就必须永远可点，故用 sticky 固定在滚动条右沿。 */
+/* ＋ 打开文件：**#tab-list 的最后一个孩子**（index.html），sticky 钉在滚动视口右缘 ——
+   这是用户要的两段语义，只有身在滚动容器内部才同时成立：
+   · 装得下时它就在流内、紧跟最后一枚标签（设计稿语义）；
+   · 装不下或往左滚时它钉住不动、永远可点（否则往回滚时它被滚出视口，想开新文件就没入口）；
+   · 导航组 ‹ › ▾ 与整个动作区都在 #tab-list 之后 ⇒ 钉住的位置天然是它们**左侧**，
+     折叠按钮 ⋯ 也在它右边。
+   不透明底是必需的：滑过来的标签不许从加号上透出来。
+   ⚠ 它必须恒为最后一个孩子（tabs.ts 的 renderBar / keepNewTabButtonLast 与 DnD 都在保这一条）。 */
 #btn-newtab {
   flex: none;
   align-self: center;
@@ -411,11 +422,10 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 }
 .actions > button.is-accent:hover:not(:disabled) { background: var(--accent-tint-hover); }
 
-/* --- 拥挤态：标签条可用宽度低于 --w-tabs-min(420px) 时收成「编辑 + ⋯」---
-   由 main.ts 的 ResizeObserver 在 header 上切 .overflow 类（带滞回，防抖动）。
-   滞回余量必须**大于收起动作组实际让出的宽度**，否则收起→重开无限循环；
-   48px 的旧余量在 1000~1060px 窗口下实测 2.2~2.5Hz 自激（余量实测值见 main.ts
-   TABS_EXPAND_MARGIN 处的本批读数）。
+/* --- 拥挤态：标签装不下了 → 收成「编辑 + ⋯」---
+   判据在 main.ts 的 setupShellOverflow：标签总宽（含 ＋）> 视口宽 − --w-chrome-reserve。
+   两项都与 .overflow 开合状态无关 ⇒ 结构上不会自激，故**不再需要**按「收起让出多少」
+   校准滞回余量（旧 --w-tabs-min=420px 判据与 240px 余量的来龙去脉见 main.ts 注释）。
 
    本批收口（用户定稿）：**拥挤态只剩「编辑 + ⋯」**——最近 / Aa / ◐ / PDF 与标签批量
    操作全部收进 ⋯ 菜单（ui/tabs-menu.ts），标签条拿回它们的宽度。非拥挤态这四枚是
@@ -614,8 +624,14 @@ html:has(#settings-panel:not([hidden])) #btn-settings {
   font-weight: 600;
 }
 
-/* 空态（首访）：不摆一个只有「大纲」二字的光杆侧栏，让欢迎页独占画面 */
-body:has(#empty-hint:not([hidden])) .outline { display: none; }
+/* 空态（首访）：不摆一个只有「大纲」二字的光杆侧栏，让欢迎页独占画面；
+   顶栏的 ☰ 一并隐身 —— 空态没有任何可展开的大纲，留着它就是一个点了没反应的按钮
+   （用户实测：「☰ 可点但无可见效果」）。两处判据同源。
+   本批（2026-09-23 第二批）把判据从 `body:has(#empty-hint:not([hidden]))` 换成 body.empty：
+   JS 在 boot/resetToWelcome 加、mountRendered 摘，与 #empty-hint.hidden 逐处同步，
+   同时把 :has() 从这条热路径上撤掉（:has() 的失效重算范围比单类选择器大）。 */
+.empty .outline { display: none; }
+.empty #btn-outline { display: none; }
 
 /* 大纲折叠（P5 批2）：顶栏 ☰ toggle body.outline-off，态存 localStorage modu-outline；
    与上面空态规则、窄窗隐藏（§12）相互独立。 */

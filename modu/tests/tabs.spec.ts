@@ -241,13 +241,14 @@ describe("closeTab", () => {
     expect(docHtml()).toBe("<p>BBB</p>");
   });
 
-  it("清空全部：onEmpty 回调 + tabbar 隐藏", async () => {
+  it("清空全部：onEmpty 回调 + 标签条仍可见（空态里 ＋ 是唯一文件入口）", async () => {
     const h = setup();
     await open(h, "a.md", "AAA");
     await close(h, "a.md");
     expect(h.manager.count()).toBe(0);
     expect(h.onEmpty).toHaveBeenCalledTimes(1);
-    expect(barHidden()).toBe(true);
+    // 2026-09-23 第二批：空态不再隐藏标签条——空态提示语指向的「＋」必须真的在
+    expect(barHidden()).toBe(false);
   });
 
   it("点 ✕ 关闭（DOM 事件路径，不冒泡成切换）", async () => {
@@ -337,7 +338,7 @@ describe("D-05 批量关闭（▾ / ⋯ 菜单用）", () => {
     expect(docHtml()).toBe("<p>CCC</p>");
   });
 
-  it("closeAll：全关 → onEmpty + tabbar 隐藏", async () => {
+  it("closeAll：全关 → onEmpty + 标签条仍可见（空态 ＋ 入口）", async () => {
     const h = setup();
     await open(h, "a.md", "AAA");
     await open(h, "b.md", "BBB");
@@ -345,7 +346,7 @@ describe("D-05 批量关闭（▾ / ⋯ 菜单用）", () => {
     await flushed();
     expect(h.manager.count()).toBe(0);
     expect(h.onEmpty).toHaveBeenCalledTimes(1);
-    expect(barHidden()).toBe(true);
+    expect(barHidden()).toBe(false);
   });
 
   it("脏标签在批量关闭里逐个走确认：拒绝者留下，其余照关", async () => {
@@ -620,6 +621,38 @@ describe("拖拽排序", () => {
     drag(a as HTMLElement, "dragover"); // DOM 先行：a|c|b
     drag(document.getElementById("tab-list") as HTMLElement, "dragend"); // 无 drop 直接收场
     expect(h.manager.paths()).toEqual(["a.md", "c.md", "b.md"]);
+  });
+});
+
+describe("＋ 恒为 #tab-list 最后一个孩子（2026-09-23 第二批：跟随滚动 + sticky）", () => {
+  function fire(el: HTMLElement, type: string): void {
+    el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }));
+  }
+
+  it("renderBar 重建标签后把 ＋ 接回末尾，且元素实例不变（监听器与 sticky 都靠它）", async () => {
+    const h = setup();
+    const before = document.getElementById("btn-newtab");
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    const list = document.getElementById("tab-list") as HTMLElement;
+    expect(list.lastElementChild?.id).toBe("btn-newtab");
+    expect(document.getElementById("btn-newtab")).toBe(before); // 同一实例，未被重建
+    expect(tabEls().map((el) => el.dataset.path)).toEqual(["a.md", "b.md"]); // ＋ 不参与标签序
+  });
+
+  it("拖到条尾空隙：插到 ＋ 之前，＋ 仍在末尾（旧写法 appendChild 会把它挤到 ＋ 之后）", async () => {
+    const h = setup();
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    const list = document.getElementById("tab-list") as HTMLElement;
+    const a = tabEls()[0] as HTMLElement;
+    fire(a, "dragstart");
+    fire(list, "dragover"); // 目标不是任何标签 → 走「条尾空隙」分支
+    expect(list.lastElementChild?.id).toBe("btn-newtab");
+    expect(tabEls().map((el) => el.dataset.path)).toEqual(["b.md", "a.md"]);
+    fire(list, "dragend"); // commit → renderBar 重建
+    expect(list.lastElementChild?.id).toBe("btn-newtab");
+    expect(h.manager.paths()).toEqual(["b.md", "a.md"]);
   });
 });
 

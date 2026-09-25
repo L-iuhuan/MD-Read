@@ -197,6 +197,16 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     throw new Error("界面资源未就绪，请重启墨读");
   }
   const tabList: HTMLElement = list; // 闭包内保住非空类型
+  /** ＋（打开文件）：index.html 里它是 #tab-list 的**最后一个孩子**（见该文件注释），
+   *  renderBar 清空列表时必须把它原样接回去 —— textContent = "" 只是把它摘下来，
+   *  元素引用不变，main.ts 挂的 click 监听器与 CSS 的 sticky 定位都因此存活。 */
+  const newTabBtn = bar.querySelector<HTMLElement>("#btn-newtab");
+  /** 收尾动作：把 ＋ 放回末尾（唯一允许改 #tab-list 孩子序的地方，DnD 也走它） */
+  function keepNewTabButtonLast(): void {
+    if (newTabBtn !== null && tabList.lastElementChild !== newTabBtn) {
+      tabList.appendChild(newTabBtn);
+    }
+  }
   const tabs: Tab[] = [];
   let activePath: string | null = null;
   /** 激活票据：快速连点/连开时只有最新一张票有权渲染挂载，过期者在渲染前让位 */
@@ -342,7 +352,8 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
         tabList.appendChild(buildSepEl()); // 分隔线只画在标签之间，两端不画
       }
     }
-    bar.hidden = tabs.length === 0;
+    keepNewTabButtonLast(); // ＋ 恒为最后一个孩子：sticky 才会「紧跟末标签 / 溢出时钉右缘」
+    bar.hidden = false; // 空态也显示标签条（本批修订）：空态里 ＋ 是唯一的可见文件入口
     // syncNav 里会读 scrollWidth/clientWidth 与 scrollLeft —— 必须在节点已入 DOM 之后
     syncNav();
     if (activePath !== null) {
@@ -451,8 +462,13 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
         if (ref !== dragging) {
           tabList.insertBefore(dragging, ref); // ref 为 null 即追加到末尾
         }
-      } else if (tabList.lastElementChild !== dragging) {
-        tabList.appendChild(dragging); // 悬停在条尾空隙
+      } else {
+        // 悬停在条尾空隙：插到 ＋ **之前**（＋ 必须恒为最后一个孩子，否则 sticky 的
+        // 「紧跟末标签 / 钉右缘」两段语义都会错位）
+        const tail = newTabBtn !== null && newTabBtn.parentNode === tabList ? newTabBtn : null;
+        if (tail === null ? tabList.lastElementChild !== dragging : dragging.nextElementSibling !== tail) {
+          tabList.insertBefore(dragging, tail);
+        }
       }
     });
 
@@ -467,12 +483,12 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
       }
       dragging.classList.remove("dragging");
       dragging = null;
-      const order = new Map(
-        Array.from(tabList.children).map((el, i) => [
-          (el as HTMLElement).dataset.path ?? "",
-          i,
-        ]),
-      );
+      // 只认 .tab：＋（#btn-newtab）也是 #tab-list 的孩子，但它不参与标签排序
+      const order = new Map<string, number>();
+      let seq = 0;
+      for (const el of Array.from(tabList.querySelectorAll<HTMLElement>(".tab"))) {
+        order.set(el.dataset.path ?? "", seq++);
+      }
       tabs.sort((a, b) => (order.get(a.path) ?? 0) - (order.get(b.path) ?? 0));
       renderBar();
     }
