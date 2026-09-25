@@ -198,6 +198,20 @@ pub fn list_dir(
     list_dir_at(&state, &path, limit)
 }
 
+/// 移除工作区（设计 §3.2「移除工作区」）：把该目录**从受信目录集合里删掉** ⇒ **立即生效** ✓。
+///
+/// ⚠ 这是**渲染层唯一**被允许的受信集合写操作 ✓，且方向**只可能收窄** ✗⇒✓：
+/// 它**不能授予**任何访问 ✗（命令里没有"加目录"的能力 ✓）；最坏情形只是"用户自己的授权被静默删掉" ✓
+/// ⇒ 那是**便利性损失，不是越权** ✓（R-01 的本意是防"渲染层**自我授权**"✗，与此不冲突 ✓ —— 见 `AGENTS.md` 模型澄清）
+/// 护栏落在 `TrustedPaths::forget_dir` 里 ✓：只动 `dirs` ✓ · **必须已受信**否则拒绝 ✓ · 删后立即落盘 ✓ ·
+/// ⚠ 目录**已消失**时回退为**全等匹配**撤销 ✓（绝不前缀 ✗）
+#[tauri::command]
+pub fn remove_workspace(state: tauri::State<TrustedPaths>, path: String) -> Result<String, String> {
+    state
+        .forget_dir(&path)
+        .map(|canonical| canonical.to_string_lossy().into_owned())
+}
+
 /// `pick_workspace_directory` 命令：**授权**入口（D-11）。
 /// ⚠ **不接受路径参数** —— 路径只能来自用户在**原生对话框**里的真实选择 ✓
 /// （渲染层最多能让对话框弹出来，弹出来也必须用户点 ⇒ 不存在"传路径即授权"的命令 ✓）

@@ -134,3 +134,91 @@ fn list_dir_refuses_outside_the_trusted_set() {
     let err2 = list_dir_at(&trust, &ghost.to_string_lossy(), None).expect_err("目录外一律拒");
     assert!(!err2.contains("No such file"), "不得泄露存在性：{err2}");
 }
+
+// ————— 切片③ 撤销路径（设计 §3.2）：`forget_dir` 的五条锚 —————
+// ⚠ **绝不碰真实数据**：全部用 `temp_dir` ✓，落盘那条用**临时 store** ✓
+//（真实 `%APPDATA%\…\trusted-paths.json` 的 sha 在跑锚前后应一致 —— 由流程核对，不进单测 ✓）
+
+/// 护栏 4：撤销后**新路径立即被拒** ✓（命令边界负对照口径）
+#[test]
+fn removing_a_trusted_dir_immediately_denies_new_paths() {
+    let dir = temp_dir("撤销生效");
+    let ws = dir.join("工作区");
+    std::fs::create_dir_all(&ws).expect("工作区应可创建");
+    let trust = TrustedPaths::in_memory();
+    trust.trust_dir(&ws.to_string_lossy()).expect("注册受信目录应成功");
+    list_dir_at(&trust, &ws.to_string_lossy(), None).expect("撤销前应可列（正对照）");
+    trust.forget_dir(&ws.to_string_lossy()).expect("撤销应成功");
+    let err = list_dir_at(&trust, &ws.to_string_lossy(), None).expect_err("撤销后必须被拒");
+    assert!(!err.contains("No such file"), "拒绝文案不得含英文 OS 错误：{err}");
+}
+
+/// 护栏 2：**未受信目录 ⇒ 拒绝**（不是静默 no-op ✓）
+#[test]
+fn removing_an_untrusted_dir_is_refused() {
+    let dir = temp_dir("撤销未受信");
+    let trust = TrustedPaths::in_memory();
+    let err = trust.forget_dir(&dir.to_string_lossy()).expect_err("未受信目录必须拒绝");
+    assert!(!err.contains("No such file"), "文案不得含英文 OS 错误：{err}");
+}
+
+/// 护栏 1 ⭐ **正对照**：撤目录**不动 `files`** ✓（与设计"已打开标签保留"一致 ✓）
+#[test]
+fn removing_a_dir_keeps_trusted_files() {
+    let dir = temp_dir("撤销不动文件");
+    let ws = dir.join("工作区");
+    std::fs::create_dir_all(&ws).expect("工作区应可创建");
+    let doc = ws.join("a.md");
+    std::fs::write(&doc, "# a\n").expect("测试文件应可写");
+    let trust = TrustedPaths::in_memory();
+    trust.trust_existing(&doc.to_string_lossy()).expect("注册文件应成功");
+    trust.trust_dir(&ws.to_string_lossy()).expect("注册目录应成功");
+    let (files_before, dirs_before) = trust.counts();
+    trust.forget_dir(&ws.to_string_lossy()).expect("撤销应成功");
+    let (files_after, dirs_after) = trust.counts();
+    assert_eq!(files_before, 1, "前置：应有一个受信文件");
+    assert_eq!(files_after, 1, "护栏 1：撤目录不得动 files ✓");
+    assert_eq!(dirs_before, 1, "前置：应有一个受信目录");
+    assert_eq!(dirs_after, 0, "dirs 应减一 ✓");
+}
+
+/// 护栏 3 ⭐ **落盘**：临时 store 走 `load → 撤销 → 重新 load` ⇒ **不得复活** ✗
+#[test]
+fn removing_a_dir_is_persisted_across_reload() {
+    let dir = temp_dir("撤销落盘");
+    let ws = dir.join("工作区");
+    std::fs::create_dir_all(&ws).expect("工作区应可创建");
+    let store = dir.join("trusted-paths.json"); // ⚠ 临时 store ✓ 绝不碰真实清单 ✓
+    {
+        let trust = TrustedPaths::load(store.clone());
+        trust.trust_dir(&ws.to_string_lossy()).expect("注册应成功");
+        trust.forget_dir(&ws.to_string_lossy()).expect("撤销应成功");
+    }
+    let reloaded = TrustedPaths::load(store);
+    assert!(
+        list_dir_at(&reloaded, &ws.to_string_lossy(), None).is_err(),
+        "护栏 3：撤销后重新 load 不得复活 ✗（只改内存 = 重启复活）"
+    );
+}
+
+/// ⭐ (a) 回退：目录**已从盘上消失**时也要能撤销（否则该授权**永远删不掉** ✗）＋ **非前缀反例**
+#[test]
+fn vanished_dir_is_still_revocable_by_exact_match_only() {
+    let dir = temp_dir("撤销已消失");
+    let ws = dir.join("工作区");
+    std::fs::create_dir_all(&ws).expect("工作区应可创建");
+    let raw = ws.to_string_lossy().into_owned();
+    let trust = TrustedPaths::in_memory();
+    trust.trust_dir(&raw).expect("注册应成功");
+    std::fs::remove_dir_all(&ws).expect("把目录从盘上删掉");
+    // 回退：canonicalize 必失败 ⇒ 用 raw 的规范化键做【全等】匹配 ⇒ 必须成功 ✓
+    trust.forget_dir(&raw).expect("目录已消失也必须能撤销 ✓");
+    assert_eq!(trust.counts().1, 0, "该授权应已被删掉 ✓");
+    // 反例：**前缀相似但不同**的路径 ⇒ 必须拒绝 ✓（证明不是前缀匹配 ✗）
+    let sibling = dir.join("工作区-sibling");
+    std::fs::create_dir_all(&sibling).expect("兄弟目录应可创建");
+    trust.trust_dir(&sibling.to_string_lossy()).expect("注册兄弟目录应成功");
+    let not_it = format!("{}-不是它", sibling.to_string_lossy());
+    trust.forget_dir(&not_it).expect_err("前缀相似但不同 ⇒ 必须拒绝（不得前缀匹配）");
+    assert_eq!(trust.counts().1, 1, "反例不得删掉任何授权 ✓");
+}

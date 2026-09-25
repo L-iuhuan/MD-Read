@@ -276,6 +276,7 @@ pub fn run() {
             fs::pick_markdown_files,
             fs::list_dir,
             fs::pick_workspace_directory,
+            fs::remove_workspace,
             // 路径形态归一（拖放入口用）：唯一实现在 fs::normalize_path，前端只是调用者
             fs::canonical_path,
             take_pending_files,

@@ -253,6 +253,64 @@ impl TrustedPaths {
         self.persist();
     }
 
+    /// 撤销一个受信目录（设计 §3.2「移除工作区」）。⭐ **只减不增** ✗⇒✓：
+    /// 渲染层**唯一**被允许的受信集合写操作（命令层只在 `fs.rs` 暴露"删"✓，不暴露"增"✗）。
+    ///
+    /// 护栏：
+    /// 1. **只动 `dirs`** ✓ —— **不动 `files`** ✓（与设计"已打开标签保留（该文件可能仍在受信文件集里）"一致 ✓）
+    /// 2. **必须先已在 `dirs` 内** ✓ ⇒ 否则**拒绝**（不是静默 no-op ✓）
+    /// 3. **删完立即 `persist()`** ✓（该清单**只在启动时 load 一次** ⇒ 只改内存 = **重启复活** ✗）
+    /// 4. ⚠ **目录已消失时也要能撤销** ✗（否则该授权**永远删不掉** ✗ —— **正是设计 §3.2 要治的"信任只增不减"**：
+    ///    路径**重现**时它又受信 ✗，例如可移动盘 / 被重建的同名目录）
+    ///    ⇒ 回退：`canonicalize` 失败时，用 raw 的**规范化串**（小写；带/不带 `\\?\` 两种形态都试）
+    ///    在 `dirs` 里做【**全等匹配**】✓
+    ///    ⚠ **绝不允许前缀匹配** ✗（那会一次删掉一串授权 ✗）；回退**只做全等** ✓
+    pub fn forget_dir(&self, raw: &str) -> Result<PathBuf, String> {
+        let path = Path::new(raw);
+        if !path.is_absolute() {
+            return Err(deny_message("浏览", raw, DenyReason::NotAbsolute));
+        }
+        // 已在集合内的判定键：规范化成功 ⇒ 用 canonical 的键 ✓；失败（已删/不可达）⇒ 用 raw 的规范化键 ✓
+        let (keys, canonical) = match std::fs::canonicalize(raw) {
+            Ok(canonical) => (vec![key_of(&canonical)], Some(canonical)),
+            Err(_) => {
+                let mut keys = vec![key_of(path)];
+                let extended = format!("\\\\?\\{}", raw);
+                let extended_key = key_of(Path::new(&extended));
+                if !keys.contains(&extended_key) {
+                    keys.push(extended_key);
+                }
+                (keys, None)
+            }
+        };
+        let mut removed = false;
+        if let Ok(mut dirs) = self.dirs.lock() {
+            // ⚠ 逐个**全等**比较 ✓（不许前缀 ✗）
+            for key in &keys {
+                if dirs.remove(key) {
+                    removed = true;
+                    break;
+                }
+            }
+        }
+        if !removed {
+            // 护栏 2 ✓：未受信 ⇒ 明确拒绝（不静默 ✓）
+            return Err(deny_message("浏览", raw, DenyReason::Untrusted));
+        }
+        self.persist(); // 护栏 3 ✓
+        match canonical {
+            Some(canonical) => {
+                println!("[trust] 移除受信目录 {}", canonical.display());
+                Ok(canonical)
+            }
+            None => {
+                // 目录已不在盘上 ⇒ 无 canonical 可回；把 raw 原样回给调用方（前端只用来清指针 ✓）
+                println!("[trust] 移除受信目录 {raw}（目录已不在盘上，按全等匹配撤销 ✓）");
+                Ok(path.to_path_buf())
+            }
+        }
+    }
+
     /// 读入口校验：返回**规范化后的路径**（读写都用它落盘，避免 TOCTOU 二次解析）。
     pub fn allowed_for_read(&self, raw: &str) -> Result<PathBuf, String> {
         self.allowed(raw, "读取")
