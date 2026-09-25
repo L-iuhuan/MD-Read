@@ -149,7 +149,49 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
       renderEmpty();
       return;
     }
-    await fill(nav, root);
+    await fill(nav, root); // ⚠ fill 会先清空 nav ⇒ 头部必须在它**之后** prepend ✓
+    // ⭐ 切片③：工作区头部行 ＋「移除工作区」（设计 §3.2）
+    //   形态选择（面板**没有显式根节点** ✗）：取最简 —— 在树**上方**渲染一行头（根路径 ＋ 移除按钮）✓
+    //   样式**复用**既有 `.menu-item` ✓（**不新增字面色值**✗ D-01 ✓）
+    const head = document.createElement("div");
+    head.className = "menu-item";
+    head.textContent = root;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "menu-item";
+    remove.textContent = "移除工作区";
+    // ⭐ 文案要真（护栏 5 ✓）：真撤销 ⇒ **该目录下的新文件将被拒绝** ✓（不许写"仅从侧栏隐藏"✗）
+    remove.title = "该目录下的新文件将被拒绝";
+    remove.addEventListener("click", () => void removeWorkspace());
+    nav.prepend(remove);
+    nav.prepend(head); // 先 prepend 按钮再 prepend 头 ⇒ 最终顺序 = 头 → 按钮 → 树 ✓
+  }
+
+  /** ⭐ 撤销（切片③）：调 Rust 侧 `remove_workspace` ⇒ **真撤销**（从受信目录集合里删 ✓）；
+   *  成功后**清 `modu-workspace` 指针** ⇒ 面板回空状态 ✓
+   *  ⚠ 命令**拒绝**时（护栏 2：该路径不在受信集合里）⇒ **仍清指针** ✓ ＋ **如实提示中文原因** ✓
+   *     —— **陈旧指针不能把面板卡死** ✗（清单被外部改过 / 已撤过一次 / 目录已消失 ✓）*/
+  async function removeWorkspace(): Promise<void> {
+    const target = root;
+    let refused = "";
+    try {
+      await invoke<string>("remove_workspace", { path: target });
+    } catch (error) {
+      refused = String(error); // 护栏 2 的中文原因 ✓（无英文 OS 原串 ✓）
+    }
+    root = null;
+    try {
+      localStorage.removeItem(WORKSPACE_KEY); // 清指针 ✓（**拒绝时也清** ✓）
+    } catch {
+      /* 清不掉不影响本次会话 ✓ */
+    }
+    renderEmpty();
+    if (refused !== "") {
+      const note = document.createElement("div");
+      note.className = "menu-item";
+      note.textContent = refused;
+      nav.appendChild(note);
+    }
   }
 
   btnWorkspace.addEventListener("click", () => {

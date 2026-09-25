@@ -222,3 +222,43 @@ fn vanished_dir_is_still_revocable_by_exact_match_only() {
     trust.forget_dir(&not_it).expect_err("前缀相似但不同 ⇒ 必须拒绝（不得前缀匹配）");
     assert_eq!(trust.counts().1, 1, "反例不得删掉任何授权 ✓");
 }
+
+/// ② 不可读/不可列 ⇒ **显示中文原因、不崩** ✓
+///
+/// **免 ACL 夹具**（Lead 给的口径 ✓）：在**受信目录之内**放一个**普通文件** ⇒
+/// 用它的路径调 `list_dir` ⇒ 受信判定通过 ✓（在受信目录之下 ✓）但底层 `read_dir` 必然失败（不是目录 ✗）
+/// ⇒ **不需要造权限/ACL 夹具** ✓（Windows 上省事 ✓）
+///
+/// ⚠ 红线（本项目既有口径 ✓）：错误信息**中文、面向使用者** ⇒ **不得泄露英文 OS 原串** ✗
+/// （如 `The directory name is invalid` / `os error …` / `Os { … }` 之类；既有锚就是这个口径 ✓）
+#[test]
+fn listing_a_non_directory_reports_a_chinese_reason_without_os_text() {
+    let dir = temp_dir("列非目录");
+    let ws = dir.join("工作区");
+    std::fs::create_dir_all(&ws).expect("工作区应可创建");
+    let doc = ws.join("not-a-dir.txt");
+    std::fs::write(&doc, "x\n").expect("测试文件应可写");
+    let trust = TrustedPaths::in_memory();
+    trust.trust_dir(&ws.to_string_lossy()).expect("注册受信目录应成功");
+
+    let err = list_dir_at(&trust, &doc.to_string_lossy(), None).expect_err("列一个非目录必须失败");
+
+    // ① 面向使用者的中文文案 ✓
+    assert!(
+        err.contains("无法") || err.contains("目录") || err.contains("文件"),
+        "文案应为中文、面向使用者：{err}"
+    );
+    // ② 不得含英文 OS 原串 ✓（逐条列全，避免只挡一种写法 ✗）
+    for needle in [
+        "The directory name is invalid",
+        "The system cannot find",
+        "Access is denied",
+        "os error",
+        "Os {",
+        "No such file",
+        "Not a directory",
+        "拒绝访问",
+    ] {
+        assert!(!err.contains(needle), "不得泄露英文 OS 原串（{needle}）：{err}");
+    }
+}
