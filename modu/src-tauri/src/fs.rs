@@ -95,6 +95,105 @@ pub fn read_file(state: tauri::State<TrustedPaths>, path: String) -> Result<Load
     read_file_checked(&state, &path)
 }
 
+/// 目录项（D-11 文件夹工作区）：**只有名字与类型** —— **不读文件内容** ✓
+/// `is_markdown` **只看扩展名**（不打开文件、不嗅探内容）⇒ 属性级，性能与隐私双属性 ✓
+#[derive(serde::Serialize, Debug)]
+pub struct DirEntryOut {
+    pub name: String,
+    pub is_dir: bool,
+    pub is_markdown: bool,
+}
+
+/// 目录列表（D-11）：`truncated`/`total` 供 UI 显示「还有 N 项」✓
+/// ⚠ `total` 允许为 `None`：**绝不为填它再遍历一遍目录** ✗（上限由提交④实测决定）
+#[derive(serde::Serialize, Debug)]
+pub struct DirListing {
+    pub path: String,
+    pub entries: Vec<DirEntryOut>,
+    pub truncated: bool,
+    pub total: Option<usize>,
+}
+
+/// 列目录（受信校验后）：**单遍** `read_dir`、**收满 `limit` 即停止收集** ✓
+/// · **零内容读取**：只调 `read_dir` / `file_type` / `file_name` ✓（by construction）
+/// · **顺序确定**：目录在前，再按名称的**码位序**（Rust `Ord`，**不是本地化排序** ✗）
+///   ⇒ 顺序不依赖文件系统返回次序，UI 不抖动、测试不 flaky ✓
+/// · 符号链接**不跟随**（`file_type` 给的是链接自身）⇒ 不会因链接越界 ✓
+pub fn list_dir_at(trust: &TrustedPaths, raw: &str, limit: Option<usize>) -> Result<DirListing, String> {
+    let canonical = trust.allowed_for_list_dir(raw)?;
+    let read = std::fs::read_dir(&canonical)
+        .map_err(|e| format!("无法列出目录：{raw}（{}）", io_reason(&e)))?;
+    let mut entries: Vec<DirEntryOut> = Vec::new();
+    let mut truncated = false;
+    for item in read {
+        let Ok(entry) = item else { continue };
+        if let Some(max) = limit {
+            if entries.len() >= max {
+                truncated = true;
+                break; // 单遍：收满即停，**不**为了 total 再走一遍 ✗
+            }
+        }
+        let file_type = match entry.file_type() {
+            Ok(kind) => kind,
+            Err(_) => continue, // 类型读不到就跳过（不因为一项不可达而整体失败）
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let is_dir = file_type.is_dir();
+        let is_markdown = !is_dir && {
+            let lower = name.to_lowercase();
+            lower.ends_with(".md") || lower.ends_with(".markdown") || lower.ends_with(".mdx")
+        };
+        entries.push(DirEntryOut { name, is_dir, is_markdown });
+    }
+    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
+    Ok(DirListing {
+        path: canonical.to_string_lossy().into_owned(),
+        entries,
+        truncated,
+        total: None, // ⚠ 不为了填它多遍历一遍 ✓
+    })
+}
+
+/// `list_dir` 命令：渲染层展开目录树时调用。**校验在命令内部**（`allowed_for_list_dir`）✓
+#[tauri::command]
+pub fn list_dir(
+    state: tauri::State<TrustedPaths>,
+    path: String,
+    limit: Option<usize>,
+) -> Result<DirListing, String> {
+    list_dir_at(&state, &path, limit)
+}
+
+/// `pick_workspace_directory` 命令：**授权**入口（D-11）。
+/// ⚠ **不接受路径参数** —— 路径只能来自用户在**原生对话框**里的真实选择 ✓
+/// （渲染层最多能让对话框弹出来，弹出来也必须用户点 ⇒ 不存在"传路径即授权"的命令 ✓）
+/// **取消 ⇒ `Ok(None)`**（取消不是错误 ✓）；选中后登记失败 ⇒ 返回中文原因（不静默吞）✓
+#[tauri::command]
+pub async fn pick_workspace_directory(
+    app: tauri::AppHandle,
+    state: tauri::State<'_ , TrustedPaths>,
+) -> Result<Option<String>, String> {
+    let dialog_app = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app
+            .dialog()
+            .file()
+            .set_title("选择文件夹作为工作区")
+            .blocking_pick_folder()
+    })
+    .await
+    .map_err(|error| format!("打开文件夹对话框失败：{error}"))?;
+    let Some(folder) = picked else {
+        return Ok(None); // 用户取消 ✓
+    };
+    let Ok(path) = folder.into_path() else {
+        return Err("选择的文件夹不可用".to_string());
+    };
+    let raw = path.to_string_lossy().into_owned();
+    state.trust_dir(&raw)?;
+    Ok(Some(raw))
+}
+
 /// 按编码取对应 BOM 字节。GB18030 等无 BOM 概念的编码返回空切片
 /// （encoding_rs 的 encode 不会自动写 BOM，UTF-16 也须手动补）。
 fn bom_bytes_for(encoding: &Encoding) -> &'static [u8] {

@@ -85,3 +85,52 @@ fn utf8_bom_round_trip_is_preserved() {
         .expect("写");
     assert_eq!(std::fs::read(&doc).expect("读回"), bytes, "BOM 必须补回");
 }
+
+/// D-11 提交②：列目录的三条断言 —— **单遍收满即停** / **顺序确定（目录在前、码位序）** / **零内容读取**。
+#[test]
+fn list_dir_is_single_pass_ordered_and_reads_no_content() {
+    let dir = temp_dir("列目录命令");
+    for name in ["b.md", "a.txt", "z.md"] {
+        std::fs::write(dir.join(name), "内容").expect("测试文件应可写");
+    }
+    std::fs::create_dir_all(dir.join("子目录")).expect("子目录应可创建");
+    // 故意放一个**内容为空字节**的文件：若实现读了内容，这里是最可能出问题的地方
+    std::fs::write(dir.join("空.md"), "").expect("空文件应可写");
+    let trust = TrustedPaths::in_memory();
+    trust.trust_dir(&dir.to_string_lossy()).expect("注册受信目录应成功");
+
+    let all = list_dir_at(&trust, &dir.to_string_lossy(), None).expect("受信目录应可列");
+    assert!(!all.truncated, "未给 limit 时不应截断");
+    assert_eq!(all.total, None, "total 必须保持 None（不许为它多遍历一遍）");
+    assert_eq!(all.entries.len(), 5, "四项文件 + 一个子目录");
+    assert!(all.entries[0].is_dir, "目录必须排在前面");
+    let names: Vec<&str> = all.entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, vec!["子目录", "a.txt", "b.md", "z.md", "空.md"], "顺序必须确定：目录在前 → 再按名称码位序");
+    assert!(all.entries.iter().find(|e| e.name == "b.md").unwrap().is_markdown, ".md 应标为 markdown");
+    assert!(!all.entries.iter().find(|e| e.name == "a.txt").unwrap().is_markdown);
+
+    // 单遍收满即停：limit=2 ⇒ 只收 2 项 + truncated=true（**不**为了 total 再走一遍）
+    let cut = list_dir_at(&trust, &dir.to_string_lossy(), Some(2)).expect("受信目录应可列");
+    assert_eq!(cut.entries.len(), 2, "收满 limit 必须停止收集");
+    assert!(cut.truncated, "被截断时必须置 truncated ✓（供 UI 显示 还有 N 项）");
+    assert_eq!(cut.total, None);
+}
+
+/// D-11 提交②：命令边界 —— 直接调 `list_dir_at` 传**越界路径** ⇒ 必须拒（判据测试证明不了命令用它 ✗）。
+#[test]
+fn list_dir_refuses_outside_the_trusted_set() {
+    let dir = temp_dir("列目录拒绝");
+    let inside = dir.join("工作区");
+    std::fs::create_dir_all(&inside).expect("工作区应可创建");
+    let outside = dir.join("外面");
+    std::fs::create_dir_all(&outside).expect("外面应可创建");
+    let trust = TrustedPaths::in_memory();
+    trust.trust_dir(&inside.to_string_lossy()).expect("注册受信目录应成功");
+
+    let err = list_dir_at(&trust, &outside.to_string_lossy(), None).expect_err("受信目录外必须被拒");
+    assert!(!err.contains("No such file"), "拒绝文案不得含英文 OS 错误：{err}");
+    // 存在性不泄露：受信目录外**不存在**的路径给出同一类答复（都走 DenyReason::Untrusted）
+    let ghost = dir.join("不存在");
+    let err2 = list_dir_at(&trust, &ghost.to_string_lossy(), None).expect_err("目录外一律拒");
+    assert!(!err2.contains("No such file"), "不得泄露存在性：{err2}");
+}

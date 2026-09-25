@@ -264,6 +264,8 @@ pub fn run() {
             fs::read_file,
             fs::save_file,
             fs::pick_markdown_files,
+            fs::list_dir,
+            fs::pick_workspace_directory,
             take_pending_files,
             allow_asset_paths,
             print::spike_log,
