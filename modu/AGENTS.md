@@ -77,15 +77,21 @@
   ⇒ **共同根因一句话**：**「看不见」与「不存在」必须可区分** ✗
   → **落到工具上**：输出必须带 **`decodeAttempts`**（试过哪些编码/方法），让"没找到"能自证是"真的没有"还是"我没能力看到"。
   → **落到纪律上**：**任何关于"存储值"的结论都必须两路交叉验证**（页面读数 + **全编码**磁盘扫描）；**只有一路读数不许当结论**。
-    断言工具报 `[]` 而不是 N 条 ✓（没有锚就会复发）。
-- **现成工具（已入库 `modu/tests/tools/`，别再放 `.verify/` 里）**：
-  - `run-isolated.mjs` —— 启动包装：前置检查 → **启动前**快照 → 多退出路径还原 → 带 `WEBVIEW2_USER_DATA_FOLDER` 启动。
+- **现成工具（已入库 `modu/tests/tools/`，别再放 `.verify/` 里；全部参数化、无机器绝对路径，输出写 `.verify/`）**：
+  - `run-isolated.mjs` —— 启动包装（受信清单**启动前**快照 + 多退出路径还原；受控例外 `--allow-real-profile`）
     用法：`node tests/tools/run-isolated.mjs --iso <绝对隔离目录> --doc <md> [--config …] [--snapshot …]`
-  - `probe-isolation.mjs` —— 三项验收探针（等 `__moduDev` 带超时；按启动前快照还原并复核 SHA）。
+  - `probe-isolation.mjs` —— 隔离三项验收探针（等 `__moduDev` 带超时；按启动前快照还原并复核 SHA）
     用法：`node tests/tools/probe-isolation.mjs --doc <md> --iso <隔离目录> [--port 9222]`
-  - `extract-leveldb.mjs` —— leveldb **只读取证**（UTF-16LE 奇偶偏移都试；`--delete-prefix` 给删除/保留集，**从不删**）。
-    用法：`node tests/tools/extract-leveldb.mjs --dir <leveldb> --key modu-recent [--delete-prefix <前缀>]`
-  - 三者**全部参数化、无机器绝对路径**（换机器即用），输出写 `.verify/`（gitignored）；`pnpm run check` 不受影响（实测 511 passed）。
+  - `extract-leveldb.mjs` —— leveldb **只读取证**：live 值 = 最新活动文件里的最后一次命中；**两编码 × 两偏移**都试；
+    输出带 `rule` / `liveSource` / `decodeAttempts`（"没找到"要能自证是"真没有"还是"我看不见"）
+    用法：`node tests/tools/extract-leveldb.mjs [--dir <leveldb>] [--key modu-recent] [--test-prefix <前缀>]`
+  - `scan-markers.mjs` —— **无启发式全量扫描**（列所有 `<key>` 标记的文件/偏移/mtime/值 + 时间序，含 `[]`）
+    用法：`node tests/tools/scan-markers.mjs [--dir <leveldb>] [--key modu-recent]`
+  - `dump-origins.mjs` —— **origin 账**：页面侧（`--page`）读 `location.origin` + `Object.keys(localStorage)` + **原始值**；
+    磁盘侧按 origin 分域 dump。用法：`node tests/tools/dump-origins.mjs --page --port 9222` / `--leveldb <dir>`
+  - `clear-recent.mjs` —— 清空 `modu-recent` 的**受控**工具（`--before` + `--expect-keep`；当前值 ≠ before 即**拒绝写回**）
+    用法：`node tests/tools/clear-recent.mjs --before <before.json> --expect-keep <keep.json> [--port 9222]`
+  - ⚠ **门禁数值不要写进文档**（每轮都变）：一律写"跑 `pnpm run check` 看当前值"。
 
 ## 性能归因（已实测，别再走弯路）
 
