@@ -20,15 +20,31 @@ struct PendingFiles(Mutex<Vec<String>>);
 /// 对拍见 tests/md-ext.spec.ts 对 tauri.conf.json 的 fileAssociations.ext）。
 const MD_EXTENSIONS: [&str; 3] = ["md", "markdown", "mdx"];
 
-/* ---- 默认窗口尺寸（按主屏工作区 clamp，2026-09-23 批）----
-   阅读应用原默认 1100×750 太小（每次都要手动拖大），但直接写 1680×1200 会在
-   小屏 / 高 DPI / 远程会话里开到工作区之外。故：config 声明期望尺寸，启动时按
-   **主显示器工作区**（已扣任务栏）夹取一遍，再在工作区内居中——
-   位置一律由工作区算出，不硬编码相对屏幕的某一点。
-   契约同步写在 AGENTS.md「默认窗口」条；CDP overlay 各自钉住尺寸。 */
-/// 期望宽度（= tauri.conf.json 的 window.width，也是宽度上界）
+/* ---- 窗口尺寸契约：config / overlay 说什么就是什么，程序只保证「装得下」
+   （2026-09-23 第二批修订：只缩不放、不覆盖显式配置）----
+   启动时读窗口**当前**逻辑尺寸 —— 它就是 `tauri.conf.json`（或 `--config` overlay）
+   声明的 `width`/`height`（Tauri 建窗时已按 `minWidth`/`minHeight` 兜过底）——
+   然后**只往下夹**到主屏工作区可用区（宽 −400 / 高 −80），再在该尺寸下于工作区内居中。
+   **绝不放大、绝不把它强行置成某个「理想值」**。
+
+   ⚠ 上一版的 `window_placement(area)` 无条件返回「理想尺寸 = min(1680, 工作区−400)」，
+   `adjust_window_size` 再无条件 set 上去 —— 等于把 config/overlay 声明的尺寸**覆盖掉**：
+   `.verify/dev/tauri.dev-cdp-narrow.conf.json` 声明的 900×750 因此从未生效
+   （2026-09-23 实测复现：窄窗 overlay 起来就是 1680×1200），
+   AGENTS.md「CDP overlay 各自钉住尺寸」那句当时**是假的**，所有窄窗测试都失去可靠前提。
+
+   本版语义（四种情况）：
+   · 配置 1680×1200（默认）              → 本机大工作区仍是 1680×1200；
+   · 配置 900×750（窄窗 overlay）        → 真的 900×750（不再被放大到理想值）；
+   · 配置 3000×2000（超出工作区）        → 缩到「工作区 − 保留余量」的上限；
+   · 读到的请求值不可信（非有限 / ≤0 / 小于兜底下限） → 保留 config 尺寸不动、只摆位置
+     （兜底形状见 `fit_requested_size` 返回 None 的分支；本机实测该分支不触发：
+     最小化状态下 `inner_size()` 仍返回 config 尺寸）。
+   位置**一律由工作区算出**（不赌 `set_size` 的异步时序，也不用 `center()`）。
+   契约同步写在 AGENTS.md「默认窗口」条。 */
+/// 兜底期望宽度：仅当读不到可信的请求尺寸时使用（历史上也是 config 的 width）
 const WIN_W_DEFAULT: u32 = 1680;
-/// 期望高度（= tauri.conf.json 的 window.height，也是高度上界）
+/// 兜底期望高度：同上（历史上也是 config 的 height）
 const WIN_H_DEFAULT: u32 = 1200;
 /// 宽度至少让出的横向余量（工作区宽 − 本值；给屏幕边缘留白）
 const WIN_W_RESERVED: f64 = 400.0;
@@ -56,28 +72,65 @@ struct WinPlacement {
     y: f64,
 }
 
-/// 夹取函数（纯函数，可单测）：把工作区（物理像素）换算成逻辑像素后求目标尺寸与居中位置。
-/// 尺寸三层夹取：① 不超期望上界；② 工作区 − 保留余量（首选）；③ 兜底下限——
-/// 极小工作区下宁可略微超出，也不把窗口压到读不了字。
-fn window_placement(area: &WorkArea) -> WinPlacement {
-    let s = if area.scale.is_finite() && area.scale > 0.0 {
-        area.scale
+/// 缩放系数清洗：非有限 / 非正一律按 1（避免除零 → 无穷 → NaN 尺寸）
+fn safe_scale(scale: f64) -> f64 {
+    if scale.is_finite() && scale > 0.0 {
+        scale
     } else {
         1.0
-    };
-    let avail_w = area.width / s;
-    let avail_h = area.height / s;
-    let width = f64::from(WIN_W_DEFAULT)
-        .min((avail_w - WIN_W_RESERVED).max(WIN_W_FLOOR))
-        .max(WIN_W_FLOOR);
-    let height = f64::from(WIN_H_DEFAULT)
-        .min((avail_h - WIN_H_RESERVED).max(WIN_H_FLOOR))
-        .max(WIN_H_FLOOR);
+    }
+}
+
+/// 单轴「只缩不放」（纯函数）：
+/// · 请求值可信（有限且不低于兜底下限）→ `min(请求, 工作区上限)`；
+/// · 请求值退化（非有限 / ≤0 / 小于兜底下限）→ `None`（调用方保留 config 尺寸不动）。
+/// 工作区上限 = max(可用 − 保留余量, 兜底下限)：极小工作区下宁可略微超边，
+/// 也不把窗口压到读不了字（与上一版同一取舍）。
+fn fit_axis(requested: f64, avail: f64, reserved: f64, floor: f64) -> Option<f64> {
+    if !requested.is_finite() || requested < floor {
+        return None;
+    }
+    Some(requested.min((avail - reserved).max(floor)))
+}
+
+/// 「只缩不放」尺寸解算（纯函数，可单测）：入参是 config/overlay 声明的逻辑尺寸。
+/// 返回 `None` 表示两个轴里至少有一个读不到可信值 —— 调用方**不得**据此放大窗口，
+/// 只保留 config 尺寸并照常居中。
+fn fit_requested_size(requested_w: f64, requested_h: f64, area: &WorkArea) -> Option<(f64, f64)> {
+    let s = safe_scale(area.scale);
+    let width = fit_axis(requested_w, area.width / s, WIN_W_RESERVED, WIN_W_FLOOR)?;
+    let height = fit_axis(requested_h, area.height / s, WIN_H_RESERVED, WIN_H_FLOOR)?;
+    Some((width, height))
+}
+
+/// 把 w×h（逻辑像素）在工作区内居中（纯函数）：位置一律算出来，不用 `center()`。
+fn centered_position(area: &WorkArea, w: f64, h: f64) -> (f64, f64) {
+    let s = safe_scale(area.scale);
+    (
+        area.x / s + (area.width / s - w) / 2.0,
+        area.y / s + (area.height / s - h) / 2.0,
+    )
+}
+
+/// 兜底 / 对照用：把「兜底期望尺寸」按工作区夹一次并居中。
+/// ⚠ 生产路径**只在** `fit_requested_size` 返回 None（读不到可信请求值）时才用它；
+/// 正常启动一律走「当前尺寸只缩不放」。保留它是因为既有单测以它为对照锚，
+/// 且它把「期望尺寸 + 三层夹取」这条老语义完整固化下来（防回归）。
+fn window_placement(area: &WorkArea) -> WinPlacement {
+    let (width, height) = (
+        f64::from(WIN_W_DEFAULT)
+            .min((area.width / safe_scale(area.scale) - WIN_W_RESERVED).max(WIN_W_FLOOR))
+            .max(WIN_W_FLOOR),
+        f64::from(WIN_H_DEFAULT)
+            .min((area.height / safe_scale(area.scale) - WIN_H_RESERVED).max(WIN_H_FLOOR))
+            .max(WIN_H_FLOOR),
+    );
+    let (x, y) = centered_position(area, width, height);
     WinPlacement {
         width,
         height,
-        x: area.x / s + (avail_w - width) / 2.0,
-        y: area.y / s + (avail_h - height) / 2.0,
+        x,
+        y,
     }
 }
 
@@ -93,39 +146,64 @@ fn primary_work_area(monitor: &tauri::Monitor) -> WorkArea {
     }
 }
 
-/// 把窗口调整到目标尺寸并在主屏工作区内居中。尺寸已相符时不重复 set（免得每次
-/// 启动都触发一次无谓的重排）；位置**总是**显式给——Tauri 的 `center()` 依赖
-/// 窗口当前尺寸在事件循环里的更新时机（set_size 是异步派发），显式给位置不赌时序。
+/// 保证窗口「装得下」并在主屏工作区内居中（**只缩不放**，见文件上方契约）。
+/// 尺寸不变时不重复 set（免得每次启动都触发一次无谓的重排）；
+/// 位置**总是**显式给——Tauri 的 `center()` 依赖窗口当前尺寸在事件循环里的更新时机
+/// （set_size 是异步派发），显式给位置不赌时序。
 fn adjust_window_size(app: &tauri::App, monitor: &tauri::Monitor) -> tauri::Result<()> {
     let Some(window) = app.get_webview_window("main") else {
         println!("[window] GATHER 未找到 main 窗口，跳过尺寸夹取");
         return Ok(());
     };
     let area = primary_work_area(monitor);
-    let target = window_placement(&area);
+    // 当前逻辑尺寸 = config/overlay 声明的尺寸（Tauri 建窗时已按 minWidth/minHeight 兜底）。
+    // 用**窗口自己的**缩放系数换算：多显示器下它未必等于主屏的系数。
+    let current = window.inner_size()?;
+    let win_scale = safe_scale(window.scale_factor().unwrap_or(area.scale));
+    let requested_w = f64::from(current.width) / win_scale;
+    let requested_h = f64::from(current.height) / win_scale;
+    let fitted = fit_requested_size(requested_w, requested_h, &area);
+    // 兜底：读不到可信请求值 → 各轴回到「兜底期望尺寸」那条老路（绝不凭空放大合法请求）
+    let (want_w, want_h, want_x, want_y) = match fitted {
+        Some((w, h)) => {
+            let (x, y) = centered_position(&area, w, h);
+            (w, h, x, y)
+        }
+        None => {
+            println!(
+                "[window] GATHER 请求尺寸不可信（{requested_w:.0}×{requested_h:.0} 逻辑像素），改走兜底期望尺寸"
+            );
+            let p = window_placement(&area);
+            (p.width, p.height, p.x, p.y)
+        }
+    };
     println!(
-        "[window] GATHER 主屏工作区=({},{} {}×{}) scale={} → 目标逻辑尺寸={}×{} 位置=({},{})",
+        "[window] GATHER 主屏工作区=({},{} {}×{}) scale={} · 配置请求={}×{} → 目标={}×{} 位置=({},{})",
         area.x,
         area.y,
         area.width,
         area.height,
         area.scale,
-        target.width,
-        target.height,
-        target.x.round(),
-        target.y.round()
+        requested_w.round(),
+        requested_h.round(),
+        want_w.round(),
+        want_h.round(),
+        want_x.round(),
+        want_y.round()
     );
-    let current = window.inner_size()?;
-    let want_w = target.width.round();
-    let want_h = target.height.round();
-    if f64::from(current.width) != want_w || f64::from(current.height) != want_h {
-        window.set_size(LogicalSize::new(want_w, want_h))?;
+    // 只缩不放：仅在真的超出工作区时才 set_size
+    if (want_w - requested_w).abs() > 0.5 || (want_h - requested_h).abs() > 0.5 {
+        window.set_size(LogicalSize::new(want_w.round(), want_h.round()))?;
     }
-    window.set_position(LogicalPosition::new(target.x.round(), target.y.round()))?;
+    window.set_position(LogicalPosition::new(want_x.round(), want_y.round()))?;
     let now = window.inner_size()?;
     println!(
-        "[window] GATHER 夹取完成：set={}×{} 现行物理={}×{}",
-        want_w, want_h, now.width, now.height
+        "[window] GATHER 收工：请求={}×{} 现行物理={}×{}（缩过={}）",
+        requested_w.round(),
+        requested_h.round(),
+        now.width,
+        now.height,
+        (want_w - requested_w).abs() > 0.5 || (want_h - requested_h).abs() > 0.5
     );
     Ok(())
 }
@@ -366,8 +444,8 @@ fn read_uri(args: &ICoreWebView2NavigationStartingEventArgs) -> windows_core::Re
 #[cfg(test)]
 mod asset_path_tests {
     use super::{
-        has_md_extension, md_paths, usable_image_paths, validate_image_path, window_placement,
-        WorkArea,
+        centered_position, fit_requested_size, has_md_extension, md_paths, usable_image_paths,
+        validate_image_path, window_placement, WorkArea,
     };
 
     /// 建一个临时文件用于「存在且是普通文件」的正例。
@@ -546,6 +624,80 @@ mod asset_path_tests {
                 (1680.0, 1200.0),
                 "scale={scale} 应退化为 1"
             );
+        }
+    }
+
+    /* ---- 2026-09-23 第二批：只缩不放、不覆盖显式配置 ---- */
+
+    /// 本机工作区（2560×1392 / 100%）：请求 1680×1200 → 原样保留（不放大也不缩）。
+    #[test]
+    fn requested_size_is_kept_when_it_fits() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1392.0, scale: 1.0 };
+        assert_eq!(fit_requested_size(1680.0, 1200.0, &area), Some((1680.0, 1200.0)));
+        // 窄窗 overlay 的 900×750：**绝不能被放大**到「理想值 1680×1200」
+        assert_eq!(fit_requested_size(900.0, 750.0, &area), Some((900.0, 750.0)));
+        // 位置按「被保留的尺寸」居中，不是按理想尺寸居中
+        assert_eq!(centered_position(&area, 900.0, 750.0), (830.0, 321.0));
+        assert_eq!(centered_position(&area, 1680.0, 1200.0), (440.0, 96.0));
+    }
+
+    /// 超出工作区才缩：3000×2000 → 各轴吃「工作区 − 保留余量」。
+    #[test]
+    fn requested_size_shrinks_only_when_it_overflows_the_work_area() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1392.0, scale: 1.0 };
+        assert_eq!(fit_requested_size(3000.0, 2000.0, &area), Some((2160.0, 1312.0)), "2560-400 / 1392-80");
+        assert_eq!(fit_requested_size(2161.0, 1200.0, &area), Some((2160.0, 1200.0)), "只缩到上限，不缩到理想值");
+        // 小工作区 1280×800：请求 1680×1200 缩到 880×720
+        let small = WorkArea { x: 0.0, y: 0.0, width: 1280.0, height: 800.0, scale: 1.0 };
+        assert_eq!(fit_requested_size(1680.0, 1200.0, &small), Some((880.0, 720.0)));
+        // 极小工作区：兜底下限当下限用（宁可超边也不压到读不了字）
+        let tiny = WorkArea { x: 0.0, y: 0.0, width: 640.0, height: 400.0, scale: 1.0 };
+        assert_eq!(fit_requested_size(900.0, 750.0, &tiny), Some((720.0, 480.0)));
+    }
+
+    /// 高 DPI：物理工作区先除缩放系数再算上限；请求值本身是逻辑像素，不参与换算。
+    #[test]
+    fn requested_size_clamps_against_a_scaled_work_area() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1440.0, scale: 1.5 };
+        // 逻辑可用 1706.67×960 → 上限 1306.67×880
+        assert_eq!(fit_requested_size(900.0, 750.0, &area), Some((900.0, 750.0)), "窄窗请求在 1.5 缩放下仍原样保留");
+        let (w, h) = fit_requested_size(1600.0, 1000.0, &area).expect("合法请求");
+        assert!((w - 1306.6667).abs() < 0.01, "实测 {w}");
+        assert_eq!(h, 880.0);
+        // 缩放系数非法时按 1：2560×1440 → 上限 2160×1360
+        let bad = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1440.0, scale: f64::NAN };
+        assert_eq!(fit_requested_size(3000.0, 3000.0, &bad), Some((2160.0, 1360.0)));
+    }
+
+    /// 退化请求值（非有限 / ≤0 / 小于兜底下限）→ None：调用方保留 config 尺寸、绝不放大。
+    #[test]
+    fn degenerate_requested_size_yields_none_instead_of_a_guess() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1392.0, scale: 1.0 };
+        for (w, h) in [
+            (f64::NAN, 750.0),
+            (900.0, f64::NAN),
+            (0.0, 750.0),
+            (-100.0, 750.0),
+            (f64::INFINITY, 750.0),
+            (719.0, 750.0),
+            (900.0, 479.0),
+        ] {
+            assert_eq!(fit_requested_size(w, h, &area), None, "请求 {w}×{h} 应判为不可信");
+        }
+        // 正好落在兜底下限上：可信（Tauri 的 minWidth/minHeight 就是这两个值）
+        assert_eq!(fit_requested_size(720.0, 480.0, &area), Some((720.0, 480.0)));
+    }
+
+    /// 只缩不放的性质：任何可信请求下，结果既不大于请求、也不大于工作区上限。
+    #[test]
+    fn fitted_size_never_exceeds_the_request() {
+        let area = WorkArea { x: 0.0, y: 0.0, width: 2560.0, height: 1392.0, scale: 1.0 };
+        for w in [720.0, 900.0, 1680.0, 2160.0, 2161.0, 4000.0] {
+            for h in [480.0, 750.0, 1200.0, 1312.0, 1313.0, 3000.0] {
+                let (fw, fh) = fit_requested_size(w, h, &area).expect("合法请求");
+                assert!(fw <= w && fh <= h, "{w}×{h} 被放大了：{fw}×{fh}");
+                assert!(fw <= 2160.0 && fh <= 1312.0, "{w}×{h} 超出工作区上限：{fw}×{fh}");
+            }
         }
     }
 }
