@@ -349,11 +349,18 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 
 /* 动作按钮：纸面填充 + 1px --border 定形（与浮层卡片同一套描边语言）。
    P1 纪律保留：选择器只认**本段结构**，绝不写 `.topbar button` 这类后代选择器——
-   那会穿透进 #recent-menu / #overflow-menu / #tabs-menu 的条目，把它们渲染成小按钮。 */
+   那会穿透进 #recent-menu / #overflow-menu / #tabs-menu 的条目，把它们渲染成小按钮。
+   ⚠ #btn-outline（☰）虽然 DOM 上在 #actions **之外**（它是顶栏左组的第一个子元素，
+   不是动作区成员），但它是**同一排工具按钮**里的一个，用户实测「只有它长得不一样」：
+   裸 button 的 UA 默认皮（0 圆角 / 2px outset 边框 / #f0f0f0 底 / 23px 高 / Arial 13.33px
+   / cursor:default / 无 hover 反馈）。本批把它按「直属 id」写进这四组选择器，与
+   「打开… / 最近 / Aa / ◐ / PDF / ⋯」逐项同皮。**不给它裹一层 .actions 容器**——
+   那会改 DOM 结构、动到 flex 布局与 #actions 的收缩逻辑（T1 的滞回余量按实测 130px 定的）。 */
 .actions > button,
 .actions > .recent-wrap > button,
 .actions > .settings-wrap > button,
-.actions > .overflow-wrap > button {
+.actions > .overflow-wrap > button,
+.topbar > #btn-outline {
   flex: none;
   height: var(--h-ctl);
   padding: 0 var(--size-3);
@@ -371,7 +378,8 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 .actions > button:hover:not(:disabled),
 .actions > .recent-wrap > button:hover:not(:disabled),
 .actions > .settings-wrap > button:hover:not(:disabled),
-.actions > .overflow-wrap > button:hover:not(:disabled) {
+.actions > .overflow-wrap > button:hover:not(:disabled),
+.topbar > #btn-outline:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--border-strong);
   color: var(--text);
@@ -379,12 +387,14 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 .actions > button:active:not(:disabled),
 .actions > .recent-wrap > button:active:not(:disabled),
 .actions > .settings-wrap > button:active:not(:disabled),
-.actions > .overflow-wrap > button:active:not(:disabled) { background: var(--bg-active); }
+.actions > .overflow-wrap > button:active:not(:disabled),
+.topbar > #btn-outline:active:not(:disabled) { background: var(--bg-active); }
 /* 禁用态：压暗 + 不回显 hover（M4 前 PDF 导出恒禁用）*/
 .actions > button:disabled,
 .actions > .recent-wrap > button:disabled,
 .actions > .settings-wrap > button:disabled,
-.actions > .overflow-wrap > button:disabled { opacity: .45; cursor: default; }
+.actions > .overflow-wrap > button:disabled,
+.topbar > #btn-outline:disabled { opacity: .45; cursor: default; }
 
 /* ⋯ 按钮：图标钮，方形（与 ‹ › 同尺寸感，但在动作组里给 28px 控件高） */
 .actions > #btn-overflow { padding: 0; inline-size: var(--h-ctl); }

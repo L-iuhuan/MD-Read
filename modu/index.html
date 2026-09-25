@@ -46,12 +46,6 @@
         <div id="actions" class="actions">
           <!-- 强调按钮：全条唯一的软底主色按钮（其余动作都是纸面填充的发丝线按钮） -->
           <button id="btn-edit" type="button" class="is-accent" title="编辑 / 阅读（Ctrl+E）" aria-label="切换编辑与阅读模式" disabled>编辑</button>
-          <!-- ⋯ 溢出菜单（D-05 新增功能）：拥挤时收进「打开… / 最近」与标签批量操作。
-               常显项（编辑 / Aa / ◐ / PDF）留在条上，保证任何时候都点得到。 -->
-          <div id="overflow-wrap" class="overflow-wrap">
-            <button id="btn-overflow" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
-            <div id="overflow-menu" class="overflow-menu" role="menu" aria-label="更多操作" hidden></div>
-          </div>
           <button id="btn-open" type="button" title="打开 Markdown 文件">打开…</button>
           <div id="recent-wrap" class="recent-wrap">
             <button id="btn-recent" type="button" title="最近打开的文件">最近</button>
@@ -147,6 +141,18 @@
           </div>
           <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
           <button id="btn-export" type="button" title="导出 PDF（M4 提供）" disabled>PDF</button>
+          <!-- ⋯ 溢出菜单（D-05 新增功能）：拥挤时收进「打开… / 最近」与标签批量操作。
+               常显项（编辑 / Aa / ◐ / PDF）留在条上，保证任何时候都点得到。
+               ⚠ DOM 位置固定在本动作区**末尾**（PDF 之后、窗口三钮之前）——用户实测
+                 「编辑右边的按钮是什么？」的根因就是它原先夹在 #btn-edit 与 #btn-open
+                 之间：非拥挤态下「打开… / 最近」本来就可见，⋯ 摆在那儿是重复且无上下文的
+                 按钮。菜单是 .overflow-wrap 的绝对定位子元素（右对齐到按钮右沿，见 app.css
+                 §7c），移到末尾后右边缘距窗口右边界仍有整排窗口三钮的余量，故拥挤/非拥挤
+                 两态都不会出窗。 -->
+          <div id="overflow-wrap" class="overflow-wrap">
+            <button id="btn-overflow" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
+            <div id="overflow-menu" class="overflow-menu" role="menu" aria-label="更多操作" hidden></div>
+          </div>
         </div>
         <button id="win-min" type="button" title="最小化" aria-label="最小化">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"

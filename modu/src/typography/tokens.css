@@ -180,13 +180,38 @@
    ② 调色板层 —— 5 套 × 亮/暗 = 10 组（D-01）。每组只声明 --pal-* 原色；
       hover 面在默认组用给定值，其余组用统一配方（与给定值等价：
       #ffffff × #e3e8ee 各半 ≈ #f2f4f7）。
+
+   --- 2026-09-23 分隔线调优（用户反馈「S2 太灰了，比 S1 稍微多一点即可，
+       或者调整分隔线的颜色即可」）---
+   采纳**候选 b：填充完全不动，只把分隔线调强一档**。10 组的
+   --pal-line / --pal-hair 在 OKLab 明度上各向「远离壳层」方向移 5 级
+   （亮色压深、暗色提亮；--pal-line-2 一字未动，理由见下）。
+
+   为什么填充不能动（实测硬约束，不是偏好）：把 chrome 压深 2 级（候选 c）就会让
+   **宣纸·亮 / 石墨·亮 / 青墨·亮** 的 --text-muted 对壳层跌到 4.28 / 4.32 / 4.48:1，
+   压深 4 级（候选 a）则亮色 5 组全跌破（4.06~4.31:1）—— 都低于文本 AA 4.5:1。
+   根因是宣纸·亮的 --pal-muted 对纸面本来就只有 4.70:1，没有余量。
+   保留填充后四条文字色（text / text-muted / fg-dim / accent-text）**对纸面与对壳层
+   的对比度逐位不变**，故不存在任何 AA 风险。
+
+   为什么只有 --pal-line / --pal-hair：这两个是「壳层分隔线 / 同类细线」的唯二来源
+   （--border-chrome / --line 与 --rule / --hair）。--pal-line-2 同时是 --border，
+   即每个按钮、每个浮层卡片、代码块与表格的 1px 描边 —— 一起加档等于顺手把所有控件
+   与文档内的边框改重，超出「调分隔线强度」这一批的范围（本文件 §③ 已把「定形」判给
+   --border）。代价如实记：--pal-hair 也是 cjk.css 里 .mdc hr 的颜色，故**正文里的
+   水平分隔线也会跟着强一档**（这是同一 token 的既有语义，不是新增副作用）。
+
+   实测（1100×750 真机，靛蓝）：亮色 line #eceff3→#dcdfe2、对壳层 1.113→1.291:1；
+   hair 1.167→1.356:1；衍生量 --bg-canvas（chrome 50% × hair）随之加深，
+   画布对纸面 1.122→1.205:1。暗色 line #2a3038→#373d45、对壳层 1.270→1.542:1。
+   取证与三个候选的取舍过程：docs/tasks/Phase2-分隔线调优报告-2026-09-23.md。
    ========================================================================== */
 
 /* --- 靛蓝 · 亮（默认主题；:root 单独命中，故与 data-palette 同写一条）--- */
 :root,
 :root[data-palette="dianlan"] {
   --pal-chrome: #fafbfc;  --pal-card: #ffffff;    --pal-paper: #ffffff;
-  --pal-line: #eceff3;    --pal-line-2: #e3e8ee;  --pal-hair: #e6eaee;
+  --pal-line: #dcdfe2;    --pal-line-2: #e3e8ee;  --pal-hair: #d6dade;
   --pal-hover: #f2f4f7;   /* D-01 给定的悬停面 */
   --pal-fg: #1f2328;      --pal-muted: #69707a;   --pal-dim: #98a1ac;
   --pal-accent: #1d4ed8;  --pal-soft: #eef3fd;    --pal-on: #14428f;
@@ -196,7 +221,7 @@
 /* --- 宣纸 · 亮 --- */
 :root[data-palette="xuanzhi"] {
   --pal-chrome: #fcfaf6;  --pal-card: #fffefb;    --pal-paper: #fffefb;
-  --pal-line: #eae5d9;    --pal-line-2: #ddd7c7;  --pal-hair: #e6e1d6;
+  --pal-line: #dad5c9;    --pal-line-2: #ddd7c7;  --pal-hair: #d6d1c6;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #262119;      --pal-muted: #7a7266;   --pal-dim: #a8a196;
   --pal-accent: #8a7550;  --pal-soft: #f4f1e8;    --pal-on: #6d5c33;
@@ -206,7 +231,7 @@
 /* --- 石墨 · 亮 --- */
 :root[data-palette="shimo"] {
   --pal-chrome: #f7f8f9;  --pal-card: #ffffff;    --pal-paper: #ffffff;
-  --pal-line: #e9ebed;    --pal-line-2: #dfe2e5;  --pal-hair: #e6e9eb;
+  --pal-line: #d9dbdd;    --pal-line-2: #dfe2e5;  --pal-hair: #d6d9db;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #1c1f22;      --pal-muted: #6b7278;   --pal-dim: #9aa1a7;
   --pal-accent: #5b6672;  --pal-soft: #eef0f2;    --pal-on: #414b56;
@@ -216,7 +241,7 @@
 /* --- 紫黛 · 亮 --- */
 :root[data-palette="zidai"] {
   --pal-chrome: #f7f7fb;  --pal-card: #ffffff;    --pal-paper: #ffffff;
-  --pal-line: #e7e7f0;    --pal-line-2: #dbdbea;  --pal-hair: #e4e4ee;
+  --pal-line: #d7d7df;    --pal-line-2: #dbdbea;  --pal-hair: #d4d4de;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #1e1f2e;      --pal-muted: #696c86;   --pal-dim: #9a9db6;
   --pal-accent: #3b4fa8;  --pal-soft: #ebeafa;    --pal-on: #2f3f8f;
@@ -226,7 +251,7 @@
 /* --- 青墨 · 亮 --- */
 :root[data-palette="qingmo"] {
   --pal-chrome: #f6f8f8;  --pal-card: #ffffff;    --pal-paper: #ffffff;
-  --pal-line: #e6ebea;    --pal-line-2: #dbe3e2;  --pal-hair: #e4eae9;
+  --pal-line: #d6dbda;    --pal-line-2: #dbe3e2;  --pal-hair: #d4dad9;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #1b2321;      --pal-muted: #64716f;   --pal-dim: #96a3a1;
   --pal-accent: #2f7d78;  --pal-soft: #e4f1ef;    --pal-on: #25605c;
@@ -237,7 +262,7 @@
 :root[data-theme="dark"],
 :root[data-palette="dianlan"][data-theme="dark"] {
   --pal-chrome: #191d24;  --pal-card: #1f242c;    --pal-paper: #12151a;
-  --pal-line: #2a3038;    --pal-line-2: #333a44;  --pal-hair: #2f3640;
+  --pal-line: #373d45;    --pal-line-2: #333a44;  --pal-hair: #3c434d;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #e6e9ee;      --pal-muted: #98a0ad;   --pal-dim: #6b7480;
   --pal-accent: #4da3ff;  --pal-soft: #16283c;    --pal-on: #9dc9ff;
@@ -247,7 +272,7 @@
 /* --- 宣纸 · 暗（暖碳）--- */
 :root[data-palette="xuanzhi"][data-theme="dark"] {
   --pal-chrome: #1f1e19;  --pal-card: #262420;    --pal-paper: #171613;
-  --pal-line: #312f28;    --pal-line-2: #3b3830;  --pal-hair: #363430;
+  --pal-line: #3e3c35;    --pal-line-2: #3b3830;  --pal-hair: #43413d;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #eae8e2;      --pal-muted: #a5a096;   --pal-dim: #78746b;
   --pal-accent: #d9a353;  --pal-soft: #302819;    --pal-on: #ecc98d;
@@ -257,7 +282,7 @@
 /* --- 石墨 · 暗 --- */
 :root[data-palette="shimo"][data-theme="dark"] {
   --pal-chrome: #1d2023;  --pal-card: #24282b;    --pal-paper: #16181a;
-  --pal-line: #2e3235;    --pal-line-2: #373b3f;  --pal-hair: #33383b;
+  --pal-line: #3b3f42;    --pal-line-2: #373b3f;  --pal-hair: #404548;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #e8eaec;      --pal-muted: #9aa1a7;   --pal-dim: #6f767c;
   --pal-accent: #a8b4c0;  --pal-soft: #242a30;    --pal-on: #c8d3de;
@@ -267,7 +292,7 @@
 /* --- 紫黛 · 暗 --- */
 :root[data-palette="zidai"][data-theme="dark"] {
   --pal-chrome: #1c1c26;  --pal-card: #23232f;    --pal-paper: #15151d;
-  --pal-line: #2c2c3a;    --pal-line-2: #363645;  --pal-hair: #31313f;
+  --pal-line: #393947;    --pal-line-2: #363645;  --pal-hair: #3e3e4c;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #e7e7f0;      --pal-muted: #9a9ab5;   --pal-dim: #6f6f85;
   --pal-accent: #8f9ce8;  --pal-soft: #262a42;    --pal-on: #bcc5f5;
@@ -277,7 +302,7 @@
 /* --- 青墨 · 暗 --- */
 :root[data-palette="qingmo"][data-theme="dark"] {
   --pal-chrome: #18201e;  --pal-card: #1e2725;    --pal-paper: #121917;
-  --pal-line: #28332f;    --pal-line-2: #333f3b;  --pal-hair: #2e3936;
+  --pal-line: #35403c;    --pal-line-2: #333f3b;  --pal-hair: #3b4643;
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #e5ebe9;      --pal-muted: #95a39f;   --pal-dim: #6b7874;
   --pal-accent: #5fc0b4;  --pal-soft: #1a2b28;    --pal-on: #a5ded5;
