@@ -20,6 +20,8 @@ const hljs = readFileSync("src/typography/hljs.css", "utf8");
 const tokens = readFileSync("src/typography/tokens.css", "utf8");
 const html = readFileSync("index.html", "utf8");
 const mainSrc = readFileSync("src/main.ts", "utf8");
+// 批次 3-7：顶栏拥挤态已搬到 app/shell-overflow.ts ⇒ 该段的锚改指新模块（断言不减、不弱化）
+const shellOverflowSrc = readFileSync("src/app/shell-overflow.ts", "utf8");
 const tabsSrc = readFileSync("src/app/tabs.ts", "utf8");
 const menuSrc = readFileSync("src/ui/tabs-menu.ts", "utf8");
 const closeOverlaySrc = readFileSync("src/ui/findbar.ts", "utf8");
@@ -262,10 +264,10 @@ describe("D-05 T1 单栏合并顶栏", () => {
       );
     }
     expect(appBody).not.toMatch(/\.topbar\.overflow #btn-open/);
-    expect(mainSrc).toMatch(/setupShellOverflow/);
-    expect(mainSrc).toMatch(/ResizeObserver/);
+    expect(shellOverflowSrc).toMatch(/setupShellOverflow/);
+    expect(shellOverflowSrc).toMatch(/ResizeObserver/);
     // 标签增删不改变标签条宽度 ⇒ 旧实现只盯 ResizeObserver，漏了「又多了一个标签」
-    expect(mainSrc).toMatch(/MutationObserver/);
+    expect(shellOverflowSrc).toMatch(/MutationObserver/);
   });
 });
 
@@ -292,7 +294,7 @@ describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态
   });
 
   it("拥挤态判据只用与开合无关的量（视口宽 + 标签总宽），不再读标签条自己的宽度", () => {
-    const fn = /function setupShellOverflow[\s\S]*?\n\}/.exec(mainSrc)?.[0] ?? "";
+    const fn = /function setupShellOverflow[\s\S]*?\n\}/.exec(shellOverflowSrc)?.[0] ?? "";
     expect(fn).not.toBe("");
     expect(fn).toMatch(/document\.documentElement\.clientWidth/);
     expect(fn).toMatch(/desiredTabsWidth/);
