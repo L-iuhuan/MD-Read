@@ -38,9 +38,20 @@ if (readFileSync(msgFile)[0] === 0xef && readFileSync(msgFile)[1] === 0xbb) {
   console.error("消息文件带 BOM ⇒ 先用 UTF8Encoding($false) 重写"); process.exit(2);
 }
 
-function run(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, shell: true, encoding: "utf8" });
+/**
+ * ⚠ **不用 `shell: true`**（那是隐患，不是风格问题）：`shell:true` 会把参数**拼接成命令行** ⇒
+ *   路径/消息里出现 cmd 元字符（`&` `|` `^` `>`）就会走样 ✗ —— 而**文件名带 `&` 是合法的**，
+ *   本仓库文件名还常带中文/空格/圆括号 ⇒ 必须 **参数数组 + shell:false** ✓（Node 也会报 DEP0190 警告 ✓）
+ */
+function run(exe, args, cwd) {
+  const r = spawnSync(exe, args, { cwd, shell: false, encoding: "utf8" });
   return { code: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
+}
+/** Windows 上 `.cmd`/`.bat`（含 `pnpm` 这类 .cmd shim）不能直接 exec ⇒ 显式经 `cmd.exe /c` 调用；
+ *  命令串是**脚本内固定字面量**（不含任何外部输入）⇒ 无拼接风险 ✓ */
+function runCmd(commandLine, cwd) {
+  const comspec = process.env.ComSpec ?? "cmd.exe";
+  return run(comspec, ["/c", commandLine], cwd);
 }
 
 const root = process.cwd();
@@ -49,8 +60,7 @@ const add = run("git", ["add", ...paths], root);
 if (add.code !== 0) { console.error(`[gates] git add 失败：\n${add.out}`); process.exit(1); }
 
 console.log("[gates] 1/2 敏感信息门禁…");
-const sensitive = run(process.platform === "win32" ? "cmd" : "sh",
-  process.platform === "win32" ? ["/c", "scripts\\check-sensitive.cmd"] : ["scripts/check-sensitive.sh"], root);
+const sensitive = runCmd("scripts\\check-sensitive.cmd", root);
 console.log(sensitive.out.split(/\r?\n/).slice(-3).join("\n"));
 if (sensitive.code !== 0) {
   console.error(`[gates] ✗ 敏感门禁未过（EXIT=${sensitive.code}）⇒ **不提交**（请脱敏后重跑到 0）`);
@@ -59,7 +69,7 @@ if (sensitive.code !== 0) {
 
 if (full) {
   console.log("[gates] 2/2 check:full（tsc ×2 + eslint + vitest + vite build）…");
-  const cf = run("pnpm", ["run", "check:full"], `${root}/modu`);
+  const cf = runCmd("pnpm run check:full", `${root}/modu`);
   console.log(cf.out.split(/\r?\n/).slice(-6).join("\n"));
   if (cf.code !== 0) { console.error(`[gates] ✗ check:full 未过（EXIT=${cf.code}）⇒ **不提交**`); process.exit(1); }
 } else {
