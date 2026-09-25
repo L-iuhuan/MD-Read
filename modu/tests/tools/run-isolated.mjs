@@ -42,8 +42,8 @@ if (typeof isoDir !== 'string' || !path.isAbsolute(isoDir)) {
   console.error('[前置检查失败] 必须给 --iso <绝对隔离目录>（拒绝启动，否则会污染真实 profile）');
   process.exit(2);
 }
-if (typeof doc !== 'string') {
-  console.error('[前置检查失败] 必须给 --doc <要打开的 md 路径>');
+if (typeof doc !== 'string' && args['allow-real-profile'] !== true) {
+  console.error('[前置检查失败] 必须给 --doc <要打开的 md 路径>（受控例外 --allow-real-profile 下可省，表示"不打开任何文件"）');
   process.exit(2);
 }
 const config = typeof args.config === 'string' ? args.config : path.join(REPO, '.verify', 'dev', 'tauri.dev-cdp.conf.json');
@@ -120,11 +120,30 @@ if (args['no-spawn'] === true) {
   process.exit(0);
 }
 
-const child = spawn('pnpm', ['tauri', 'dev', '--no-watch', '--config', config, '--', doc], {
+/* ⚠ 受控例外：`--allow-real-profile`（用于**清理真实 profile** 这类必须写真实用户态的操作）
+   此时**不设** `WEBVIEW2_USER_DATA_FOLDER` ⇒ 应用用真实 profile。
+   保护仍在：受信清单照样"启动前快照 + 退出还原"，且调用方必须保证**不打开任何文件**。 */
+const allowReal = args['allow-real-profile'] === true;
+if (allowReal) {
+  console.log('[⚠ 受控例外] --allow-real-profile：本次**不用隔离 profile**（真实 profile 会被写）');
+  console.log('           请确认：① 不打开任何文件 ② 这是有意的清理/维护操作');
+}
+const childEnv = { ...process.env };
+if (allowReal) {
+  delete childEnv.WEBVIEW2_USER_DATA_FOLDER;
+} else {
+  childEnv.WEBVIEW2_USER_DATA_FOLDER = isoDir;
+}
+
+const spawnArgs = ['tauri', 'dev', '--no-watch', '--config', config];
+if (typeof doc === 'string') {
+  spawnArgs.push('--', doc); // 没给 doc（受控例外）⇒ 不传文件参数 ⇒ 应用不打开任何文件
+}
+const child = spawn('pnpm', spawnArgs, {
   cwd: appDir,
   stdio: 'inherit',
   shell: true,
-  env: { ...process.env, WEBVIEW2_USER_DATA_FOLDER: isoDir },
+  env: childEnv,
 });
 child.on('exit', (code) => {
   console.log(`[应用退出] code=${code}`);
