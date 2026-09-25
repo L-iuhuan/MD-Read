@@ -1,19 +1,24 @@
 /**
- * 数学保护预处理（M1-E2 缺陷1 修复）。
+ * 数学保护预处理（M1-E2 缺陷1 修复；P1-1 批次 2 扩展）。
  *
- * 缺陷根因：CommonMark 里 `(` 是可转义标点，markdown-it 会把 `\(` 吞成
- * `(`，KaTeX auto-render 从此找不到行内定界符（块级 `$$…$$` 无反斜杠，
- * 不受影响）。
+ * 缺陷根因（两种定界符各一条）：
+ * 1. `\(` `\[`：CommonMark 里 `(` 是可转义标点，markdown-it 会把 `\(` 吞成 `(`，
+ *    KaTeX auto-render 从此找不到行内定界符。
+ * 2. **`$$…$$`（P1-1 实测）**：原注释认为"块级 `$$…$$` 无反斜杠，不受影响" ——
+ *    **实测不成立**：多行 `$$` 块内部的 `*b*` 会被 emphasis 拆成 `<em>`（KaTeX 无法跨元素匹配，
+ *    整块退化成纯文本，`$$` 字面残留）；块内一行**孤立的 `=`** 更会被 markdown-it 的 setext
+ *    规则把前几行变成 `<h1>`（源码里 `$$\nE = m c^2\n=\n…\n$$` → `<h1>$$\nE = m c^2</h1>`）。
+ *    ⇒ 两种症状同源：**该块从未被收走**。现在三种定界符统一在 render 前摘下。
  *
- * 机制：render 前按精确字符序列扫描源文，把 `\(...\)` 与 `\[...\]` 片段
- * 整体摘出、换成纯字母数字占位符；render 后在 HTML 字符串上还原为字面
- * 文本，交 math.ts 的 auto-render 正常接管。
+ * 机制：render 前按精确字符序列扫描源文，把 `$$…$$` / `\(...\)` / `\[...\]` 片段
+ * 整体摘出、换成纯字母数字占位符；render 后在 HTML 字符串上还原为字面文本，
+ * 交 math.ts 的 auto-render 正常接管。
  *
  * 与被禁的 protectMath 的区别（AGENTS.md 禁手写正则 hack 的尸检教训）：
- * 被禁方案是裸 `$` 模糊正则，会把「$1,000 与 $2,000」这类金额误判为
- * 公式；本模块只认 `\(` `\)` `\[` `\]` 四个精确字符序列，逐字符 indexOf
- * 确定性替换，无正则歧义、不触碰裸 `$`——D2 分隔符契约：仅 `$$…$$` /
- * `\(…\)` / `\[…\]` 三种，裸 `$` 一律纯文本（金额红线）。
+ * 被禁方案是裸 `$` 模糊正则，会把「$1,000 与 $2,000」这类金额误判为公式；
+ * 本模块只认 `\\(` `\\)` `\\[` `\\]` 四个精确字符序列**与两个连续 `$`**，
+ * 逐字符 indexOf 确定性替换，**单裸 `$` 永不参与匹配**——D2 分隔符契约：
+ * 仅 `$$…$$` / `\(…\)` / `\[…\]` 三种，裸 `$` 一律纯文本（金额红线）。
  *
  * 占位符形如 `MoDuMathGuard<8位随机盐><6位序号>`，全字母数字：
  * - md 转义 / linkify / typographer / emoji 均不会改写；
@@ -21,6 +26,8 @@
  * - 定长 6 位序号配合定长正则，占位符后紧跟数字也不会误吞；
  * - 还原发生在 sanitize 之前（顺序约束见 pipeline.ts），还原文本先做
  *   HTML 实体转义，占位符与还原产物都不给 DOMPurify 开口子。
+ * - 代码围栏内的 `$$`/`\(` 也会被摘出再原样还原（文本逐字不变，且 auto-render
+ *   的 ignoredTags 含 pre/code，不会在代码里误渲公式）。
  */
 
 /** 占位符固定前缀（渲染输出零残留的负向断言锚点） */
@@ -77,6 +84,9 @@ interface OpenMark {
  * from 一路扫到串尾才返回 -1 —— 于是整体退化成 O(k·n)。实测 1.85MB / 14317 个
  * 片段要 2096.7ms（评审侧 8582 个片段约 650ms；片段更多时单位成本反而更高，
  * 正是超线性特征）。先把位置各扫一遍再顺序推进，两处都回到线性。
+ *
+ * P1-1 扩展第三类：`$$`（两个连续美元，**不是**裸 `$`）。步长取 2 以免 `$$$` 里
+ * 同一个 `$$` 被重复登记；开/闭都用 `$$`，中间允许换行（多行块级公式）。
  */
 function openMarks(src: string): OpenMark[] {
   const marks: OpenMark[] = []
@@ -86,13 +96,17 @@ function openMarks(src: string): OpenMark[] {
   for (let at = src.indexOf('\\['); at !== -1; at = src.indexOf('\\[', at + 1)) {
     marks.push({ at, close: '\\]' })
   }
+  for (let at = src.indexOf('$$'); at !== -1; at = src.indexOf('$$', at + 2)) {
+    marks.push({ at, close: '$$' })
+  }
   marks.sort((a, b) => a.at - b.at)
   return marks
 }
 
 /**
- * render 前调用：摘出全部 `\(...\)` / `\[...\]` 换成占位符。
- * 未闭合的定界符不保护（保持 md 原有行为，不吞正文）。
+ * render 前调用：摘出全部 `$$…$$` / `\(...\)` / `\[...\]` 换成占位符。
+ * 未闭合的定界符不保护（保持 md 原有行为，不吞正文）；
+ * 闭定界符从开定界符**之后**开始找（`$$` 时要跳过开头那两个字符，否则自配对成空片段）。
  */
 export function extractMath(src: string): MathGuards {
   const base = makeBase(src)
@@ -105,7 +119,7 @@ export function extractMath(src: string): MathGuards {
   for (const mark of marks) {
     if (id >= MAX_SPANS) break
     if (mark.at < cursor) continue // 已被前一个片段整体吞掉（如公式内部的定界符）
-    const closeAt = src.indexOf(mark.close, mark.at + 2)
+    const closeAt = src.indexOf(mark.close, mark.at + mark.close.length)
     if (closeAt === -1) break // 与原实现一致：最早的开定界符未闭合即停止保护
     const end = closeAt + mark.close.length
     const placeholder = base + String(id).padStart(ID_WIDTH, '0')
