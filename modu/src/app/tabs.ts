@@ -240,6 +240,18 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
 
   /** 挂载收尾：消费缓存 → mountDoc → 钉滚动（两帧）→ 同步编辑器 */
   function finishMount(target: Tab, ctx: MountContext, ticket: number): void {
+    // ⚠ 票号守卫 —— 把一条**隐式不变量**变成显式的。**未复现**（《代码审查报告》§4.2 点名的正是
+    //   "缓存命中路径没有票号参与"），**非已验证修复**，属**防御性加固**。
+    //   **当前事实安全**，但安全性依赖**两条没写在别处的成文前提**：
+    //     ① **缓存命中分支是全同步的**（activateTab 里 `cached !== null` 直接调用本函数后 return，
+    //        中间没有 await / whenPainted 边界）⇒ **不存在"更新的一次激活插进来"的窗口**；
+    //     ② **非缓存路径在进入本函数之前已过票号校验**（activateTab 的 whenPainted 回调里
+    //        `if (ticket !== renderTicket) return`）⇒ 走到这里票号必是当前票。
+    //   本守卫把这些前提**显式化**（`loadEditorState` 等一切状态改动都纳入判定），**并防止将来把
+    //   缓存命中路径改成异步时静默退化为真 bug** —— 那正是它今天安全、也最容易被后人改掉的一条前提。
+    if (ticket !== renderTicket) {
+      return; // 过期票：不消费缓存、不挂载、不接线编辑器态
+    }
     target.cachedFragment = null; // 内容上屏即消费（缓存单次有效）
     deps.mountDoc(ctx);
     deps.setScroll(target.scroll);
@@ -265,6 +277,10 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     const cached = target.cachedFragment;
     if (cached !== null) {
       // 命中缓存：同步直挂（adoptNode 零重渲），不点亮 loading
+      // ⚠ **这条路径必须保持全同步**（此处到 `finishMount` 之间**不许出现 await / 延迟边界**）：
+      //   `finishMount` 里的票号守卫是"防御"，而不是"唯一防线"，正因这里没有交错窗口。
+      //   若将来把它改成异步，**守卫立刻从"防御"变成"唯一防线"** ⇒ 改之前先看
+      //   `tests/a6-ticket-guard.spec.ts`（该前提有锚，改了会红）。
       finishMount(target, { tab: target, fragment: cached, outline: target.outline }, ticket);
       return;
     }
