@@ -94,7 +94,15 @@
      只影响 `.squeeze-page`；`≤ 987px` 的表一个字都不动。 */
   .mdc .squeeze-page table {
     table-layout: fixed;
-    inline-size: 100%;
+    /* ⚠ **必须用物理宽，不能写百分比**（用户裁决 C，2026-09-23）。
+       归因轮实测：横版命名页的**排版内容盒仍是最初 `@page`（竖版）的内容宽 174mm** —— 表格写百分比
+       只等于 174mm（墨迹实测 173.99mm），横版纸右侧约 87mm 永远空着；而清 `.mdc`/`#doc` 的
+       `max-inline-size`（祖先链）**完全无效**（B/D 变体与基线墨迹一字不差 ⇒ 限制不在我们的阅读栏宽）。
+       故这里直接给**横版可印宽**：297mm − 2×18mm = 261mm，**减 2mm 留安全边**（精确 261mm 会贴死页边，
+       四舍五入即可能被裁）。实测（C 落地后）：表右边界 ≈276.6mm ≤ 278.64mm 可印右边界 ✓。
+       ⚠ **同源耦合**：261mm ≈ 987px@96dpi = `render/print-ready.ts` 的 `LANDSCAPE_PRINTABLE_PX`；
+       改 `@page` 边距或这两个数，**必须同步另一边**（那边注释里有推导线）。 */
+    inline-size: calc(261mm - 2mm);
   }
   .mdc .squeeze-page th,
   .mdc .squeeze-page td {

@@ -129,9 +129,11 @@ describe("print.css 打印契约锚（命名页 + 压列 + 红线同层）", () 
     expect(css).toMatch(/\.mdc \.wide-page\s*\{[^}]*page:\s*wide/);
   });
 
-  it("压列只由 table-layout:fixed + 单元格换行实现（无缩放/transform/光栅化）", () => {
+  it("压列用**物理宽**（禁止回退成百分比）+ fixed + 单元格换行；无缩放/transform", () => {
     expect(css).toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*table-layout:\s*fixed/);
-    expect(css).toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*inline-size:\s*100%/);
+    // 用户裁决 C（2026-09-23）：横版命名页的排版内容盒仍是竖版 174mm ⇒ 写 % 拿不到 261mm（归因轮实测）
+    expect(css).toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*inline-size:\s*calc\(261mm - 2mm\)/);
+    expect(css).not.toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*inline-size:\s*100%\s*;/);
     expect(css).toMatch(/\.mdc \.squeeze-page th,\s*\.mdc \.squeeze-page td\s*\{[^}]*overflow-wrap:\s*anywhere/);
     expect(css).toMatch(/\.mdc \.squeeze-page th,\s*\.mdc \.squeeze-page td\s*\{[^}]*white-space:\s*normal/);
     expect(css).not.toMatch(/transform:\s*scale/);
