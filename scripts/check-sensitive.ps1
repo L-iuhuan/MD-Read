@@ -2,18 +2,32 @@
 <#
   scripts/check-sensitive.ps1 — 提交前 / 发布前敏感信息门禁
 
-  用法：
-    pwsh -File scripts/check-sensitive.ps1              # 扫描全部已跟踪文件
-    pwsh -File scripts/check-sensitive.ps1 -Staged      # 只扫描已暂存改动
-    pwsh -File scripts/check-sensitive.ps1 -Path docs   # 只扫描指定路径
-    pwsh -File scripts/check-sensitive.ps1 -FixList     # 只列命中，不判失败（排查用）
+  用法（**2026-09-23 本机实测可跑**）：
+    scripts\check-sensitive.cmd                                  # 薄包装：cmd / PowerShell / CI 都能直接用
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\check-sensitive.ps1
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\check-sensitive.ps1 -Staged
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\check-sensitive.ps1 -Path docs
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\check-sensitive.ps1 -FixList
 
-  退出码：0 = 通过；1 = 命中敏感信息（可用于 CI / pre-commit）
+  ⚠️ 为什么必须带 `-ExecutionPolicy Bypass`：本机/公司机的执行策略默认 RemoteSigned，
+     仓里的 .ps1 没有签名 → 直接 `.\scripts\check-sensitive.ps1` 会报「禁止运行脚本」
+     （2026-09-23 实测：门禁"谁都跑不了"就是这个原因）。
+  ⚠️ 为什么用 `powershell.exe` 而不是 `pwsh`：本机只有 Windows PowerShell 5.1
+     （`pwsh` 不存在，实测）；本脚本按 5.1 兼容写（`#requires -Version 5.1`）。
+
+  退出码：0 = 通过（含"无自定义词条文件"时只跑通用模式的降级路径）；
+          1 = 命中敏感信息（CI / pre-commit 直接判 `$LASTEXITCODE`）。
+          其它非零 = 脚本自身跑不起来（缺 git、路径不对等），同样应视为失败。
+
+  ⚠️ 跑任何命令时的通用坑（本项目已踩过）：`cargo test 2>&1 | Select-Object -Last N`
+     会因为 PowerShell 把原生命令的 stderr 当成 `NativeCommandError` 而**显示"exit 1"**，
+     其实测试是通过的。**判退出码永远显式读 `$LASTEXITCODE`**，不要看管道里的红字。
 
   ⚠️ 设计要点（重要）：
     本文件**不得**写入具体的人名、邮箱、公司名、内网标识 ——
     否则脚本自身就成了新的泄露源。具体词条放在
-    `scripts/.sensitive-extra.txt`（已 gitignore，不进仓库）。
+    `scripts/.sensitive-extra.txt`（已 gitignore，不进仓库）；该文件缺失时降级为
+    "只跑通用模式"并给出警告（CI 里必然缺失，必须能继续跑）。
 #>
 [CmdletBinding()]
 param(
