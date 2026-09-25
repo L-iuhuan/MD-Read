@@ -164,6 +164,19 @@ describe("P6 已定义未接线的 token 归位", () => {
     expect(tokens).toContain("本批（面板/控件）故意不接线");
     expect(cjk).toMatch(/\.mdc thead th\s*\{[^}]*background:\s*var\(--bg-code\)/);
   });
+
+  it("--bg-th 的批次 3-5 结论已记账：不接线（改观感+基线）且不删除（否则 --pal-th 悬空）", () => {
+    // 结论必须**写在注释里**（"已定义未接线"的 token 不许悬空、也不许无说明 —— P6 的判据）
+    expect(tokens).toContain("批次 3-5 复核");
+    expect(tokens).toContain("仍不接线、不删除");
+    // 注释必须写明"留待哪个批"（否则后人无法判断该不该动）
+    expect(tokens, "注释必须写明留待「正文排版」批").toContain("正文排版」批");
+    // ⚠ 反向锚：--pal-th 只被 --bg-th 消费 ⇒ 删掉 --bg-th 会让 --pal-th 变成悬空 token（P6 禁止）
+    const palThDecls = tokensBody.match(/--pal-th:/g) ?? [];
+    expect(palThDecls.length, "--pal-th 应在多套调色板里都有定义").toBeGreaterThan(1);
+    expect(tokens, "--pal-th 必须仍被 --bg-th 消费（否则它自己成了悬空 token）").toMatch(/--bg-th:\s*var\(--pal-th\)/);
+    expect(tokens, "注释必须写明删除的后果（会让 --pal-th 悬空）").toContain("悬空 token");
+  });
 });
 
 describe("P7 对比度修正", () => {
