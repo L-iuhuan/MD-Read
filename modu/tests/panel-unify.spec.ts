@@ -359,6 +359,24 @@ describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态
     expect(appBody).toMatch(/\.chrome-dim \.topbar:hover/);
     expect(appBody).toMatch(/\.chrome-dim \.topbar:focus-within \{ opacity:\s*1; \}/);
   });
+
+  it("X2：大纲跟随不再用 IO 全量观察标题，改实时二分；rAF 节流保持不动", () => {
+    expect(mainSrc).not.toMatch(/observeHeadings/);
+    expect(mainSrc).not.toMatch(/new IntersectionObserver/);
+    expect(mainSrc).toMatch(/createOutlineFollow\(/);
+    expect(mainSrc).toMatch(/outlineFollow\.reset\(\)/);
+    // rAF 节流（scheduleFollow）保持原样：M10 已判不做
+    const follow = /function scheduleFollow\(\)[\s\S]*?\n\}/.exec(mainSrc)?.[0] ?? "";
+    expect(follow).toMatch(/requestAnimationFrame/);
+    expect(follow).toMatch(/followPending/);
+    // 二分实现：排序数组上二分 + 只判两个候选 + 当前项没变不碰 DOM
+    const mod = readFileSync("src/app/outline-follow.ts", "utf8");
+    expect(mod).toMatch(/while \(lo <= hi\)/);
+    expect(mod).toMatch(/getBoundingClientRect\(\)\.top <= contentTop/);
+    expect(mod).toMatch(/winner\.el\.id === activeId/);
+    // 旧版那个「对全部 4,715 条链接各 toggle 一次」的循环不许回来
+    expect(mainSrc).not.toMatch(/for \(const \[key, link\] of outlineLinks\)/);
+  });
 });
 
 describe("D-05 S1 底部下划线式标签", () => {

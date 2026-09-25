@@ -25,6 +25,7 @@ import {
 } from "./app/tabs";
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { openEachMd } from "./app/drop";
+import { createOutlineFollow } from "./app/outline-follow";
 import { mdExtensions } from "./app/md-ext";
 import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
@@ -112,49 +113,22 @@ function mountOutline(items: OutlineItem[]): void {
   list.appendChild(frag);
 }
 
-/* ---- 大纲滚动跟随（F4）：IO 圈定可见标题，滚动时取离视口顶最近者高亮 ---- */
+/* ---- 大纲滚动跟随（F4）· X2（2026-09-23 第二批）----
+   旧实现用 IntersectionObserver 观察**全部** h1–h6（本机 2MB 语料实测 4,715 个），
+   Blink 每帧为它们重算相交矩形：`computeIntersections` 占滚动墙钟 26.3%~33.6%，
+   单它就超过 13.3ms 的 vsync 预算（性能实验 §3.2）。
+   现在改成每帧一次**实时二分**（log₂n ≈ 13 次 getBoundingClientRect），语义与旧逐条
+   比较逐点等价 —— 推导与边界写在 app/outline-follow.ts 顶部注释里，那里也解释了为什么
+   不用「渲染期预算偏移表」（content-visibility 估高会让偏移失真、必须反复重建）。
+   rAF 节流（scheduleFollow）保持不变：M10「滚动节流开关」已判不做。 */
 
-let followObserver: IntersectionObserver | null = null;
-const visibleHeadings = new Set<Element>();
+/** 大纲跟随实例：deps 惰性取 DOM，模块级创建不碰 DOM；正文换/回空态时 reset。 */
+const outlineFollow = createOutlineFollow({
+  content: () => $("content"),
+  doc: () => $("doc"),
+  links: () => outlineLinks,
+});
 let followPending = false;
-
-function observeHeadings(): void {
-  followObserver?.disconnect();
-  visibleHeadings.clear();
-  followObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          visibleHeadings.add(entry.target);
-        } else {
-          visibleHeadings.delete(entry.target);
-        }
-      }
-      updateActiveHeading();
-    },
-    { root: $("content") }
-  );
-  for (const heading of $("doc").querySelectorAll("h1,h2,h3,h4,h5,h6")) {
-    followObserver.observe(heading);
-  }
-}
-
-function updateActiveHeading(): void {
-  let best: Element | null = null;
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (const heading of visibleHeadings) {
-    const dist = Math.abs(heading.getBoundingClientRect().top);
-    if (dist < bestDist) {
-      best = heading;
-      bestDist = dist;
-    }
-  }
-  if (best !== null && best.id !== "") {
-    for (const [key, link] of outlineLinks) {
-      link.classList.toggle("active", key === best.id);
-    }
-  }
-}
 
 function scheduleFollow(): void {
   if (followPending) {
@@ -163,7 +137,7 @@ function scheduleFollow(): void {
   followPending = true;
   requestAnimationFrame(() => {
     followPending = false;
-    updateActiveHeading();
+    outlineFollow.update(); // 当前项没变时它不碰 DOM（旧版每次变化要对 4,715 条链接各 toggle 一次）
     updateStatusLine(); // 状态栏行号与大纲跟随同一帧节流（P5 批2）
   });
 }
@@ -202,8 +176,7 @@ function resetToWelcome(): void {
   document.body.classList.add("empty"); // 空态判据（唯一来源）：CSS 据此隐大纲与 ☰
   activeEmptyState?.refresh(); // 空态回来了：最近列表按最新存储重画（无则整块不显示）
   mountOutline([]);
-  followObserver?.disconnect();
-  visibleHeadings.clear();
+  outlineFollow.reset(); // X2：回到空态 —— 标题列表清空（之后 update() 直接返回 false）
   document.title = "墨读 MoDu"; // 窗口标题（D-05 起它是文档名的唯一去处）
   $("st-encoding").textContent = "—";
   $("st-progress").textContent = "0%";
@@ -713,7 +686,7 @@ async function boot(): Promise<void> {
     $("empty-hint").hidden = true;
     document.body.classList.remove("empty"); // 有文档了：大纲与 ☰ 回来
     mountOutline(ctx.outline);
-    observeHeadings(); // F4：正文已换，重挂一批观察对象
+    outlineFollow.reset(); // X2：正文已换 —— 重建标题元素列表（只查 DOM，不读几何）
     enhanceView(doc); // 增强幂等：缓存直挂与重渲两路径都走（mermaid 懒观察在此重挂）
     attachCodeCopyButtons(doc); // 代码块复制钮（用户反馈批次）：幂等，缓存重挂不双挂
     findbar.close(); // 正文已换，旧命中作废，避免残留陈旧 mark
