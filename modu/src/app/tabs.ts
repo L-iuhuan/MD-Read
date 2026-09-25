@@ -8,6 +8,7 @@
  */
 import type { SavedEditorState } from "../editor/editor";
 import { whenPainted } from "./paint-timing";
+import { buildSepEl, buildTabEl, type TabDomDeps } from "./tab-dom";
 import type { OutlineItem, RenderResult } from "../render/pipeline";
 import { createTabMenus, type TabMenus } from "../ui/tabs-menu";
 
@@ -209,53 +210,6 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     });
   }
 
-  function buildTabEl(tab: Tab, isActive: boolean): HTMLElement {
-    const el = document.createElement("div");
-    el.className = isActive ? "tab active" : "tab";
-    el.dataset.path = tab.path;
-    el.title = tab.path;
-    // 键盘可达性（波2 designer 遗留#1）：div 默认不可聚焦，补语义与键激活
-    el.setAttribute("role", "tab");
-    el.setAttribute("aria-selected", String(isActive));
-    el.tabIndex = 0;
-    el.draggable = true; // 拖拽排序（用户反馈批次）：HTML5 DnD，见 setupTabDnd
-    const dot = document.createElement("span");
-    dot.className = "tab-dirty";
-    dot.hidden = !tab.dirty; // dirty 圆点（M3 启用，渲染逻辑先就位）
-    dot.textContent = "●";
-    const title = document.createElement("span");
-    title.className = "tab-title";
-    title.textContent = tab.title;
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "tab-close";
-    close.textContent = "✕";
-    close.title = "关闭标签";
-    close.addEventListener("click", (event) => {
-      event.stopPropagation();
-      closeTab(tab.path);
-    });
-    el.addEventListener("click", () => activateTab(tab.path));
-    el.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        activateTab(tab.path);
-      }
-    });
-    el.append(dot, title, close);
-    return el;
-  }
-
-  /** 标签之间的 1px × 14px 细分隔线（S1）。用真元素而非 ::before：
-   *  「活动/悬停标签两侧不画线」靠 CSS 的 `+` / `:has(+ …)` 兄弟选择器表达，
-   *  比在 JS 里维护「谁是相邻的」索引稳得多（也不怕拖拽重排）。 */
-  function buildSepEl(): HTMLElement {
-    const sep = document.createElement("span");
-    sep.className = "tab-sep";
-    sep.setAttribute("aria-hidden", "true");
-    return sep;
-  }
-
   /** 把新激活的标签滚进可视区（用户定稿：切标签时自动滚）。同步调用——
    *  renderBar 已重建 DOM，布局同步可得；`inline: "nearest"` 表示已经可见就不动。
    *  `typeof` 守卫是为 jsdom：它不实现 scrollIntoView（测试环境没有布局引擎），
@@ -267,10 +221,16 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     }
   }
 
+  /** 块 1 的依赖：**箭头函数活绑定**到本工厂的闭包函数（禁值快照 ✗）*/
+  const tabDom: TabDomDeps = {
+    activateTab: (path) => activateTab(path),
+    closeTab: (path) => closeTab(path),
+  };
+
   function renderBar(): void {
     tabList.textContent = "";
     for (const tab of tabs) {
-      tabList.appendChild(buildTabEl(tab, tab.path === activePath));
+      tabList.appendChild(buildTabEl(tab, tab.path === activePath, tabDom));
       if (tab !== tabs[tabs.length - 1]) {
         tabList.appendChild(buildSepEl()); // 分隔线只画在标签之间，两端不画
       }
