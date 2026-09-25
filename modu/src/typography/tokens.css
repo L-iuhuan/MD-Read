@@ -187,6 +187,22 @@
   --warn-bg: var(--amber-3);
   --danger-text: var(--red-11);
   --danger-bg: var(--red-3);
+  /* B3 · GitHub Alert（**我们自己的扩展**，非 GFM）：5 类。
+     ⚠ 色值**全部派生**（D-01：不新造字面色值），且**不依赖亮色单档 token**（--ok-*/--warn-*/--danger-* 只在亮色
+     定义 ⇒ 暗色下会变「亮底深字」✗）⇒ 底 = 族色**小比例**混入 var(--bg-quote)（主题自适应）+ 墨 = var(--text)。
+     亮/暗 10 组对比度由真机探针实测（见 docs/tasks/Phase3-批次3-B3报告）。 */
+  --alert-ink: var(--text);
+  --alert-note-line: var(--accent-solid);
+  --alert-note-bg: color-mix(in oklab, var(--accent-solid) 10%, var(--bg-quote));
+  --alert-tip-line: var(--green-11);
+  --alert-tip-bg: color-mix(in oklab, var(--green-11) 12%, var(--bg-quote));
+  /* IMPORTANT 与 NOTE 同族（都是 accent）⇒ 底更深（18% vs 10%）+ CSS 里再加"更粗 + double"边框做非颜色差异 */
+  --alert-important-line: var(--accent-solid);
+  --alert-important-bg: color-mix(in oklab, var(--accent-solid) 18%, var(--bg-quote));
+  --alert-warning-line: var(--amber-12);
+  --alert-warning-bg: color-mix(in oklab, var(--amber-12) 12%, var(--bg-quote));
+  --alert-caution-line: var(--danger-text);
+  --alert-caution-bg: color-mix(in oklab, var(--danger-text) 12%, var(--bg-quote));
 }
 
 /* ==========================================================================

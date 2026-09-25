@@ -212,3 +212,14 @@
     display: none;
   }
 }
+
+/* B3 · GitHub Alert 打印：**浅底 + 正文色墨**（防"深底浅字印不出"），色条保留（非颜色通道另有中文标签）。
+   ⚠ print.css 仍是**唯一**打印层（禁第三份打印样式）。 */
+.mdc blockquote.alert {
+  background: transparent !important; /* 打印不铺底：最保守，绝不出现深底浅字 */
+  border-inline-start-width: 4px !important;
+  border-inline-start-style: solid !important;
+}
+.mdc blockquote.alert::before {
+  color: currentColor !important; /* 标签用正文色印出（黑/纸色均可读） */
+}

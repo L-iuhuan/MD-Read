@@ -173,6 +173,65 @@ function installDataLineRule(engine: MarkdownIt): void {
   })
 }
 
+/**
+ * B3 · GitHub Alert（**我们自己的扩展**：规格 F2 只承诺 GFM+脚注+KaTeX+hljs+Mermaid，**不含 Alert**）。
+ *
+ * 保守识别：只有引用块**首个段落的内容以** `[!TYPE]`（**大写**，5 类白名单）开头才识别 —— 其余引用块**一字不改** ✓
+ * 命中后：
+ *  · 给 `blockquote` 加 `alert alert-<type>` 类 + `data-alert="<type>"`（**非颜色通道**：CSS 据此出中文标签）；
+ *  · **剥掉**标记本身（首行只剩标题/正文）；
+ *  · 标记独占一行（无标题无正文）时**连空段落一起删**，避免留下空 `<p>`。
+ */
+const ALERT_TYPES = ['NOTE', 'TIP', 'IMPORTANT', 'WARNING', 'CAUTION'] as const
+type AlertType = (typeof ALERT_TYPES)[number]
+
+function installAlertRule(engine: MarkdownIt): void {
+  engine.core.ruler.push('github_alerts', (state) => {
+    const tokens = state.tokens
+    for (let i = 0; i < tokens.length; i += 1) {
+      if (tokens[i].type !== 'blockquote_open') continue
+      // 找块内**第一层**的第一个 inline（= 首个段落）
+      let inlineIdx = -1
+      let depth = 0
+      for (let j = i + 1; j < tokens.length; j += 1) {
+        if (tokens[j].type === 'blockquote_open') depth += 1
+        if (tokens[j].type === 'blockquote_close') {
+          if (depth === 0) break
+          depth -= 1
+        }
+        if (tokens[j].type === 'inline' && depth === 0) {
+          inlineIdx = j
+          break
+        }
+      }
+      if (inlineIdx === -1) continue
+      const marker = /^\[!([A-Z]+)\]/.exec(tokens[inlineIdx].content)
+      if (marker === null) continue
+      const kind = marker[1] as AlertType
+      if (!ALERT_TYPES.includes(kind)) continue
+      const children = tokens[inlineIdx].children
+      const head = children?.[0]
+      if (head === undefined || head.type !== 'text') continue // 结构不熟就**不动手**（保守）
+      if (!head.content.startsWith(marker[0])) continue
+      head.content = head.content.slice(marker[0].length).replace(/^\s+/, '')
+      tokens[i].attrJoin('class', `alert alert-${kind.toLowerCase()}`)
+      tokens[i].attrSet('data-alert', kind.toLowerCase())
+      if (head.content === '') {
+        // ⚠ 第一版在这里"空内容就删整段"，而 `> [!NOTE]\n> 正文` 是**同一段**（text + softbreak + text）
+        //   ⇒ 把 alert 正文一起删掉了 ✗（`tests/alert.spec.ts` 的锚当场抓到）。
+        //   正确做法：只删**空的 text** 与**紧随的 softbreak**，段落保留 ✓
+        const kids = children ?? []
+        kids.splice(0, kids[1]?.type === 'softbreak' ? 2 : 1)
+        if (kids.length === 0) {
+          // 标记独占整段（无标题无正文）⇒ 才连空段落三件套一起删，避免留空 <p>
+          if (tokens[inlineIdx - 1]?.type === 'paragraph_open' && tokens[inlineIdx + 1]?.type === 'paragraph_close') {
+            tokens.splice(inlineIdx - 1, 3)
+          }
+        }
+      }
+    }
+  })
+}
 export const md: MarkdownIt = new MarkdownIt({
   html: false, // D6 红线：禁止内联 HTML 直通
   linkify: true,
@@ -188,6 +247,7 @@ export const md: MarkdownIt = new MarkdownIt({
   .use(emojiPlugin, { defs: EMOJI_DEFS, shortcuts: EMOJI_SHORTCUTS })
   .use(tasklist)
   .use(cjkFriendly)
+  .use((engine) => installAlertRule(engine))
 
 installFenceRule(md)
 installTableWrapRule(md)

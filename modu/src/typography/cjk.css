@@ -474,3 +474,39 @@
     animation-duration: .01ms !important;
   }
 }
+
+/* ---- B3 · GitHub Alert（我们自己的扩展，非 GFM）----
+   识别规则在 src/render/markdown.ts（首行恰好 `[!TYPE]`，大写白名单）；**普通引用块不受影响**。
+   非颜色通道：每类都有**中文文本标签**（::before 生成内容，Chromium 无障碍树可读）+ 左右色条；
+   NOTE 与 IMPORTANT 同族 ⇒ 用**前缀字形**做第二重非颜色差异（◆ vs ※；`6px double` 实测无效已删）✓ */
+.mdc blockquote.alert {
+  border-inline-start-width: 4px;
+  border-inline-start-style: solid;
+  background: var(--alert-note-bg);
+  color: var(--alert-ink);
+  padding-inline-start: var(--size-3);
+}
+.mdc blockquote.alert::before {
+  display: block;
+  font-weight: 700;
+  margin-block-end: var(--size-2);
+  color: var(--alert-note-line);
+  content: "注意 · NOTE";
+}
+.mdc blockquote.alert-note { border-inline-start-color: var(--alert-note-line); background: var(--alert-note-bg); }
+.mdc blockquote.alert-note::before { content: "◆ 注意 · NOTE"; color: var(--alert-note-line); }
+.mdc blockquote.alert-tip { border-inline-start-color: var(--alert-tip-line); background: var(--alert-tip-bg); }
+.mdc blockquote.alert-tip::before { content: "✓ 提示 · TIP"; color: var(--alert-tip-line); }
+/* ⚠ 这里原先写 `border-inline-start-width: 6px; border-inline-start-style: double` 想做"非颜色差异"，
+   **实测无效**（B3 验收：50 个块的 computed 全是 4px/solid；像素逐列与 NOTE 完全相同）⇒ **已删除** ——
+   留着会让人以为"IMPORTANT 已经有非颜色差异了" ✗（会撒谎的代码，与本批在清的注释同族）。
+   改走**前缀字形**通道（见下 5 条 ::before 的 content），并有像素锚：标签墨色 = 该类型 token 色。 */
+.mdc blockquote.alert-important {
+  border-inline-start-color: var(--alert-important-line);
+  background: var(--alert-important-bg);
+}
+.mdc blockquote.alert-important::before { content: "※ 重要 · IMPORTANT"; color: var(--alert-important-line); }
+.mdc blockquote.alert-warning { border-inline-start-color: var(--alert-warning-line); background: var(--alert-warning-bg); }
+.mdc blockquote.alert-warning::before { content: "▲ 警告 · WARNING"; color: var(--alert-warning-line); }
+.mdc blockquote.alert-caution { border-inline-start-color: var(--alert-caution-line); background: var(--alert-caution-bg); }
+.mdc blockquote.alert-caution::before { content: "✕ 当心 · CAUTION"; color: var(--alert-caution-line); }
