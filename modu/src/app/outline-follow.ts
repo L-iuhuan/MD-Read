@@ -2,10 +2,15 @@
  * 大纲跟随（F4）· X2（2026-09-23 第二批）：把「IntersectionObserver 全量观察全部标题」
  * 换成「每帧对标题做一次实时二分」。
  *
- * 为什么（性能实验 §3.2/§3.3）：旧实现 `observeHeadings()` 对 **4,715** 个标题逐个
- * `observe`，Blink 每帧为它们重算相交矩形 —— `IntersectionObserverController::computeIntersections`
- * 占滚动墙钟 **26.3%（确定性驱动 1,575ms/6.0s，6.5ms/帧）～33.6%（真实滚轮 3,360ms/10s，
- * 17.2ms/帧）**，是两轮 trace 的第一名单点，单它就超过 13.3ms 的 vsync 预算。
+ * 为什么（性能实验 §3.2/§3.3；⚠ **归因已勘误**）：旧实现 `observeHeadings()` 对 **4,715** 个标题逐个
+ * `observe`，当时的报告据此把 `IntersectionObserverController::computeIntersections`（占滚动墙钟
+ * **26.3%（确定性驱动 1,575ms/6.0s，6.5ms/帧）～33.6%（真实滚轮 3,360ms/10s，17.2ms/帧）**，
+ * 两轮 trace 的第一名单点、单它就超过 13.3ms vsync 预算）**归因给这个观察器**。
+ * **该归因已被 X2 之后的三组实验推翻**（见 `AGENTS.md` 性能归因节与《性能实验报告》文首勘误）：
+ * ① 彻底去掉标题观察器 → 该计数器**仍是 1,790.6ms/6s**；② 手工加回「观察 4,715 个标题」→ 只涨
+ * **+0.8ms/帧**；③ 关掉 `content-visibility:auto` → 该计数器 **4.7ms**。
+ * ⇒ **真正的主因是 `content-visibility:auto`，与标题观察器基本无关**（X2 的实现收益仍成立，
+ * 但收益来源不是这里原先写的那样）。下面「实时几何 vs 预计算偏移表」的理由**不依赖**该归因，仍成立。
  * 新实现每帧只读 **log₂(4715) ≈ 13 次** `getBoundingClientRect`（外加 2~3 次候选判定），
  * 与旧路径每帧最多 9,429 次 rect（`firstVisibleLine`，占墙钟 8.6~12.5%）相比是三个数量级以下的量。
  *
