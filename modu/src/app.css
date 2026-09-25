@@ -1435,3 +1435,16 @@ html.editing .topbar { opacity: 1; }
   background: var(--accent-tint-hover);
   border-color: var(--accent-solid);
 }
+/* D-11 文件夹工作区：侧栏标题行的「大纲 / 文件夹」切换（壳层，全部走 token，D-01 不新造字面色值）*/
+.outline-title { display: flex; gap: var(--size-1); align-items: center; }
+.panel-tab {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-1);
+  padding: 2px var(--size-2);
+  font: inherit;
+  cursor: pointer;
+}
+.panel-tab:hover { background: var(--bg-hover); color: var(--text); }
+.panel-tab.active { background: var(--bg-hover); color: var(--text); font-weight: 600; }

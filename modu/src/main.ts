@@ -26,6 +26,7 @@ import { createCloseGuard } from "./app/close-guard";
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
+import { setupWorkspacePanel } from "./app/workspace-panel";
 import { prevalidateMermaid } from "./render/mermaid";
 import { openEachMd } from "./app/drop";
 import { createOutlineFollow } from "./app/outline-follow";
@@ -594,6 +595,9 @@ async function boot(): Promise<void> {
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
   setupShellOverflow(); // D-05：顶栏拥挤态（标签装不下 → 收成「编辑 + ⋯」，判据见函数处注释）
+
+// D-11 文件夹工作区（切片①）：只接线，不改大纲逻辑；点文件走既有去重通路 ✓
+setupWorkspacePanel({ openFile: (path) => void openPath(tabs, path) });
   // X1（性能实验 §4.3）：把 7 条根级 `html:has(...)` 换成 html 上的状态类——
   // 根级 :has() 会让每次 DOM 变动退化成整文档样式重算。单一入口在 ui/overlay-state.ts。
   setupOverlayState();
