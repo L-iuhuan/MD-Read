@@ -91,7 +91,11 @@ try {
   }
   if (hook !== 'object') throw new Error('等待 window.__moduDev 超时（应用未就绪或 dev 钩子未注入）');
 
-  const current = JSON.parse(await client.evaluate(`localStorage.getItem(${JSON.stringify(key)}) ?? '[]'`));
+  // ⚠ 必须区分"**键不存在（null）**"与"**空数组（`[]`）**"：曾因 `?? '[]'` 把两者混为一谈而误判（真实翻车）
+  const currentRaw = await client.evaluate(`localStorage.getItem(${JSON.stringify(key)})`);
+  out.currentRaw = currentRaw;
+  out.currentKeyAbsent = currentRaw === null;
+  const current = currentRaw === null ? [] : JSON.parse(currentRaw);
   out.currentCount = current.length;
   out.currentMatchesBefore = JSON.stringify(current) === JSON.stringify(before);
   if (!out.currentMatchesBefore) {
