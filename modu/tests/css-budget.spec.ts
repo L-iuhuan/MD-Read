@@ -60,7 +60,7 @@ const BUDGETS: Budget[] = [
   {
     file: "src/app/tabs.ts",
     soft: 400,
-    hard: 700,
+    hard: 590,
     note: "标签管理偏大，同 main.ts 属超限项，拆分排在 Phase 2.5。hard 同属棘轮，只往紧的方向转。",
   },
 ];

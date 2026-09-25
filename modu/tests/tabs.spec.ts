@@ -8,16 +8,13 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
-  createCloseGuard,
   createTabManager,
-  resolveCloseAction,
-  shouldGuardClose,
-  type CloseChoice,
   type MountContext,
   type Tab,
   type TabManager,
   type TabManagerDeps,
 } from "../src/app/tabs";
+import { createCloseGuard, resolveCloseAction, shouldGuardClose, type CloseChoice } from "../src/app/close-guard";
 import type { RenderResult } from "../src/render/pipeline";
 import { flushed, fragOf } from "./raf";
 

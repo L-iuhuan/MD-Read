@@ -2,7 +2,7 @@
  * 关窗三选一浮层（P0-7 的浮层部分；F 批从 main.ts 抽出）。
  *
  * 用自绘而非 plugin-dialog：原生 ask/confirm 只有两键，装不下「保存 / 放弃 / 取消」。
- * 状态机（该不该拦、答案怎么落）在 app/tabs.ts 的 createCloseGuard，本模块只管
+ * 状态机（该不该拦、答案怎么落）在 app/close-guard.ts 的 createCloseGuard，本模块只管
  * 「问出来」——依赖注入进 createCloseGuard 的 ask，main.ts 保留接线。
  *
  * 样式在 app.css §13（F 批由 main.ts 的内联注入迁出）：四个入口（浮层卡片语言
@@ -15,7 +15,7 @@
  * main.ts 的统一 Esc 仲裁、findbar 的自有 Esc 同挂在 document 上，stopPropagation
  * 只挡「继续传播到别的节点」，挡不住同一节点上的后续监听器（审查报告 §4.1 实测）。
  */
-import type { CloseChoice } from "../app/tabs";
+import type { CloseChoice } from "../app/close-guard";
 
 /** 浮层骨架；文案由调用方给（createCloseGuard 拼「有 N 个文件尚未保存…」）。
  *  返回遮罩与主按钮：默认焦点落在主按钮上，调用方不必再查 DOM。 */

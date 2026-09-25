@@ -17,12 +17,12 @@ import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
 import { attachCodeCopyButtons } from "./render/codecopy";
 import { awaitPrintReady, markPrintBlocks } from "./render/print-ready";
 import {
-  createCloseGuard,
   createTabManager,
   type MountContext,
   type Tab,
   type TabManager,
 } from "./app/tabs";
+import { createCloseGuard } from "./app/close-guard";
 import { pushRecent, setupRecentMenu } from "./app/recent";
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
@@ -434,7 +434,7 @@ function setupWindowControls(): void {
 
 /* ---- 关闭守卫（P0-7）：窗口关闭请求前拦一道——有未保存改动就问
  *      保存 / 放弃 / 取消，别让防抖窗口里的编辑随窗口一起没。
- *      判据/状态机在 app/tabs.ts（shouldGuardClose / resolveCloseAction /
+ *      判据/状态机在 app/close-guard.ts（shouldGuardClose / resolveCloseAction /
  *      createCloseGuard），浮层在 ui/close-confirm.ts（F 批抽出的三选一对话框，
  *     样式在 app.css §13），本文件只负责接线。 ---- */
 
@@ -490,14 +490,14 @@ async function saveDirtyTabs(tabs: TabManager): Promise<boolean> {
  *    2. @tauri-apps/api 2.11.1 的 onCloseRequested 是「先 await handler，再看
  *       event.isPreventDefault()；没 prevent 就自己调一次 destroy()」——旧版无条件
  *       prevent 把它这条自动收尾也一并掐掉了，于是两道 destroy 全废。
- *  修法：守卫状态机搬进 app/tabs.ts 的 createCloseGuard（纯依赖注入，可单测）；
+ *  修法：守卫状态机搬进 app/close-guard.ts 的 createCloseGuard（纯依赖注入，可单测）；
  *  这里只接线。preventDefault 只在真要被拦的那一轮调，放行的一轮交给自动 destroy；
  *  用户选「保存/放弃」后用 close() 重入一次（close 有 core:window:allow-close 权限）。
  *  另注：capabilities/default.json 已补 core:window:allow-destroy —— 自动收尾走的正是
  *  destroy，没这条权限干净态仍然关不掉；旧版把它一起挡住，所以先前只看到「destroy()
  *  点了没用」，而非「destroy() 是坏 API」。 */
 const closeGuard = createCloseGuard({
-  // 关窗守卫接线：状态机在 app/tabs.ts 的 createCloseGuard（纯依赖注入，可单测）
+  // 关窗守卫接线：状态机在 app/close-guard.ts 的 createCloseGuard（纯依赖注入，可单测）
   hasDirty: () => activeTabs?.hasDirty() ?? false,
   dirtyCount: () => activeTabs?.dirtyTabs().length ?? 0,
   ask: (message) => askCloseChoice(message),
