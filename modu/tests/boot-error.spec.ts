@@ -83,6 +83,9 @@ describe("P1-7 · revealBootFailure（boot 抛错后的兜底）", () => {
     expect(() => revealBootFailure({ code: 42 })).not.toThrow();
     expect(document.getElementById("boot-error")?.textContent).toContain('"code":42');
     // 循环引用 JSON 化会抛——此时退回 String()，兜底路径绝不许再炸一次
+    // ⚠ 与 `mermaid-prevalidate.spec.ts` 里那条 `not.toContain("[object Object]")` **不矛盾**：
+    //   那条针对 mermaid 抛的**普通对象**（有 message/str ⇒ 可读）；这里的 `[object Object]` 是
+    //   **循环引用**下 JSON 化失败的**最后兜底**（换成更聪明的格式化只会再炸一次）✓
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     expect(() => revealBootFailure(cyclic)).not.toThrow();

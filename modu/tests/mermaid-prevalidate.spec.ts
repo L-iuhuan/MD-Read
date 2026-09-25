@@ -33,6 +33,8 @@ describe('A5 · Mermaid 提前校验', () => {
     expect(el.hasAttribute('data-mmd-invalid'), '坏图应落 data-mmd-invalid').toBe(true);
     const msg = el.getAttribute('data-mmd-error') ?? '';
     expect(msg, '文案应写进属性').toContain('语法错：第 2 行缺少 }');
+    // ⚠ 与 `boot-error.spec.ts` 那条 `toContain("[object Object]")` **不矛盾**：那条锚的是
+    //   **循环引用**下 JSON 化抛错后的最后兜底；这里针对 mermaid 的**普通对象**型错误（可读）✓
     expect(msg, '⚠ 绝不能再出现 [object Object]（改前实测就是这个）').not.toContain('[object Object]');
     expect(el.textContent, '源码文本必须保留（阅读/导出兜底）').toContain('graph TD');
     expect(el.dataset.src, '源码应记进 data-src（懒渲染/重画共用）').toBe(SRC_BAD);
