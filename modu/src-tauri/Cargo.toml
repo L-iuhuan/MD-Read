@@ -1,8 +1,10 @@
 [package]
 name = "modu"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "MoDu - a personal Windows Markdown reader and PDF exporter"
+authors = ["MD-Read <noreply@example.com>"]
+license = "MIT"
+repository = "https://github.com/L-iuhuan/MD-Read"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
