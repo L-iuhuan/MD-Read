@@ -45,6 +45,8 @@ if (readFileSync(msgFile)[0] === 0xef && readFileSync(msgFile)[1] === 0xbb) {
  */
 function run(exe, args, cwd) {
   const r = spawnSync(exe, args, { cwd, shell: false, encoding: "utf8" });
+  // ⚠ spawn 失败时 r.error 有值、stdout/stderr 可能是 null ⇒ 必须显式报出来（否则就是"沉默" ✗）
+  if (r.error !== undefined && r.error !== null) return { code: 1, out: `spawn 失败（${exe}）：${r.error.message}` };
   return { code: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
 }
 /** Windows 上 `.cmd`/`.bat`（含 `pnpm` 这类 .cmd shim）不能直接 exec ⇒ 显式经 `cmd.exe /c` 调用；
@@ -54,9 +56,12 @@ function runCmd(commandLine, cwd) {
   return run(comspec, ["/c", commandLine], cwd);
 }
 
+/** ⚠ Windows：`CreateProcess` 不按 PATHEXT 解析裸名字 ⇒ `spawnSync("git", …, {shell:false})` 会**失败且无输出** ✗
+ *  （本脚本曾因此报 `git add 失败：` 后面**空无一字**）⇒ 显式给 `git.exe` ✓ */
+const GIT = process.platform === "win32" ? "git.exe" : "git";
 const root = process.cwd();
 console.log(`[gates] add ${paths.length} 个路径…`);
-const add = run("git", ["add", ...paths], root);
+const add = run(GIT, ["add", ...paths], root);
 if (add.code !== 0) { console.error(`[gates] git add 失败：\n${add.out}`); process.exit(1); }
 
 console.log("[gates] 1/2 敏感信息门禁…");
@@ -77,8 +82,8 @@ if (full) {
 }
 
 console.log("[gates] 门禁全绿 ⇒ 提交");
-const commit = run("git", ["commit", "-F", msgFile], root);
+const commit = run(GIT, ["commit", "-F", msgFile], root);
 console.log(commit.out);
 if (commit.code !== 0) { console.error("[gates] git commit 失败"); process.exit(1); }
-const head = run("git", ["rev-parse", "HEAD"], root);
-console.log(`[gates] ✓ 已提交 ${head.out.slice(0, 7)}（工作树 ${run("git", ["status", "--porcelain"], root).out.split(/\r?\n/).filter(Boolean).length} 项）`);
+const head = run(GIT, ["rev-parse", "HEAD"], root);
+console.log(`[gates] ✓ 已提交 ${head.out.slice(0, 7)}（工作树 ${run(GIT, ["status", "--porcelain"], root).out.split(/\r?\n/).filter(Boolean).length} 项）`);
