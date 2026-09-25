@@ -45,15 +45,18 @@ pub enum DenyReason {
     Untrusted,
 }
 
-/// 面向使用者的中文文案（不露技术黑话）。`action` 取「读取」「保存」。
+/// 面向使用者的中文文案（不露技术黑话）。`action` 取「读取」「保存」「浏览」。
 pub fn deny_message(action: &str, raw: &str, reason: DenyReason) -> String {
+    // 「浏览」的对象是**目录/位置**，不是文件 ⇒ 名词随之（D-11 列目录）✓
+    // ⚠ 只换名词：**存在性不泄露**的语义不变 —— 受信目录**外**的"存在"与"不存在"仍走同一模板（都是 Untrusted）✓
+    let what = if action == "浏览" { "目录/位置" } else { "文件" };
     match reason {
-        DenyReason::NotAbsolute => format!("无法{action}文件：{raw}（路径必须是完整路径）"),
+        DenyReason::NotAbsolute => format!("无法{action}{what}：{raw}（路径必须是完整路径）"),
         DenyReason::NotMarkdown => {
-            format!("无法{action}文件：{raw}（只支持 Markdown 文件：.md / .markdown / .mdx）")
+            format!("无法{action}{what}：{raw}（只支持 Markdown 文件：.md / .markdown / .mdx）")
         }
-        DenyReason::NotAFile => format!("无法{action}文件：{raw}（不是文件）"),
-        DenyReason::Missing => format!("无法{action}文件：{raw}（文件不存在或已被移动）"),
+        DenyReason::NotAFile => format!("无法{action}{what}：{raw}（不是文件）"),
+        DenyReason::Missing => format!("无法{action}{what}：{raw}（文件不存在或已被移动）"),
         DenyReason::Untrusted => format!(
             "无法{action}文件：{raw}（该文件不在本次已打开的清单中，请用「打开文件」重新选择）"
         ),
