@@ -7,10 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import {
-  getCurrentWindow,
-  type Window as TauriWindow,
-} from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { keepOffscreenSkipping, shapeOf } from "./render/offscreen-policy";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
@@ -26,6 +23,7 @@ import { createCloseGuard } from "./app/close-guard";
 import { hydrateRecentOnBoot, pushRecent, setupRecentMenu } from "./app/recent";
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
+import { setupWindowControls } from "./app/window-controls";
 import { setupWorkspacePanel } from "./app/workspace-panel";
 import { prevalidateMermaid } from "./render/mermaid";
 import { openEachMd } from "./app/drop";
@@ -406,46 +404,7 @@ function setupDragDrop(tabs: TabManager): void {
   });
 }
 
-/* ---- 无边框窗口标题栏（M2 波3 反馈⑤）---- */
-
-/** 最大化/还原图标状态切换（用户反馈批次）：两套 SVG（#ic-max 单框 /
- *  #ic-restore 双框）+ title/aria 同步「最大化 / 向下还原」 */
-async function syncMaxState(win: TauriWindow): Promise<void> {
-  let maximized = false;
-  try {
-    maximized = await win.isMaximized();
-  } catch {
-    return; // 查询失败（窗口关闭中等）：维持当前图标态
-  }
-  const btn = $("win-max");
-  btn.title = maximized ? "向下还原" : "最大化";
-  btn.setAttribute("aria-label", maximized ? "向下还原" : "最大化");
-  document.getElementById("ic-max")?.toggleAttribute("hidden", maximized);
-  document.getElementById("ic-restore")?.toggleAttribute("hidden", !maximized);
-}
-
-function setupWindowControls(): void {
-  const win = getCurrentWindow();
-  $("win-min").addEventListener("click", () => void win.minimize());
-  $("win-max").addEventListener("click", () => void win.toggleMaximize());
-  $("win-close").addEventListener("click", () => void win.close());
-  // 双击顶栏空白 = 最大化/还原（Windows 标题栏惯例）。
-  // D-05：拖拽垫片 .titlebar-drag 已删，双击改绑在 <header> 本体上；
-  // 因此必须按事件目标排除控件——否则双击标签/按钮会连带最大化（旧实现绑在垫片上，
-  // 那时不需要这层判断，现在结构变了，这层判断就是正确性的一部分）。
-  const header = $("titlebar");
-  header.addEventListener("dblclick", (event) => {
-    const target = event.target;
-    if (target instanceof Element && target.closest("button, .tab, input, select, a") !== null) {
-      return; // 控件上的双击归控件自己（标签双击不该最大化窗口）
-    }
-    void win.toggleMaximize();
-  });
-  void syncMaxState(win); // 启动对齐（可能是系统记住的最大化态）
-  void win.onResized(() => void syncMaxState(win)); // 最大化/还原随尺寸变化即时切图标
-  // 关闭守卫（P0-7）：标题栏 ✕ 的 close() 与 Alt+F4 都发 close-requested，同一入口
-  void win.onCloseRequested((event) => closeGuard(event));
-}
+/* ---- 无边框窗口标题栏：已整段外移至 app/window-controls.ts（2026-09-27，为行数棘轮腾余量）---- */
 
 /* ---- 顶栏拥挤态（D-05 定稿）已搬至 app/shell-overflow.ts（批次 3-7）---- */
 
@@ -610,6 +569,10 @@ async function boot(): Promise<void> {
   document.documentElement.classList.add("app-ready"); // FOUC 放行：主题偏好已应用，配合 index.html 内联防闪样式
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
+  // 关闭守卫（P0-7）：标题栏 ✕ 的 close() 与 Alt+F4 都发 close-requested，同一入口。
+  // 2026-09-27：窗口控件整段搬到 app/window-controls.ts，守卫留在本文件（它依赖本文件的
+  // closeGuard 实例），故在此显式挂上——搬移时**不可漏**，否则"未保存改动"提示静默失效 ✗。
+  void getCurrentWindow().onCloseRequested((event) => closeGuard(event));
   setupShellOverflow(); // D-05：顶栏拥挤态（标签装不下 → 收成「编辑 + ⋯」，判据见函数处注释）
 
 // D-11 工作区接线（2026-09-27 反馈批）：捕获实例供欢迎页 pickFromOutside；onRootChange → body.has-workspace（CSS §5）。
