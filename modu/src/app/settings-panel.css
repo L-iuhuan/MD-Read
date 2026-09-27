@@ -71,3 +71,53 @@
   font-size: var(--fs-chrome-sm);
   color: var(--fg-dim);
 }
+
+/* ==========================================================================
+   控件规范化（2026-09-27 第二批，用户反馈「控件的位置、高度、大小……后面其他的控件都需要考虑上」）
+   —— 全部按**实测数据**改，不靠读代码猜 ✓
+
+   实测（CDP 逐控件 getBoundingClientRect，相对面板）：
+   · 字号/行宽行：label x=13 w=23 ✓，但控件从 **x=171** 开始 ⇒ 与下面各行的控件起点不一致 ✗
+   · ⭐ **字体行**：label 被撑到 **w=294 = 面板内容整宽** ✗ ⇒ 下拉被挤到**第二行**（x=13）
+     ⇒ 该行行高 47px（15+4+28 = 两行）✗ —— 这就是用户说「字体这块很乱」的真因 ✓
+   · 「实际生效」行高 **61px**（三行）✗，与 32px 的行参差
+   结论：**根因是"标签列宽不统一"** ⇒ 一条规则修到底 ✓
+
+   规范（四条，全部行通用）：
+   ① 标签列**等宽定死**（4.5em）⇒ 所有行的控件左边缘对齐 ✓
+   ② 控件列：下拉/按钮撑满剩余宽度（`flex: 1 1 auto` + `min-inline-size: 0`）
+      步进控件（`.settings-fs`）与勾选框**不拉伸** ✓
+   ③ 行高统一 32px（控件本身 28px + 视觉余量）✓
+   ④ 分组标题右侧的说明**独占下一行** ⇒ 标题不再被挤换行 ✗（原先 320px 卡里放不下）
+   ⚠ 仍然全部走既有 token、无字面色值 ✓
+   ========================================================================== */
+.settings-label {
+  flex: none;
+  inline-size: 4.5em;
+}
+.settings-row { min-block-size: 32px; }
+.settings-panel select,
+.settings-panel .settings-action {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.settings-fs { flex: none; }
+.settings-stack > input[type="checkbox"] { flex: none; }
+.settings-group-note {
+  flex: 1 1 100%;
+  margin-block-start: 1px;
+}
+/* 「实际生效」：读数与提示都缩进到控件列（与上面的下拉左对齐 ✓），提示独占次行 */
+.settings-effective > code { flex: 0 1 auto; }
+.settings-effective-hint { margin-inline-start: 4.5em; }
+
+/* ---- 第二批实测后又补的两条（截图 + 逐控件 rect 才看出来的 ✗）----
+   实测证据（`panel-measure2.mjs`）：
+   · 字体行 label 在第 1 行、`select` 却掉到第 2 行（x=13）= **该行原本是竖排** ✗
+     ⇒ 行高 47（15+4+28）与邻居的 32 参差 —— 这是「字体这块很乱」剩下的那半 ✓
+   · 字号/行宽的控件被 `justify-content: space-between` 推到 **x=171** ✗，
+     而主题/配色/自动保存/默认应用的控件在 **x=75** ⇒ 同一面板里两套左边缘 ✗ */
+/* ⚠ 特异性必须与 app.css 里那条**同级**（`.settings-row.settings-font` 是 0,2,0 ✗）：
+   只写 `.settings-font`（0,1,0）会被它压住 ⇒ 实测 fonts 行仍竖排、行高 47 ✗ ⇒ 用同级 + 后加载取胜 ✓ */
+.settings-row.settings-font { flex-direction: row; flex-wrap: nowrap; align-items: center; }
+.settings-row { justify-content: flex-start; }
