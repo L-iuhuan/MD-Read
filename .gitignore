@@ -44,3 +44,4 @@ docs/demo/
 !docs/tasks/*排障复盘*报告*.md
 # 排障复盘/流程类报告可入库（不含安全攻击细节）；安全审查类继续忽略
 !docs/review/*排障复盘*.md
+!docs/tasks/*交付*
