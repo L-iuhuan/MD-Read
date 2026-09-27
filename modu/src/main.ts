@@ -24,6 +24,7 @@ import { hydrateRecentOnBoot, pushRecent, setupRecentMenu } from "./app/recent";
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
 import { setupWindowControls } from "./app/window-controls";
+import { setupZoom } from "./app/zoom";
 import { setupWorkspacePanel } from "./app/workspace-panel";
 import { prevalidateMermaid } from "./render/mermaid";
 import { openEachMd } from "./app/drop";
@@ -574,6 +575,7 @@ async function boot(): Promise<void> {
   document.documentElement.classList.add("app-ready"); // FOUC 放行：主题偏好已应用，配合 index.html 内联防闪样式
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
+  setupZoom(); // 页面整体缩放（用户反馈 2026-09-27）：启动回填 + 面板 ± 两键 ✓
   // 关闭守卫（P0-7）：标题栏 ✕ 的 close() 与 Alt+F4 都发 close-requested，同一入口。
   // 2026-09-27：窗口控件整段搬到 app/window-controls.ts，守卫留在本文件（它依赖本文件的
   // closeGuard 实例），故在此显式挂上——搬移时**不可漏**，否则"未保存改动"提示静默失效 ✗。

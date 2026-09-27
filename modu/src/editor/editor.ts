@@ -210,14 +210,22 @@ export function createEditor(container: HTMLElement, host: EditorHost): EditorHa
       // （.cm-scroller.scrollTop = 0、document.activeElement = BODY）。
       // 改为 measure 只读目标行的块顶偏移、write 只写 scrollTop（纯 DOM 写），
       // 等价于 scrollIntoView(pos, { y: "start" }) 且完全不触发 update。
-      view.requestMeasure({
-        read: () => {
-          const clamped = Math.min(Math.max(1, line), view.state.doc.lines);
-          return view.lineBlockAt(view.state.doc.line(clamped).from).top;
-        },
-        write: (top) => {
-          view.scrollDOM.scrollTop = top;
-        },
+      // ⭐ 2026-09-27 实测修复（用户报「切编辑后行号与内容对不上、要下滑很多」✗）：
+      // 上面只保证了"不 dispatch"，但漏了**时序**——`toEdit()` 是 `container.hidden = false`
+      // 之后**同一帧**调本函数的 ⇒ CM6 还没按真实 DOM 测过块高 ⇒ `lineBlockAt().top` 是
+      // **过时估计**，写进 scrollTop 就落错位置。实测证据（CDP，38KB/796 行真实文档）：
+      //   阅读态滚到 8445px（状态栏「行 289」）⇒ 切编辑后 `.cm-scroller.scrollTop = 7645`，
+      //   行号槽显示「**999**」✗ —— 落点偏到 ~3.4 倍，用户看到的就是"前面一片空、要下滑很多"。
+      // 修法：把测量推到**下一帧**（那时已布局），仍然"measure 只读、write 只写"，不 dispatch ✓
+      //（P0-2 铁律不变：在 measure 的 write 里 dispatch 会被 CM 拒绝并连坐吞掉 `view.focus()` ✗）
+      const target = view.state.doc.line(Math.min(Math.max(1, line), view.state.doc.lines)).from;
+      requestAnimationFrame(() => {
+        view.requestMeasure({
+          read: () => view.lineBlockAt(target).top,
+          write: (top) => {
+            view.scrollDOM.scrollTop = top;
+          },
+        });
       });
     }
     // focus 移出 measure 回调：不再被可能的异常连坐

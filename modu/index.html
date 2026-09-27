@@ -90,6 +90,17 @@
                     <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
                   </div>
                 </div>
+                <!-- 页面整体缩放（2026-09-27 用户反馈：「想放大一点也不行，像浏览器直接放大整个页面」）：
+                     与上面两项**语义不同** —— 字号/行宽只改正文排版；这一项走 Tauri 的
+                     `Webview.setZoom`，把**整个界面**（工具栏/大纲/设置面板/正文）等比缩放 ✓ -->
+                <div class="settings-row">
+                  <span class="settings-label" id="set-zoom-label">缩放</span>
+                  <div class="settings-fs" role="group" aria-labelledby="set-zoom-label">
+                    <button id="set-zoom-dec" type="button" title="减小整体缩放" aria-label="减小整体缩放">−</button>
+                    <span id="set-zoom-val">100</span><span class="settings-unit">%</span>
+                    <button id="set-zoom-inc" type="button" title="增大整体缩放" aria-label="增大整体缩放">＋</button>
+                  </div>
+                </div>
               </div>
 
               <div class="settings-group" role="group" aria-label="字体">

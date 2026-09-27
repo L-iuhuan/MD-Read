@@ -162,7 +162,9 @@ export function refreshEffective(hooks: FontPickerHooks): void {
   const pick = resolvePick(localStorage.getItem(FONT_KEY));
   code.textContent = `400 · ${text.regular}`;
   codeBold.textContent = `700 · ${text.bold}`;
-  hint.textContent = text.hint === "" ? `当前选择：${pick.label}` : `${pick.label}：${text.hint}`;
+  // ⭐ 2026-09-27：无异常时**不再显示**「当前选择：X」——它与上面下拉框显示的值完全重复 ✗
+  //（用户反馈面板乱 ✓）。这行提示的价值是"**选了 A、实际渲染成 B**"时给出解释 ⇒ 只在有话说时显示 ✓
+  hint.textContent = text.hint === "" ? "" : `${pick.label}：${text.hint}`;
   hint.dataset.state = text.state;
 }
 
