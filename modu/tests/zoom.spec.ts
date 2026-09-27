@@ -92,4 +92,14 @@ describe("页面整体缩放（Webview.setZoom）", () => {
     expect(h.setZoom).toHaveBeenCalledTimes(1);
     expect(h.setZoom).toHaveBeenCalledWith(1.1);
   });
+
+  it("⭐ 同时落到 CSS `zoom`（原生那层在本机实测是空操作 ✗，必须两层都给）", () => {
+    mount();
+    window.localStorage.setItem("modu-zoom", "150");
+    setupZoom();
+    expect(document.documentElement.style.zoom).toBe("1.5");
+    dec().click();
+    expect(document.documentElement.style.zoom).toBe("1.25");
+    expect(h.setZoom).toHaveBeenLastCalledWith(1.25);
+  });
 });

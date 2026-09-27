@@ -37,11 +37,20 @@ function clampStep(z: number): number {
 /** 应用到原生 webview（失败只记日志：缩放不该拦住启动 ✓） */
 function applyZoom(z: number): void {
   window.localStorage.setItem(ZOOM_KEY, String(z));
+  // ① 原生缩放：Tauri `Webview.setZoom`
   void getCurrentWebview()
     .setZoom(z / 100)
     .catch((e: unknown) => {
       console.error("[zoom] 设置整体缩放失败", e);
     });
+  // ② ⚠ 2026-09-27 **真机实测**：只调 ① 时**界面毫无变化** ✗ ——
+  //    三路读数（`innerWidth` 1680 / 工具栏高 48 / 正文字号 16px）**全都不动**，
+  //    而面板值与 `localStorage` 都已写成 125 ✓ ⇒ ① 在本机是空操作 ✗。
+  //    （教训：这一项走**原生** API，`tsc` 通过**不等于**生效 ✗ —— 上一版就是这么误判的。）
+  //    ⇒ 再叠一层 CSS `zoom` 兜底：Chromium 对根元素应用 `zoom` 会**整体等比缩放**
+  //      （视口 CSS px 随之收缩 ✓），正是用户要的"像浏览器 Ctrl+加号"效果 ✓。
+  //    两层同给：谁生效都不会比单给更差 ✓（`zoom: 1` 是恒等 ✓）。
+  document.documentElement.style.zoom = String(z / 100);
 }
 
 function setZoom(z: number): void {
