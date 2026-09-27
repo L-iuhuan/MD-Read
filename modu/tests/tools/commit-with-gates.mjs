@@ -10,7 +10,10 @@
  * 用法：
  *   node modu/tests/tools/commit-with-gates.mjs --msg <消息文件> [--full] -- <显式路径…>
  *     --msg   必填，`git commit -F` 用的消息文件（UTF-8 无 BOM）
- *     --full  额外跑一次 `pnpm run check:full`（= check + vite build；CSS 压缩级缺陷只有它能抓）
+ *     --full  跑全部三道门禁：① 敏感信息 ② `pnpm run check:full`（= check + vite build；
+ *             CSS 压缩级缺陷只有它能抓）③ `cargo test`（Rust：信任/编码/打印/票据/窗口）
+ *             ⚠ 2026-09-27 前 `--full` **只跑前两道** ✗ —— Rust 改动会整套漏过门禁，
+ *               故改 Rust（`modu/src-tauri/**`）**必须**带 `--full` ✓
  *   退出码：0 = 已提交；1 = 门禁未过（**不提交**）；2 = 参数错
  *
  * 纪律（写在这里，不靠自觉）：
@@ -64,7 +67,7 @@ console.log(`[gates] add ${paths.length} 个路径…`);
 const add = run(GIT, ["add", ...paths], root);
 if (add.code !== 0) { console.error(`[gates] git add 失败：\n${add.out}`); process.exit(1); }
 
-console.log("[gates] 1/2 敏感信息门禁…");
+console.log("[gates] 1/3 敏感信息门禁…");
 const sensitive = runCmd("scripts\\check-sensitive.cmd", root);
 console.log(sensitive.out.split(/\r?\n/).slice(-3).join("\n"));
 if (sensitive.code !== 0) {
@@ -73,12 +76,34 @@ if (sensitive.code !== 0) {
 }
 
 if (full) {
-  console.log("[gates] 2/2 check:full（tsc ×2 + eslint + vitest + vite build）…");
+  console.log("[gates] 2/3 check:full（tsc ×2 + eslint + vitest + vite build）…");
   const cf = runCmd("pnpm run check:full", `${root}/modu`);
   console.log(cf.out.split(/\r?\n/).slice(-6).join("\n"));
   if (cf.code !== 0) { console.error(`[gates] ✗ check:full 未过（EXIT=${cf.code}）⇒ **不提交**`); process.exit(1); }
 } else {
-  console.log("[gates] 2/2 check:full 已跳过（未给 --full）");
+  console.log("[gates] 2/3 check:full 已跳过（未给 --full）");
+}
+
+// ⭐ 2026-09-27 补：第三道门禁 —— Rust 侧测试。
+// 为什么必须补：本脚本原先只跑「敏感 + 前端四件套」✗，而 `--full` 的名字让人以为它覆盖了全部。
+// 实测事故：改 `lib.rs`/`print.rs`/`print_tests.rs` 的那几批，`--full` 报"门禁全绿"就提交了，
+// **Rust 侧一次都没跑过** ✗（是人工补跑 cargo test 才发现没问题）。
+// 覆盖内容：信任模型 / 编码往返（UTF-8·GB18030·BOM）/ 打印收尾回滚 / 导出票据锚 / 窗口尺寸夹取。
+// ⚠ 与 `check:full` 一样，只在 `--full` 下跑（保持"轻提交"路径仍可用）；Rust 改动请务必带 --full ✓。
+if (full) {
+  console.log("[gates] 3/3 cargo test（Rust：信任/编码/打印/票据/窗口）…");
+  const ct = run("cargo", ["test"], `${root}/modu/src-tauri`);
+  console.log(ct.out.split(/\r?\n/).filter((l) => /test result:|^error/.test(l)).slice(-5).join("\n"));
+  if (ct.code !== 0) {
+    console.error(`[gates] ✗ cargo test 未过（EXIT=${ct.code}）⇒ **不提交**`);
+    console.error("  判读提示（两者都是环境、不是代码）：");
+    console.error("   · `failed to remove target\\debug\\*.exe` ⇒ 残留 msedgewebview2 占着 exe；");
+    console.error("   · `PermissionDenied` 建临时目录失败 ⇒ 把 TMP/TEMP 指到可写目录；");
+    console.error("   · `spawn 失败` ⇒ cargo 不在 PATH（见 modu/AGENTS.md 环境怪癖节）。");
+    process.exit(1);
+  }
+} else {
+  console.log("[gates] 3/3 cargo test 已跳过（未给 --full）");
 }
 
 console.log("[gates] 门禁全绿 ⇒ 提交");

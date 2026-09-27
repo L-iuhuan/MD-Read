@@ -387,3 +387,25 @@
   ③ **分支名必须与内容一致**（本次 `fix/webview2-dynamic-loader` 的 tip 恰是**否证**它的提交 ⇒ 必须改名或删除 ✗）；
   ④ 任何"改了机器状态"的操作都要留下 `<改动> → <复原命令> → <复原后核对输出>` 三行。
 
+## 本机跑门禁/提交的四个坑（2026-09-27 实测，agent 必读）
+
+- ⭐ **`cargo test` 报 `PermissionDenied`（建临时目录失败）= 宿主 shell 的 `%TEMP%` 不可写** ✗，
+  **不是代码问题**（同一条命令在用户终端 59 passed ✓）。对策：把 `TMP`/`TEMP` 指到工作区内可写目录：
+  `$env:TMP = '<repo>\.verify\tmp'; $env:TEMP = $env:TMP`（`.verify/` 已 gitignore ✓）。
+- ⭐ **`pnpm run check:full` 报 `'pnpm' is not recognized` = PATH 里没有 pnpm** ✗ ——
+  它内部是 `pnpm run check && pnpm run build`，**只把 pnpm 写成绝对路径不够**（嵌套调用仍按 PATH 找）；
+  对策：`$env:PATH = "$env:LOCALAPPDATA\pnpm\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"`。
+  ⚠ 只跑 `check` 不会触发（它不嵌套调 pnpm）⇒ 这正是"`check` 绿而 `check:full` 红"的成因 ✗。
+- ⚠ **不要在字符串插值里塞 `;` 分隔语句**（如 `'…' + ((& cmd); $LASTEXITCODE) + '…'`）✗ ——
+  整条命令**语法错误、什么都没执行**，却看起来"跑过了"（本会话连犯两次）。
+  要拿退出码就先 `$out = & cmd 2>&1 | Out-String`，再单独读 `$LASTEXITCODE` ✓。
+- ⚠ **`.NET [IO.File]` 用进程 cwd，不认 PowerShell 的 `Set-Location`** ✗ ⇒ 一律给**绝对路径**
+  （本会话据此把行数/守卫自检读成 `DirectoryNotFoundException`，白跑一轮）。
+- ⭐ **`commit-with-gates.mjs --full` 现在跑三道门禁**：敏感 → `check:full` → **`cargo test`** ✓。
+  改 `modu/src-tauri/**` 的提交**必须**带 `--full` —— 2026-09-27 之前它**不含 cargo test** ✗，
+  三批 Rust 改动就是这样"门禁全绿"提交的（是人补跑才发现没问题）。
+- ⚠ **文档正文里不要写四段纯数字版本号**（形如 `x.y.z.w`，例如某 DLL 的构建号）✗ ——
+  通用「内网/公网 IP」正则 `\b(\d{1,3}\.){3}\d{1,3}\b` 会命中它 ⇒ **敏感门禁红、提交被拦** ✓
+  （本会话真实踩过**两次**：第一次是排障报告里的 loader 版本，第二次是**这条纪律自己的示例** ✗ ——
+   写纪律时把示例写成真值，等于把坑又埋回去。示例一律用 `1.0.864.x` 这种**末段非数字**形态 ✓）。
+
