@@ -44,9 +44,10 @@ opt-level = 3
 panic = "abort"
 strip = true
 
-# [patch.crates-io]
-# webview2-com-sys = { path = "../vendor/webview2-com-sys" }
-# ⚠ 2026-09-27 A/B 实验：注释掉动态加载器补丁（回到静态链接 loader），验证
-#   "exe 依赖外部 WebView2Loader.dll" 是否就是本机启动失败的根因。
-#   判据：① 构建后 PE 导入表是否仍含 WebView2Loader.dll；② 非提权启动后
-#   是否存在 --type=renderer 且 --user-data-dir 含 com.modu.reader 的子进程。
+# ⛔ 这里曾有一个 `[patch.crates-io] webview2-com-sys = { path = "../vendor/webview2-com-sys" }`
+#    （"动态加载器"实验）。**已于 2026-09-27 撤除，请勿恢复** ✗：
+#    · 它让 exe 在**加载期**依赖 `WebView2Loader.dll`（PE 导入表非延迟加载，实测）；
+#    · 而该 DLL 既不随 MSI/NSIS 发布、`modu/vendor/` 也已删除 ⇒ 恢复它 = 干净 clone
+#      **构建不出来**（CI 红）+ 换台机器**极可能起不来**；
+#    · 实测：撤除后回到静态链接 loader，per-user 目录连跑 3/3 成功 ✓。
+#    详见 docs/tasks/2026-09-27-排障复盘与对抗式审查报告.md 与 AGENTS.md「启动类故障排查」。

@@ -370,19 +370,33 @@ pub fn run() {
                 // ⭐ webview 存活检测（2026-09-26）：
                 // Tauri 的 build() 在 webview 创建失败时只记日志不报错 ⇒ 进程照常进入事件循环，
                 // 留下一个"窗口在、webview 死"的僵尸攥住单实例锁（后续启动全部秒退）。
-                // 这里在 Ready 后延迟检查：若 10 秒内无 msedgewebview2 子进程 = webview 死
-                // ⇒ 弹中文错误提示并干净退出（不留僵尸，下次启动不受影响）。
-                // 兼容性设计：本检测在**所有机器**上运行——健康机器 webview 子进程会在
-                // 启动后 1-2 秒出现，检测不触发；只有 webview 真死才走到弹窗退出。
+                // 这里在 Ready 后**轮询**检查：每 5 秒一次、上限 60 秒，任一时刻判定活着即收工。
+                // 兼容性设计（2026-09-27 二次修正）：旧版只等 10 秒且用 PPID 单点判据，
+                // 在**慢机 / 首次建 profile / 运行时刚更新**时有**误杀健康启动**的风险 ✗
+                // （仓库复盘报告 §2.2 已把该判据判为"两个方向都会错"）⇒ 现改轮询 + 并集判据，
+                // 把"误杀"压到最低；只有**真死**（窗口还在、60 秒内始终没有任何本应用 webview）
+                // 才走到弹框退出，避免留下攥锁僵尸。
                 #[cfg(target_os = "windows")]
                 {
                     let handle = app_handle.clone();
                     std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_secs(10));
-                        if webview_children_alive() {
-                            return; // webview 活着，正常路径
+                        const POLL: std::time::Duration = std::time::Duration::from_secs(5);
+                        const LIMIT: u32 = 12; // 12 × 5s = 60s
+                        for attempt in 1..=LIMIT {
+                            std::thread::sleep(POLL);
+                            if webview_alive() {
+                                println!("[boot] webview 已就绪（第 {attempt} 次检测，{attempt}×5s）");
+                                return;
+                            }
+                            // 用户已把窗口关掉 ⇒ 正常退出路径，不做任何兜底动作
+                            if handle.get_webview_window("main").is_none() {
+                                println!("[boot] 主窗口已不存在，兜底检测收工");
+                                return;
+                            }
                         }
-                        eprintln!("[boot] webview 10 秒无子进程 ⇒ 弹错误提示并干净退出");
+                        eprintln!(
+                            "[boot] webview 60 秒仍未就绪 ⇒ 弹错误提示并干净退出（不留僵尸攥锁）"
+                        );
                         // 顺序铁律（2026-09-27 实测翻车）：先弹框（阻塞到用户点确定），
                         // 再关窗、退出。若先 win.close()，主事件循环会因「最后一个窗口
                         // 关闭」直接终止进程，检测线程在弹框前就被带走 ⇒ 框永远不出现。
@@ -397,32 +411,54 @@ pub fn run() {
         });
 }
 
-/// 检测本进程是否有活的 msedgewebview2 子进程（仅 Windows）。
-/// 2026-09-27 修正：旧判据「系统里有任何 msedgewebview2 就算活」在装有
-/// Widgets/Teams 等常驻 WebView2 应用的机器上恒真（本机实测 19 个）⇒ webview
-/// 真死时 10 秒防线永不触发、应用变成无窗僵尸。改为按 PPID 精确匹配本进程的
-/// 直系 msedgewebview2 子进程（WebView2 的 browser 进程即直系子进程，够用）。
-/// 任一检测环节失败都按「活着」处理——防线只许漏报（留僵尸），不许误杀健康启动。
+/// 检测本应用的 webview 是否真的活着（仅 Windows）。
+/// 判据演进（2026-09-27 二次修正，依据见 `AGENTS.md`「启动类故障排查」）：
+/// ① 最初「系统里有任何 msedgewebview2 就算活」在本机**恒真**（实测 19 个别人的宿主：
+///    搜索/看板/PC Manager…）⇒ 真死时防线永不触发；
+/// ② 中间版「按 PPID 数直系子进程」会**假阴**——同一 UDF 下 WebView2 会**复用**已有
+///    browser 进程 ⇒ 新进程 PPID 下 0 个子进程，但页面完全正常 ⇒ **误杀健康启动** ✗
+///    （与下方"不许误杀"的契约直接矛盾）；
+/// ⇒ 本版取**并集**，满足任一条即视为活着：
+///    (a) 存在 `--type=renderer` 且 `--user-data-dir` 含本应用标识的进程（真正渲染中）；
+///    (b) 存在以本进程为父的 `msedgewebview2`（覆盖"已拉起、尚未到 renderer"的窗口期）。
+/// 任一环节失败一律按"活着"处理——防线只许漏报（留个空窗让人手动关），不许误杀健康启动。
 #[cfg(target_os = "windows")]
-fn webview_children_alive() -> bool {
+fn webview_alive() -> bool {
+    // 与 tauri.conf.json 的 identifier 保持一致（WebView2 的 UDF 落在
+    // %LOCALAPPDATA%\<identifier>\EBWebView；单实例 mutex 亦由它派生）。
+    const APP_ID: &str = "com.modu.reader";
     let script = format!(
-        "@(Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" \
-         | Where-Object {{ $_.ParentProcessId -eq {} }}).Count",
-        std::process::id()
+        "$me = {}; \
+         $p = @(Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" -ErrorAction SilentlyContinue); \
+         $r = @($p | Where-Object {{ $_.CommandLine -match '--type=renderer' -and $_.CommandLine -match '{}' }}).Count; \
+         $c = @($p | Where-Object {{ $_.ParentProcessId -eq $me }}).Count; \
+         \"$r $c\"",
+        std::process::id(),
+        APP_ID
     );
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", &script])
-        .output();
-    let alive = match output {
+    let mut command = std::process::Command::new("powershell");
+    command.args(["-NoProfile", "-Command", &script]);
+    // 不弹控制台窗口（GUI 子系统里起子进程的默认行为会闪一下黑框）
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let alive = match command.output() {
         Ok(out) if out.status.success() => {
-            match String::from_utf8_lossy(&out.stdout).trim().parse::<u32>() {
-                Ok(n) => n > 0,
-                Err(_) => true, // 输出异常不误杀：假定活着
+            let text = String::from_utf8_lossy(&out.stdout);
+            let mut parts = text.split_whitespace();
+            let renderers = parts.next().and_then(|v| v.parse::<u32>().ok());
+            let children = parts.next().and_then(|v| v.parse::<u32>().ok());
+            match (renderers, children) {
+                (Some(r), Some(c)) => r > 0 || c > 0,
+                _ => true, // 输出形态异常不误杀：假定活着
             }
         }
         _ => true, // PowerShell 起不来/查询失败不误杀：假定活着
     };
-    eprintln!("[boot] webview 子进程检测（按 PPID）：{alive}");
+    eprintln!("[boot] webview 存活检测（renderer∩UDF ∪ 直系子进程）：{alive}");
     alive
 }
 
