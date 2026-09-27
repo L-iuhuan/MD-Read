@@ -323,5 +323,62 @@
   「启动前快照」其实是在**种入之后**拍的 ⇒ 还原出来是**带测试残留的那份** ⇒ 探针**必须写回种入之前的原文并核对**
   （`files` 条数 / `dirs` 是否为空 / 无本次残留串）✓）。
 - 每里程碑收工给凭证：改了什么/验证输出/遗留风险；tag 规范 `m0-done`…`m5-done`
-- 提交信息 `类型: 中文描述`（feat/fix/docs/chore）
+- 提交信息 `类型: 中文描述`（feat/docs/fix/chore）
 - 渲染改动过 golden-HTML 对拍（固定语料含金额串/引号/data-line）
+
+## 启动类故障排查（2026-09-27 尸检，违者返工）
+
+> 背景：一次"应用起不来"的排障轮转了 **16 个假设**、耗掉一整天，且中途**把证据链自己毁掉**（错误码从
+> `0x800700AA` 变成 `0x80070005`）。下列 8 条是那次事故的可执行遗嘱；**前三条 O(1) 成本，能砍掉 12 个假设**。
+
+- ⭐ **先跑「阳性对照」，再碰被测对象**：任何"应用起不来"，第一条命令必须是**同机另一个已知能跑的同类应用**：
+  `& "D:\Files\projects\架构测试\kanban-runner\src-tauri\target\release\kanban-runner.exe"`，
+  3 秒后数**它的** `msedgewebview2` 子进程。
+  **判据**：它 ≥1 且窗口标题正常 ⇒ **机器/运行时/令牌/加载器四类原因一次性出局** ✓；它也是 0 ⇒ 别改墨读代码，去查环境 ✓。
+
+- ⭐ **判据不许用"单一代理指标"**（本项**第 3 次复发**）：以下都**不可**作为"起没起来"的判据 ✗ ——
+  ① 窗口标题（窗口先建、webview 后建）② `WebviewWindowBuilder::build()` 的返回值（**webview 创建失败时它仍返回 `Ok`**，
+  只记日志 ⇒ 典型空心检查 ✗）③ "系统里有没有 `msedgewebview2`"（本机恒有 ~19 个别人的宿主 ⇒ **恒真** ✗）
+  ④ 一次 `Runtime.evaluate` 的成败（假阳/假阴都有）。
+  **唯一可用的组合判据（三层全绿才算成功）**：① 本进程 `--type=renderer` 且 `--user-data-dir` 指向**我们的**
+  `%LOCALAPPDATA%\com.modu.reader` 的子进程数 ≥1；② profile 副作用前进（`EBWebView\Default\Session Storage\LOCK`
+  或 `Local Storage\leveldb\LOG` 的 mtime）；③ 窗口标题 == 配置标题 **且** 同一 PID 在 T+3s 与 T+15s 两次读数都存活。
+  **连跑 3 次全绿**才算通过（把间歇失败变成硬红）。
+
+- ⭐ **不许改"正在测量的东西"**（全局纪律第 11 条 + 本文件"探针必须自己收尾"）：`icacls` / 注册表 / 计划任务 /
+  `taskkill` / 删建用户数据目录，动手前必须写下**原值与回退命令**。
+  **判据**：**错误码一旦变化**（如 `0x800700AA` → `0x80070005`）⇒ **立即停止排障、先复原**，该窗口内所有读数作废 ✓。
+
+- ⭐ **"某目录/某位置导致失败"必须用 2×2 证明，否则不许写成结论**：四格 = {能跑的 exe, 失败的 exe} × {该目录, 别处}，
+  且**四格用同一份 SHA256 的 exe**。
+  （依据：2026-09-27 实测——把"能用"的 exe 放进 `target\debug\` 照样失败，而它在别处配相同 cwd 却正常 ⇒
+    "构建目录必失败"是**假结论**；但同一份字节在 `target\release` 3/3 失败、复制到 per-user 3/3 成功 ⇒
+    该效应**独立存在、机制未明**，只能写成"未查明"，**不许写成因果**。）
+
+- ⭐ **启动前必须清点"谁还持有单实例锁 / 这个 profile"**：`tasklist /FI "IMAGENAME eq modu.exe"` ＋
+  按 `--user-data-dir` 归组所有 `msedgewebview2`。
+  **判据**：`modu.exe = 0` **且**没有宿主指向 `%LOCALAPPDATA%\com.modu.reader` 才算干净起点 ✓。
+  （依据：实测抓到僵尸 PID 8304，窗口标题 `com.modu.reader-siw`，活 7 分钟 ⇒ 此后**每次**启动都被
+    single-instance 静默转发后 `exit(0)` ⇒ **"仍然失败"其实是"根本没跑"** ✗。）
+
+- ⭐ **探针/验收工具不许替被测场景换环境**：入库的 `run-isolated.mjs` / `probe-*.mjs` 会**前置
+  `WEBVIEW2_USER_DATA_FOLDER`** ⇒ 它验的是隔离路径，**不是用户真实启动路径**。
+  **判据**：凡"能不能起来"的验收，**必须同时给两路读数**（隔离路径 ✓ ＋ **真实 profile** ✓）；只给一路 = 未覆盖 ✗。
+
+- ⭐ **拿到原始错误之前不许归因**：先确认有 stderr 日志接收器（`log` 目标 tauri/wry 的 `log::error!` 默认**被吞掉**）。
+  **判据**：没有原始 `HRESULT` 行 ⇒ 先补观测能力，再谈原因 ✓。
+
+- ⭐ **dependency 补丁必须"可复现 + 可发行"**：`[patch.crates-io]` / `path = "../vendor/…"` 这类改动
+  **必须连同被指向的目录一起入库**，并确认**安装包真的带上**它要求的运行期文件。
+  （依据：2026-09-27 实测——`[patch.crates-io] webview2-com-sys → ../vendor/…`（动态加载器实验）已提交，
+    而 `modu/vendor/` **未入库**、MSI/NSIS **都不含**它要求的 `WebView2Loader.dll` ⇒
+    ① 干净 clone **构建不出来**（CI 红）② 应用只能借用 PATH 上 `Windows Performance Toolkit` 里一份 2021 年的
+    老 loader 才能启动 ③ 换台机器极可能起不来。**已修**：撤掉该 `[patch]`，回到静态链接 loader ⇒
+    PE 导入表不再含 `WebView2Loader.dll` ⇒ per-user 运行 **3/3 成功** ✓。）
+
+- ⭐ **多 agent 接力同一工作区时**：① 同一时刻只允许**一个**构建/运行写者，动手前
+  `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'cargo|tauri|vite' }` 必须为空；
+  ② 实验产物一律进 `.verify/`（gitignore）且**不得**在 `target/` 或 exe 旁留 DLL/依赖；
+  ③ **分支名必须与内容一致**（本次 `fix/webview2-dynamic-loader` 的 tip 恰是**否证**它的提交 ⇒ 必须改名或删除 ✗）；
+  ④ 任何"改了机器状态"的操作都要留下 `<改动> → <复原命令> → <复原后核对输出>` 三行。
+

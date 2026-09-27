@@ -38,3 +38,6 @@ docs/demo/
 
 # 另一个 agent（omo）的会话续跑状态，不入库
 .omo/
+
+# 另一套 agent 的运行时目录，不入库
+.opencode/

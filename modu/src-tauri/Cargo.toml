@@ -44,5 +44,9 @@ opt-level = 3
 panic = "abort"
 strip = true
 
-[patch.crates-io]
-webview2-com-sys = { path = "../vendor/webview2-com-sys" }
+# [patch.crates-io]
+# webview2-com-sys = { path = "../vendor/webview2-com-sys" }
+# ⚠ 2026-09-27 A/B 实验：注释掉动态加载器补丁（回到静态链接 loader），验证
+#   "exe 依赖外部 WebView2Loader.dll" 是否就是本机启动失败的根因。
+#   判据：① 构建后 PE 导入表是否仍含 WebView2Loader.dll；② 非提权启动后
+#   是否存在 --type=renderer 且 --user-data-dir 含 com.modu.reader 的子进程。
