@@ -2,7 +2,7 @@
 
 **个人自用的 Windows Markdown 阅读器 + PDF 导出器。** 面向"读"而不是"写"：打开即读、长文档不卡、导出的 PDF 干净可直接给人看。
 
-技术栈刻意保持极简：**Tauri 2 + 原生 TypeScript + 手写 CSS**（不用 React/Vue），产物 `.msi` **≤ 8 MB** 是硬门禁（当前 4.23 MiB）。
+技术栈刻意保持极简：**Tauri 2 + 原生 TypeScript + 手写 CSS**（不用 React/Vue），产物 `.msi` **≤ 8 MB** 是硬门禁（以当轮打包产物为准 —— 门禁数值不写进文档 ✓）。
 
 ---
 
@@ -83,10 +83,10 @@ cargo test
 
 | 门禁 | 命令 | 当前基线 |
 |---|---|---|
-| 类型 + lint + 单测 | `pnpm run check`（在 `modu/`） | EXIT 0 · 476 条断言 · eslint 0 error |
-| Rust 单测 | `cargo test`（在 `modu/src-tauri/`） | EXIT 0 · 31 + 4 passed |
+| 类型 + lint + 单测 | `pnpm run check`（在 `modu/`） | EXIT 0 · eslint 0 error（断言数以当轮输出为准） |
+| Rust 单测 | `cargo test`（在 `modu/src-tauri/`） | EXIT 0（以当轮 `cargo test` 输出为准） |
 | 敏感信息扫描 | `scripts/check-sensitive.ps1` | 0 命中 |
-| 安装包体积 | `pnpm tauri build` 后看 `.msi` | **≤ 8 MB**（当前 4.23 MiB） |
+| 安装包体积 | `pnpm tauri build` 后看 `.msi` | **≤ 8 MB**（以当轮打包产物为准 —— 门禁数值不写进文档 ✓） |
 | 行数预算（棘轮） | 含在 `pnpm run check` 里 | `modu/tests/css-budget.spec.ts` |
 
 ### 改代码前请先读

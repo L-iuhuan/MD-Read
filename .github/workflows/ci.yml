@@ -6,7 +6,7 @@
 # ⚠️ 本文件由 R-01/批次 1 编写：**未在 GitHub 上真跑过**（本机到 github.com 不稳，
 #    Actions 是否可跑取决于仓库侧）。这里只保证：YAML 语法有效、命令与**本机实测命令**逐字一致。
 #    本地等价命令（均已实测通过）：
-#      cd modu && pnpm install --frozen-lockfile && pnpm run check      # 483 passed | 1 skipped
+#      cd modu && pnpm install --frozen-lockfile && pnpm run check      # 以当轮输出为准（门禁数值不写死）
 #      cd modu/src-tauri && cargo test                                  # 45 + 4 passed
 #      scripts\check-sensitive.cmd                                      # exit 0（无词条文件时降级并告警）
 #
