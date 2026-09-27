@@ -17,21 +17,40 @@ function lineOf(el: Element): number | null {
 /**
  * 视口内首个 [data-line] 块的行号（阅读→编辑的定位依据）。
  * 判定：块顶 ≥ 滚动容器顶即视为进入视口；全部滚过视口时回退最后一个块。
+ *
+ * ⭐ 2026-09-27 改为**二分**：旧实现逐块读 `getBoundingClientRect`，每帧最多 **9,429 次**
+ * （1MB 文档实测滚动掉到 **12 FPS** ✗；`outline-follow.ts` 头注也把它记为占滚动墙钟 8.6~12.5% 的旧路径）。
+ * 依据与 `outline-follow` 同一套推论：`[data-line]` 块按文档序排列、且块级盒不重叠
+ * ⇒ **`top` 沿数组单调不减** ⇒ 「首个 `top ≥ viewportTop`」可用二分定位，与逐块扫描**逐点等价**
+ * （含"全部滚过 ⇒ 回退最后一块"这条尾巴：旧实现的 `lastAbove` 就是最后一个有效块）。
+ * 每帧 rect 次数由 O(n) 降到 **log₂(n) ≈ 13**。
+ * ⚠ `querySelectorAll` 仍是 O(n) 次 DOM 遍历，但**它不触发布局**；真正的开销是 rect（强制 layout）✗。
  */
 export function firstVisibleLine(container: HTMLElement): number | null {
   const viewportTop = container.getBoundingClientRect().top;
-  let lastAbove: number | null = null;
+  const blocks: { el: Element; line: number }[] = [];
   for (const el of Array.from(container.querySelectorAll("[data-line]"))) {
     const line = lineOf(el);
-    if (line === null) {
-      continue;
+    if (line !== null) {
+      blocks.push({ el, line });
     }
-    if (el.getBoundingClientRect().top >= viewportTop) {
-      return line; // querySelectorAll 按文档序，首个达标者即视口首块
-    }
-    lastAbove = line;
   }
-  return lastAbove;
+  if (blocks.length === 0) {
+    return null;
+  }
+  let lo = 0;
+  let hi = blocks.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (blocks[mid].el.getBoundingClientRect().top >= viewportTop) {
+      found = mid; // 达标 ⇒ 记下并继续往左找更靠前的
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return found >= 0 ? blocks[found].line : blocks[blocks.length - 1].line;
 }
 
 /**

@@ -61,6 +61,25 @@ describe("firstVisibleLine：视口内首个 [data-line] 块", () => {
     const c = buildDoc([]);
     expect(firstVisibleLine(c)).toBeNull();
   });
+
+  it("⭐ 性能锚：大文档下 rect 次数是 O(log n) 而不是 O(n)（2026-09-27 二分改造）", () => {
+    // 为什么需要这条锚：旧实现逐块读 getBoundingClientRect，1MB 文档每帧最多 9,429 次
+    // （实测滚动掉到 12 FPS）。改成二分后必须**钉住复杂度**——只钉"结果相等"的等价性锚
+    // 拦不住"有人改回逐块扫描"这种回归 ✗（结果完全一样，只是慢）。
+    const N = 4000;
+    const c = buildDoc(Array.from({ length: N }, (_, i) => i + 1));
+    let calls = 0;
+    // 覆盖到 Element.prototype：容器与块的 rect 都计入（改造前 ≈ N 次，改造后 ≈ log₂N 次）
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      calls = calls + 1;
+      const n = Number((this as HTMLElement).getAttribute("data-line") ?? "0");
+      return { top: n * 100 } as DOMRect; // 单调递增 = 未滚动的文档
+    });
+
+    expect(firstVisibleLine(c)).toBe(1);
+    // log₂(4000) ≈ 12，加容器 1 次 + 余量；给 40 足够松，仍远小于 O(n) 的 4000 ✗
+    expect(calls, `rect 调用 ${calls} 次，二分实现应 ≈ log₂N`).toBeLessThanOrEqual(40);
+  });
 });
 
 describe("nearestBlockLine：离 fromLine 最近的上方（或相等）块", () => {
