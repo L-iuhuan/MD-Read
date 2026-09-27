@@ -578,7 +578,11 @@ fn allow_asset_paths(
         }
         app.asset_protocol_scope()
             .allow_file(&canonical)
-            .map_err(|e| format!("无法授权图片访问：{raw}（{}）", e))?;
+            .map_err(|e| {
+                // 宪法：UI 文案中文、不露技术黑话 ⇒ tauri::Error 原文只进日志
+                eprintln!("[asset] 授权图片访问失败：{raw}（{e}）");
+                format!("无法授权图片访问：{raw}（内部错误）")
+            })?;
     }
     Ok(())
 }

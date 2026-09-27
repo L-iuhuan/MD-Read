@@ -1,4 +1,4 @@
-﻿//! PDF 导出（M4 正式化；D-20 第二步换载体）。
+//! PDF 导出（M4 正式化；D-20 第二步换载体）。
 //! 单路径 = CDP `Page.printToPDF`（`ICoreWebView2::CallDevToolsProtocolMethod`）静默直出：
 //! **同一条 Chromium 打印管线，只换了 API 入口**——无对话框、无 `window.print` 的实质约束不变。
 //! 换载体的原因：`ICoreWebView2PrintSettings` 的页眉页脚没有分离开关（四者共享一个布尔），
@@ -75,7 +75,12 @@ pub async fn spike_print_pdf(app: tauri::AppHandle) -> Result<String, String> {
     let _ = std::fs::remove_file(&pdf);
     let shown_path = pdf.to_string_lossy().to_string();
     match request_cdp_pdf(&app).await? {
-        Err(e) => Ok(format!("Page.printToPDF 回调失败：{e}；路径={shown_path}")),
+        Err(e) => {
+            // 宪法「错误信息中文、面向使用者，不露技术黑话」：CDP/引擎原文只进日志，
+            // 返回给渲染层的字符串保持中性中文（同 fs.rs 的 io_reason 处理方式）。
+            eprintln!("[spike] Page.printToPDF 回调失败：{e}；路径={shown_path}");
+            Ok("打印引擎未返回数据；技术细节见日志".to_string())
+        }
         Ok(bytes) => {
             let size = bytes.len();
             std::fs::write(&pdf, &bytes).map_err(|e| format!("写临时 PDF 失败：{}", crate::fs::io_reason(&e)))?;
@@ -190,7 +195,11 @@ fn finish_export(temp: &Path, dest: &Path, verdict: Result<(), String>) -> Resul
     if let Err(e) = replace_file(temp, dest) {
         let kept = temp.display().to_string();
         eprintln!("[export] 替换目标失败（保留临时文件 {kept}）：{e}");
-        return Err(format!("导出失败：无法写入 {}（{e}）", dest.display()));
+        return Err(format!(
+            "导出失败：无法写入 {}（{}）",
+            dest.display(),
+            crate::fs::io_reason(&e)
+        ));
     }
     let kb = size.div_ceil(1024); // 向上取整，避免 1B 显示 0 KB
     Ok(format!("已导出（{kb} KB）"))
