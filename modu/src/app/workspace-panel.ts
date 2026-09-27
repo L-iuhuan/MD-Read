@@ -28,10 +28,18 @@ interface DirListing {
 export interface WorkspacePanelDeps {
   /** 点文件时打开（用既有去重通路，不新造开标签逻辑）*/
   openFile: (path: string) => void;
+  /**
+   * 工作区根变化时回调（2026-09-27 用户反馈批：欢迎页「打开文件夹」入口需要它）。
+   * main.ts 据此同步 body.has-workspace —— 空态下侧栏是否保留的判据（CSS §5）。
+   * boot 时若有持久化工作区也会触发一次（root 非空）。
+   */
+  onRootChange?(root: string | null): void;
 }
 
 export interface WorkspacePanel {
   refresh(): void;
+  /** 从面板外部（欢迎页按钮）发起「选工作区」：切到本面板并弹原生目录对话框 */
+  pickFromOutside(): Promise<void>;
 }
 
 export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
@@ -60,24 +68,29 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
     btnOutline?.setAttribute("aria-pressed", String(!isWorkspace));
   }
 
-  /** 空状态：尚未选工作区时显示（含**授权范围说明** —— 可读写必须说出来 ✓）*/
+  /** 空状态：尚未选工作区时显示（2026-09-27 用户反馈批重做：清晰度）。
+   *  结构 = 弱化提示 / 强调底主按钮（选择文件夹…）/ 授权范围注脚，各归各位；
+   *  弃用旧的「三行 .menu-item 假列表」（文案与按钮长得一样，读不出层级）。 */
   function renderEmpty(): void {
     nav.textContent = "";
+    const box = document.createElement("div");
+    box.className = "workspace-empty";
     const hint = document.createElement("div");
-    hint.className = "menu-item";
-    hint.textContent = "还没有工作区 —— 选一个文件夹开始";
+    hint.className = "workspace-hint";
+    hint.textContent = "还没有工作区";
     const pick = document.createElement("button");
     pick.type = "button";
-    pick.className = "menu-item";
+    pick.className = "workspace-pick";
     pick.textContent = "选择文件夹…";
     // ⚠ 授权范围必须在 UI 里说出来：目录条目 = 列目录 + 其中的文件可读写 ✓
     const scope = document.createElement("div");
-    scope.className = "menu-item";
-    scope.textContent = "其中的文件可被打开并编辑";
+    scope.className = "workspace-scope";
+    scope.textContent = "所选文件夹内的文件可被打开并编辑";
     pick.addEventListener("click", () => void pickWorkspace());
-    nav.appendChild(hint);
-    nav.appendChild(pick);
-    nav.appendChild(scope);
+    box.appendChild(hint);
+    box.appendChild(pick);
+    box.appendChild(scope);
+    nav.appendChild(box);
   }
 
   /** 逐级懒加载：只列这一层；子目录由点击时再列 ✓ */
@@ -99,10 +112,14 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
       item.type = "button";
       item.className = "menu-item";
       item.textContent = (entry.is_dir ? "▸ " : "") + entry.name;
+      // 目录行加 data-kind（CSS 加字重与文件区分；2026-09-27 用户反馈「不清晰」）
+      if (entry.is_dir) item.dataset.kind = "dir";
       const full = listing.path + "\\" + entry.name;
       if (entry.is_dir) {
         const kids = document.createElement("div");
         kids.hidden = true;
+        // 逐层缩进（2026-09-27 复查修复：子层原先与父级齐平，树形同虚设）
+        kids.className = "workspace-kids";
         item.addEventListener("click", () => {
           if (kids.hidden) {
             kids.hidden = false;
@@ -137,34 +154,38 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
       } catch {
         /* 存不下不影响本次会话 ✓ */
       }
+      deps.onRootChange?.(root); // 侧栏在空态的显隐判据（body.has-workspace）✓
       await fill(nav, root);
     } catch (error) {
       nav.textContent = String(error);
     }
   }
 
-  /** 有持久化值就渲染树；否则空状态 ✓（坏值/越界 ⇒ 命令会拒并显示原因，不崩 ✓）*/
+  /** 有持久化值就渲染树；否则空状态 ✓（坏值/越界 ⇒ 命令会拒并显示原因，不崩 ✓）
+   *  头部（2026-09-27 用户反馈批重做）：等宽路径行（太长优先显示尾部）+ 弱化的
+   *  「移除工作区」文字按钮 —— 弃用旧的「两行 .menu-item」（路径与按钮混排难读）。 */
   async function renderWorkspace(): Promise<void> {
     if (root === null || root === "") {
       renderEmpty();
       return;
     }
     await fill(nav, root); // ⚠ fill 会先清空 nav ⇒ 头部必须在它**之后** prepend ✓
-    // ⭐ 切片③：工作区头部行 ＋「移除工作区」（设计 §3.2）
-    //   形态选择（面板**没有显式根节点** ✗）：取最简 —— 在树**上方**渲染一行头（根路径 ＋ 移除按钮）✓
-    //   样式**复用**既有 `.menu-item` ✓（**不新增字面色值**✗ D-01 ✓）
     const head = document.createElement("div");
-    head.className = "menu-item";
-    head.textContent = root;
+    head.className = "workspace-head";
+    const path = document.createElement("span");
+    path.className = "workspace-path";
+    path.textContent = root;
+    path.title = root; // 截断时悬停看全量
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.className = "menu-item";
-    remove.textContent = "移除工作区";
+    remove.className = "workspace-remove";
+    remove.textContent = "移除";
     // ⭐ 文案要真（护栏 5 ✓）：真撤销 ⇒ **该目录下的新文件将被拒绝** ✓（不许写"仅从侧栏隐藏"✗）
-    remove.title = "该目录下的新文件将被拒绝";
+    remove.title = "移除工作区（该目录下的新文件将被拒绝）";
     remove.addEventListener("click", () => void removeWorkspace());
-    nav.prepend(remove);
-    nav.prepend(head); // 先 prepend 按钮再 prepend 头 ⇒ 最终顺序 = 头 → 按钮 → 树 ✓
+    head.appendChild(path);
+    head.appendChild(remove);
+    nav.prepend(head);
   }
 
   /** ⭐ 撤销（切片③）：调 Rust 侧 `remove_workspace` ⇒ **真撤销**（从受信目录集合里删 ✓）；
@@ -180,6 +201,7 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
       refused = String(error); // 护栏 2 的中文原因 ✓（无英文 OS 原串 ✓）
     }
     root = null;
+    deps.onRootChange?.(null); // 侧栏在空态的显隐判据同步 ✓
     try {
       localStorage.removeItem(WORKSPACE_KEY); // 清指针 ✓（**拒绝时也清** ✓）
     } catch {
@@ -199,11 +221,22 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
     void renderWorkspace();
   });
   btnOutline.addEventListener("click", () => show("outline"));
-  show("outline");
+  // 有持久化工作区 ⇒ 初始就切到工作区面板（大纲在无文档时是空的）＋ 通知侧栏显隐
+  if (root !== null && root !== "") {
+    show("workspace");
+    deps.onRootChange?.(root);
+  } else {
+    show("outline");
+  }
 
   return {
     refresh(): void {
       if (!nav.hidden) void renderWorkspace();
+    },
+    async pickFromOutside(): Promise<void> {
+      show("workspace"); // 选完目录树要立刻出现在眼前
+      await pickWorkspace();
+      if (root !== null) await renderWorkspace();
     },
   };
 }

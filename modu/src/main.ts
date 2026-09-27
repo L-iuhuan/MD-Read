@@ -100,7 +100,8 @@ function mountOutline(items: OutlineItem[]): void {
     const link = document.createElement("a");
     link.textContent = item.text;
     link.href = `#${item.id}`;
-    link.style.paddingLeft = `${(item.level - 1) * 12}px`;
+    link.dataset.level = String(item.level); // 层级样式锚（CSS：一级行加字重拉开层级感）
+    link.style.paddingLeft = `${6 + (item.level - 1) * 14}px`; // 基准 6px + 逐层 14px（2026-09-27 反馈：贴边 + 层级感弱）
     link.addEventListener("click", (event) => {
       event.preventDefault();
       document.getElementById(item.id)?.scrollIntoView();
@@ -293,21 +294,24 @@ async function onExportClick(tabs: TabManager): Promise<void> {
   // 「可能被截」提醒已于 2026-09-23 撤除：压列后表格不丢列、图片有 max-inline-size:100%、
   // pre 会换行 ⇒ 已无会静默丢内容的类别，留着就是会撒谎的提示。
   markPrintBlocks(doc);
-  let picked: string | null;
+  // 票据制（P0 安全修复 B1）：pick_save_path 返回 {path, ticket}，export_pdf 只认 ticket。
+  // 渲染层不再向 export_pdf 传路径 ⇒ 被攻陷的渲染层无法指定任意写入路径。
+  interface SaveResult { path: string | null; ticket: number | null }
+  let saveResult: SaveResult;
   try {
-    picked = await invoke<string | null>("pick_save_path", {
+    saveResult = await invoke<SaveResult>("pick_save_path", {
       defaultName: defaultPdfName(tab.path),
     });
   } catch (error) {
     flashStatus(`导出失败：${String(error)}`, "error");
     return;
   }
-  if (picked === null || picked === "") {
+  if (saveResult.path === null || saveResult.path === "" || saveResult.ticket === null) {
     return; // 用户取消：静默结束
   }
   try {
     // 页眉已按平台限制取舍清空（用户反馈批次：PDF 只要页码不要页眉，print.rs 查证注释）
-    flashStatus(await invoke<string>("export_pdf", { path: picked }), "ok");
+    flashStatus(await invoke<string>("export_pdf", { ticket: saveResult.ticket }), "ok");
   } catch (error) {
     flashStatus(`导出失败：${String(error)}`, "error");
   }
@@ -608,8 +612,11 @@ async function boot(): Promise<void> {
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
   setupShellOverflow(); // D-05：顶栏拥挤态（标签装不下 → 收成「编辑 + ⋯」，判据见函数处注释）
 
-// D-11 文件夹工作区（切片①）：只接线，不改大纲逻辑；点文件走既有去重通路 ✓
-setupWorkspacePanel({ openFile: (path) => void openPath(tabs, path) });
+// D-11 工作区接线（2026-09-27 反馈批）：捕获实例供欢迎页 pickFromOutside；onRootChange → body.has-workspace（CSS §5）。
+const workspacePanel = setupWorkspacePanel({
+    openFile: (path) => void openPath(tabs, path),
+    onRootChange: (root) => document.body.classList.toggle("has-workspace", root !== null),
+  });
   // X1（性能实验 §4.3）：把 7 条根级 `html:has(...)` 换成 html 上的状态类——
   // 根级 :has() 会让每次 DOM 变动退化成整文档样式重算。单一入口在 ui/overlay-state.ts。
   setupOverlayState();
@@ -619,10 +626,9 @@ setupWorkspacePanel({ openFile: (path) => void openPath(tabs, path) });
     getDoc: () => document.getElementById("doc"),
     onFontChange: () => {
       const doc = document.getElementById("doc");
-      if (doc !== null) {
-        refitView(doc); // 字体度量变了：断行守卫与公式缩放重算
-      }
+      if (doc !== null) refitView(doc); // 字体度量变了：断行守卫与公式缩放重算
     },
+    notify: (message, kind) => flashStatus(message, kind), // 「设为默认应用」的状态栏反馈
   });
   const findbar = setupFindbar(() => document.getElementById("doc"));
   activeFindbar = findbar;
@@ -699,10 +705,11 @@ setupWorkspacePanel({ openFile: (path) => void openPath(tabs, path) });
   // 文件入口只有标签条的「＋」（#btn-newtab）。原先与它并列的那枚「打开」按钮已删——
   // 两枚按钮本就绑同一个 onOpenClick，做的是同一件事（用户定稿「保留一个加号」）。
   $("btn-newtab").addEventListener("click", () => void onOpenClick(tabs));
-  // 空态（欢迎页）接线：主行动按钮与「＋」是同一件事（onOpenClick），最近条目走 openPath
+  // 空态接线：主按钮 =「＋」；「打开文件夹为工作区」（2026-09-27 反馈批）→ pickFromOutside；最近条目走 openPath。
   activeEmptyState = setupEmptyState({
     onOpen: () => void onOpenClick(tabs),
     onPick: (path) => void openPath(tabs, path),
+    onPickFolder: () => void workspacePanel.pickFromOutside(),
   });
   exportButton = document.getElementById("btn-export") as HTMLButtonElement | null;
   exportButton?.addEventListener("click", () => void onExportClick(tabs));

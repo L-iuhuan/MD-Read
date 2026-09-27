@@ -63,12 +63,13 @@ describe("P1 最近下拉条目不再被顶栏按钮权重压过", () => {
     expect(stripped).toMatch(/<button id="btn-outline"[^>]*>☰<\/button>\s*<div id="tabbar"/);
   });
 
-  it("条目回到列表项语言：7px 圆角 + 无描边 + hover 面 + 左侧 3px accent 色条", () => {
+  it("条目回到列表项语言：7px 圆角 + 无描边 + hover 浅色高亮（2026-09-27 用户裁决：无左侧色条）", () => {
     expect(app).toMatch(/\.menu-item\s*\{[^}]*border:\s*0/);
     expect(app).toMatch(/\.menu-item\s*\{[^}]*border-radius:\s*var\(--radius-1\)/);
-    expect(app).toMatch(/\.menu-item\s*\{[^}]*border-inline-start:\s*3px solid transparent/);
     expect(app).toMatch(/\.menu-item:hover\s*\{[^}]*background:\s*var\(--bg-hover\)/);
-    expect(app).toMatch(/\.menu-item:hover\s*\{[^}]*border-inline-start-color:\s*var\(--accent-solid\)/);
+    // ⭐ 2026-09-27 用户裁决：按钮/选中/悬停一律不用左侧颜色条，只允许浅色高亮。
+    //   反向锚钉死：.menu-item 的任何规则块里都不得再出现 border-inline-start。
+    expect(app).not.toMatch(/\.menu-item[^{]*\{[^}]*border-inline-start/);
   });
 
   it("条目不再有 height 被改写的可能（28px 只属于动作区那几段结构）", () => {
@@ -285,12 +286,15 @@ describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态
     expect(tabsSrc).toMatch(/bar\.hidden = false/);
   });
 
-  it("空态（body.empty）同时隐大纲与 ☰，且不再用 :has() 判空态", () => {
-    expect(appBody).toMatch(/\.empty \.outline\s*\{\s*display:\s*none/);
-    expect(appBody).toMatch(/\.empty #btn-outline\s*\{\s*display:\s*none/);
+  it("空态（body.empty）同时隐大纲与 ☰，且不再用 :has() 判空态（2026-09-27 起有工作区例外）", () => {
+    // 2026-09-27 用户反馈批：欢迎页可选工作区 ⇒ body.has-workspace 时空态**保留侧栏**。
+    //   选择器相应改为 :not(.has-workspace) 限定；无工作区的空态行为与旧锚一致。
+    expect(appBody).toMatch(/\.empty:not\(\.has-workspace\) \.outline\s*\{\s*display:\s*none/);
+    expect(appBody).toMatch(/\.empty:not\(\.has-workspace\) #btn-outline\s*\{\s*display:\s*none/);
     expect(appBody).not.toMatch(/:has\(#empty-hint/);
     expect(mainSrc).toMatch(/classList\.add\("empty"\)/);
     expect(mainSrc).toMatch(/classList\.remove\("empty"\)/);
+    expect(mainSrc).toMatch(/has-workspace/); // main.ts 侧有 onRootChange 同步接线 ✓
   });
 
   it("拥挤态判据只用与开合无关的量（视口宽 + 标签总宽），不再读标签条自己的宽度", () => {

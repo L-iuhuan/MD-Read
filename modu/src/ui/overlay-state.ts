@@ -49,7 +49,15 @@ export function setupOverlayState(): OverlayState {
   function sync(): void {
     root.classList.toggle("panel-open", PANELS.some(visible));
     root.classList.toggle("settings-open", visible(SETTINGS_PANEL));
-    root.classList.toggle("editing", visible(EDITOR_PANE));
+    const editing = visible(EDITOR_PANE);
+    root.classList.toggle("editing", editing);
+    // 「编辑」按钮模式反馈（2026-09-27 UI 复查发现：两态按钮零差异、模式不可辨）。
+    // 这里随唯一事实源（面板 hidden）同步文字与按压态——toEdit/toRead/reset/切标签全覆盖。
+    const editBtn = document.getElementById("btn-edit");
+    if (editBtn !== null) {
+      editBtn.textContent = editing ? "完成" : "编辑";
+      editBtn.setAttribute("aria-pressed", String(editing));
+    }
   }
 
   const observer = new MutationObserver(sync);

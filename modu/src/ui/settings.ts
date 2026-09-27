@@ -38,6 +38,7 @@ import {
   setFontPref as applyFontPick,
   type FontPickerHooks,
 } from "./font-picker";
+import { invoke } from "@tauri-apps/api/core";
 
 const FS_MIN = 14;
 const FS_MAX = 20;
@@ -56,6 +57,8 @@ export interface SettingsHooks {
   onFontChange(): void;
   /** 测试用的量器注入点（生产不传，走真实 canvas；见 font-picker 的 FontPickerHooks.measure） */
   measure?: FontPickerHooks["measure"];
+  /** 状态栏闪信（2026-09-27：「设为默认应用」的结果反馈）；测试可省略 */
+  notify?: (message: string, kind: "ok" | "warn" | "error") => void;
 }
 
 /** 字体面板需要的那两个钩子（与 SettingsHooks 同形；为避免重复声明只做结构复用） */
@@ -277,6 +280,22 @@ function wireAutosaveToggle(): void {
   });
 }
 
+/** 「设为 .md 默认应用」（2026-09-27 用户反馈）：写全 HKCU 注册（Rust 侧
+ *  register_markdown_default，自动打开系统默认应用页），结果走状态栏闪信。
+ *  安全软件弹窗询问关联变更属预期——用户点允许即可。 */
+function wireDefaultApp(): void {
+  req<HTMLButtonElement>("set-default-app").addEventListener("click", () => {
+    void (async () => {
+      try {
+        await invoke("register_markdown_default");
+        hooks.notify?.("已注册为 .md 打开候选：请在系统设置页选择「墨读」", "ok");
+      } catch (error) {
+        hooks.notify?.(String(error), "error");
+      }
+    })();
+  });
+}
+
 /** boot 时调用一次：恢复字号/行宽/字体/主题/配色并接好全部面板交互 */
 export function setupSettings(deps: SettingsHooks): void {
   hooks = deps;
@@ -286,6 +305,7 @@ export function setupSettings(deps: SettingsHooks): void {
   wireThemeSelect();
   wirePaletteSelect();
   wireAutosaveToggle();
+  wireDefaultApp();
   wireToggle();
   wireClickOutside(req<HTMLElement>("settings-panel"));
 }

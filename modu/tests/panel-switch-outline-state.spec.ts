@@ -70,8 +70,12 @@ describe("切片⑤ 锚 · 「大纲 / 文件夹」切换不扰动大纲内部�
     const mod = await import("../src/app/workspace-panel");
     mod.setupWorkspacePanel({ openFile: () => {} });
 
+    // 2026-09-27 起：有持久化工作区 ⇒ 初始显示「文件夹」面板；本锚关注的是切换
+    // 不扰动大纲，故先切回「大纲」建立基准快照 ✓
+    (document.getElementById("btn-panel-outline") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
     const before = snapshot();
-    expect(before.hidden, "初始应显示大纲").toBe(false);
+    expect(before.hidden, "切回大纲后应显示大纲").toBe(false);
 
     (document.getElementById("btn-panel-workspace") as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));
@@ -94,6 +98,9 @@ describe("切片⑤ 锚 · 「大纲 / 文件夹」切换不扰动大纲内部�
     localStorage.setItem(WORKSPACE_KEY, "D:\\ws");
     const mod = await import("../src/app/workspace-panel");
     mod.setupWorkspacePanel({ openFile: () => {} });
+    // 2026-09-27 起：有工作区时初始是「文件夹」面板 —— 先切回大纲再取基准 ✓
+    (document.getElementById("btn-panel-outline") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
     const before = snapshot();
 
     for (let i = 0; i < 2; i += 1) {

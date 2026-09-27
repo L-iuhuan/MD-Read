@@ -37,7 +37,12 @@ for (let i = 2; i < process.argv.length; i += 1) {
 }
 
 const isoDir = args.iso;
-const doc = args.doc;
+// ⭐ `--doc` 必须**绝对路径**（2026-09-25 实测）：相对路径 ⇒ 应用侧 `is_absolute()` 拒绝 ⇒ `argv 注册 0/1`
+//   ⇒ **静默落欢迎屏** ✗（已致两次验收空转 ✗）。这里统一解析成绝对路径，从根上堵住该坑。
+const docRaw = args.doc;
+const doc = path.resolve(docRaw);
+if (!existsSync(doc)) { console.error(`[隔离] --doc 不存在：${doc}（原始：${docRaw}）`); process.exit(2); }
+if (doc !== docRaw) console.log(`[隔离] --doc 已绝对化：${docRaw} ⇒ ${doc}`);
 if (typeof isoDir !== 'string' || !path.isAbsolute(isoDir)) {
   console.error('[前置检查失败] 必须给 --iso <绝对隔离目录>（拒绝启动，否则会污染真实 profile）');
   process.exit(2);

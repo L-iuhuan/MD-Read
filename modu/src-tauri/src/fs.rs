@@ -1,4 +1,4 @@
-//! 文件读写与编码契约：读取时 BOM 优先、chardetng 兜底检测；写回时保持原编码与
+﻿//! 文件读写与编码契约：读取时 BOM 优先、chardetng 兜底检测；写回时保持原编码与
 //! 原字节形态（BOM/行尾不丢失）——D7 红线："保持原编码与原字节形态，禁止静默转换"。
 //!
 //! R-01 / P1-6：读写在**受信路径集合**内才放行（见 `crate::trust` 的信任模型与
@@ -60,7 +60,8 @@ fn decode_bytes(bytes: &[u8]) -> (String, String, bool) {
 }
 
 /// IO 错误 → 面向使用者的中文原因（**不把 `os error 2` 这类英文塞进 UI**）。
-fn io_reason(error: &std::io::Error) -> &'static str {
+/// pub 供 lib.rs / print.rs 统一复用（P1-4 错误文案泄漏修复，2026-09-26）。
+pub fn io_reason(error: &std::io::Error) -> &'static str {
     match error.kind() {
         std::io::ErrorKind::NotFound => "文件不存在或已被移动",
         std::io::ErrorKind::PermissionDenied => "没有访问权限",
@@ -230,7 +231,7 @@ pub async fn pick_workspace_directory(
             .blocking_pick_folder()
     })
     .await
-    .map_err(|error| format!("打开文件夹对话框失败：{error}"))?;
+    .map_err(|error| format!("打开文件夹对话框失败：{}", error))?;
     let Some(folder) = picked else {
         return Ok(None); // 用户取消 ✓
     };
@@ -318,7 +319,7 @@ pub async fn pick_markdown_files(
             .blocking_pick_files()
     })
     .await
-    .map_err(|error| format!("打开文件对话框失败：{error}"))?;
+    .map_err(|error| format!("打开文件对话框失败：{}", error))?;
     let Some(files) = picked else {
         return Ok(Vec::new()); // 用户取消
     };
@@ -358,6 +359,36 @@ pub fn forget_trusted(state: &TrustedPaths, raw: &str) {
 }
 
 /// 供 `lib.rs` 的拖放/argv 处理器使用的批量注册：返回成功注册的文件数（失败逐条忽略）。
+/// 拖放注册（**纯函数** ✓ ⇒ 可直接单测，不必启动应用 ✓）：拖入项按【文件 / 目录】分流登记。
+///
+/// ⚠ 为什么**只有这里**登记目录（R-01 第一条 ✓）：**OS 拖放**是四个授权来源之一 ✓，
+/// 且**路径来自 OS 事件本身** ⇒ 渲染层**伪造不了** ✓。
+/// ⇒ ⛔ **绝不**新增「渲染层传路径」的命令（如 `trust_workspace_dir(path)` ✗）——
+///    那等于让被攻陷的渲染层**自我授权任意目录** ✗（本会话已为此挡过一次 ✓）。
+///
+/// 文件 ⇒ 复用下面那个 `trust_all_existing`（只登记**存在的 Markdown 文件** ✓ 语义不变 ✓）；
+/// 目录 ⇒ `canonicalize` ⇒ `is_dir` ⇒ 以 **canonical 小写 + \\?\** 键入 `dirs` ⇒ `persist()` ✓。
+/// 返回 `(文件登记数, 目录登记数, 首个被登记的目录)` ✓（供日志/前端提示用 ✓）。
+pub fn trust_dropped(trust: &TrustedPaths, raws: &[String]) -> (usize, usize, Option<String>) {
+    let mut dirs = 0usize;
+    let mut first_dir: Option<String> = None;
+    for raw in raws {
+        let Ok(canonical) = std::fs::canonicalize(raw) else {
+            continue; // 不存在 ⇒ 跳过（不登记 ✓）
+        };
+        if canonical.is_dir() {
+            // trust_dir 内部再做 canonicalize + is_dir + 入 dirs + persist ✓（幂等 ✓）
+            if let Ok(dir) = trust.trust_dir(&canonical.to_string_lossy()) {
+                dirs += 1;
+                if first_dir.is_none() {
+                    first_dir = Some(dir.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    let files = trust_all_existing(trust, raws);
+    (files, dirs, first_dir)
+}
 pub fn trust_all_existing(state: &TrustedPaths, paths: &[String]) -> usize {
     paths.iter().filter(|raw| state.trust_existing(raw).is_ok()).count()
 }
@@ -437,5 +468,95 @@ mod shipped_config_guard {
 #[cfg(test)]
 #[path = "fs_trust_tests.rs"]
 mod fs_trust_tests;
+
+// ==========================================================================
+// 注册表：设为 .md 默认应用（2026-09-27 用户反馈「默认打开方式里选不到墨读」）
+// ==========================================================================
+
+/// 把墨读注册为 .md/.markdown/.mdx 的默认打开候选（HKCU 用户级，无需管理员）。
+///
+/// 背景：MSI 安装器写了 ProgID（`MoDu.md` 等）与扩展默认值，但扩展的
+/// `OpenWithProgids` 链接键缺失——本机实测（火绒 HIPS 对扩展关联键重点防护，
+/// 拦掉了安装器的写入），导致系统「打开方式 / 默认应用」列表里看不到墨读。
+/// 这里按**当前 exe 路径**补齐全部注册项，随后打开系统默认应用页，
+/// 用户点选「墨读」即完成默认设置。
+///
+/// 实现走 `reg.exe` 子进程（零依赖；HKCU 写入不需提权）。
+/// 安全软件可能弹窗询问关联变更——这是预期的用户确认动作。
+#[tauri::command]
+pub fn register_markdown_default() -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("无法确定程序路径：{}", io_reason(&e)))?;
+    let exe_str = exe.to_string_lossy().into_owned();
+    let icon = format!("\"{exe_str}\",0");
+    let open_cmd = format!("\"{exe_str}\" \"%1\"");
+    const EXTS: [(&str, &str); 3] = [
+        (".md", "MoDu.md"),
+        (".markdown", "MoDu.markdown"),
+        (".mdx", "MoDu.mdx"),
+    ];
+    for (ext, progid) in EXTS {
+        // ProgID：图标 + 打开命令（用户级副本；HKLM 那份不受影响）
+        reg_set_default(&format!(r"HKCU\Software\Classes\{progid}\DefaultIcon"), &icon)?;
+        reg_set_default(
+            &format!(r"HKCU\Software\Classes\{progid}\shell\open\command"),
+            &open_cmd,
+        )?;
+        // 扩展 → ProgID 链接：**「打开方式」候选列表的来源**（安装器缺的正是这个键）
+        reg_set_named(
+            &format!(r"HKCU\Software\Classes\{ext}\OpenWithProgids"),
+            progid,
+            "",
+        )?;
+        // Capabilities\FileAssociations：让「设置 → 默认应用」页面能列出墨读
+        reg_set_named(r"HKCU\Software\MoDu\Capabilities\FileAssociations", ext, progid)?;
+    }
+    reg_set_named(r"HKCU\Software\MoDu\Capabilities", "ApplicationName", "墨读 MoDu")?;
+    reg_set_named(
+        r"HKCU\Software\MoDu\Capabilities",
+        "ApplicationDescription",
+        "本地 Markdown 阅读器",
+    )?;
+    reg_set_named(
+        r"HKCU\Software\RegisteredApplications",
+        "MoDu",
+        r"Software\MoDu\Capabilities",
+    )?;
+    // 打开系统默认应用页——注册完成后用户点选墨读即可（UserChoice 受系统哈希保护，
+    // 应用不能代写，打开设置页是 Windows 允许的引导方式）
+    let _ = std::process::Command::new("explorer.exe")
+        .arg("ms-settings:defaultapps")
+        .spawn();
+    Ok(())
+}
+
+/// reg add <key> /ve /d <value> /f —— 写「默认」值（DefaultIcon / open\command 的用法）
+fn reg_set_default(key: &str, value: &str) -> Result<(), String> {
+    run_reg(&["add", key, "/ve", "/d", value, "/f"])
+}
+
+/// reg add <key> /v <name> /t REG_SZ /d <data> /f —— 写具名值
+fn reg_set_named(key: &str, name: &str, data: &str) -> Result<(), String> {
+    run_reg(&["add", key, "/v", name, "/t", "REG_SZ", "/d", data, "/f"])
+}
+
+/// 执行 reg.exe 并把失败翻译成中文（面向使用者，不露 OS 黑话）
+fn run_reg(args: &[&str]) -> Result<(), String> {
+    let out = std::process::Command::new("reg.exe")
+        .args(args)
+        .output()
+        .map_err(|e| format!("无法启动注册表写入：{}", io_reason(&e)))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let reason = if stderr.is_empty() {
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        } else {
+            stderr.trim().to_owned()
+        };
+        Err(format!("无法写入打开方式注册（{reason}）"))
+    }
+}
 
 

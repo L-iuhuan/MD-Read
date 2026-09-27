@@ -440,6 +440,13 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 }
 .actions > button.is-accent:hover:not(:disabled) { background: var(--accent-tint-hover); }
 
+/* 编辑态的「完成」按钮（2026-09-27 复查：两态零差异）—— 按压态更深 + accent 描边；
+   用 #btn-edit 选择器（不占 is-accent 计数锚）；文字由 overlay-state.ts 同步（编辑/完成）。 */
+html.editing #btn-edit:not(:disabled) {
+  background: var(--accent-tint-hover);
+  border-color: var(--accent-solid);
+}
+
 /* --- 拥挤态：标签装不下了 → 收成「编辑 + ⋯」---
    判据在 main.ts 的 setupShellOverflow：标签总宽（含 ＋）> 视口宽 − --w-chrome-reserve。
    两项都与 .overflow 开合状态无关 ⇒ 结构上不会自激，故**不再需要**按「收起让出多少」
@@ -644,15 +651,19 @@ html.settings-open #btn-settings {
   color: var(--accent-text-hover);
   font-weight: 600;
 }
+/* 层级感（2026-09-27 复查）：一级行加字重；逐层缩进由 JS 内联（基准 6 + 14×level） */
+.outline-list a[data-level="1"] { font-weight: 500; }
 
 /* 空态（首访）：不摆一个只有「大纲」二字的光杆侧栏，让欢迎页独占画面；
    顶栏的 ☰ 一并隐身 —— 空态没有任何可展开的大纲，留着它就是一个点了没反应的按钮
    （用户实测：「☰ 可点但无可见效果」）。两处判据同源。
    本批（2026-09-23 第二批）把判据从 `body:has(#empty-hint:not([hidden]))` 换成 body.empty：
    JS 在 boot/resetToWelcome 加、mountRendered 摘，与 #empty-hint.hidden 逐处同步，
-   同时把 :has() 从这条热路径上撤掉（:has() 的失效重算范围比单类选择器大）。 */
-.empty .outline { display: none; }
-.empty #btn-outline { display: none; }
+   同时把 :has() 从这条热路径上撤掉（:has() 的失效重算范围比单类选择器大）。
+   2026-09-27 例外：已选工作区（body.has-workspace，workspace-panel 的 onRootChange
+   同步）时空态**保留侧栏** —— 欢迎页的「打开文件夹」入口选完目录后要能直接浏览文件。 */
+.empty:not(.has-workspace) .outline { display: none; }
+.empty:not(.has-workspace) #btn-outline { display: none; }
 
 /* 大纲折叠（P5 批2）：顶栏 ☰ toggle body.outline-off，态存 localStorage modu-outline；
    与上面空态规则、窄窗隐藏（§12）相互独立。 */
@@ -661,16 +672,16 @@ html.settings-open #btn-settings {
 /* ==========================================================================
    6. 最近下拉 —— 浮层卡片语言之二（同 §4 四件套：纸面底 + 1px --border +
    radius-3 + --shadow-2）。波4：「最近」按钮移到左侧后，菜单由右对齐改左对齐。
-   波6 条目可点性（用户复验「文件卡片区别度没有」）：条目补按压态、悬停时左侧
-   亮一条 3px accent 细条（与大纲活动态同语言，都表示「这一行现在归你点」），
-   行高由 8px 内边距撑到 33px 左右，命中面积更像一条「牌」而不是一行字。
+    波6 条目可点性（用户复验「文件卡片区别度没有」）：条目补按压态、悬停起浅色底
+    （2026-09-27 用户裁决：去左侧色条，选中/悬停只允许浅色高亮），
+    行高由 8px 内边距撑到 33px 左右，命中面积更像一条「牌」而不是一行字。
    P1 修复：上面那条「色条」在波6 之后**一直没出现过**——`.topbar button`（后代选择器，
    (0,1,1)）穿透进本菜单，既把条目的 border/圆角/高度/内边距逐项改写成顶栏按钮的样子
    （实测 border 1px #d9d9e0、radius 5px、height 28px、padding 0 12px，整列渲染成
    「一排小按钮」），又用 `.topbar button:hover` 的 `border-color` **简写**盖掉本节的
    `border-inline-start-color`。现在顶栏皮已收窄到 `.topbar > …`（见 §2），本节条目
-   终于能落回自己的声明：**无描边的 7px 列表项**（--radius-1）+ hover 面 --bg-hover
-   + 左侧 3px accent 色条。本节的 `.recent-item` 一并升权到 `#recent-menu .recent-item`：
+    终于能落回自己的声明：**无描边的 7px 列表项**（--radius-1）+ hover 面 --bg-hover
+    （左色条已于 2026-09-27 按用户裁决移除）。本节的 `.recent-item` 一并升权到 `#recent-menu .recent-item`：
    结构上已经没有穿透路径了，升权只是给未来的选择器改动上一道保险。
    ========================================================================== */
 .recent-wrap { position: relative; flex: none; }
@@ -698,8 +709,10 @@ html.settings-open #btn-settings {
 }
 
 /* --- 下拉条目：最近列表 / 全部标签 / ⋯ 溢出菜单三处共用同一套「列表项」语言 ---
-   7px 列表项、无描边、hover 起底（--bg-hover）、左侧 3px accent 色条；
-   两行式 = 文件名（正文色）+ 弱化目录（--fg-dim，第三级文字档）。 */
+   7px 列表项、无描边、悬停只起浅色底（--bg-hover）；
+   两行式 = 文件名（正文色）+ 弱化目录（--fg-dim，第三级文字档）。
+   ⚠ 用户裁决（2026-09-27）：按钮/选中/悬停**一律不用左侧颜色条**，只允许浅色高亮 ——
+   旧的「3px accent 左条 + transparent 常驻占位」已整体删除。 */
 .menu-item {
   display: flex;
   align-items: center;
@@ -712,14 +725,11 @@ html.settings-open #btn-settings {
   color: var(--text);
   background: transparent;
   border: 0;
-  /* 悬停色条常驻占位（transparent），hover 只换色不挪位 —— 与大纲条目同手法 */
-  border-inline-start: 3px solid transparent;
   border-radius: var(--radius-1);   /* 列表项档 7px：与「一排小按钮」的分界就在这里 */
   cursor: pointer;
-  transition: background-color var(--duration-1) var(--ease-1),
-              border-color var(--duration-1) var(--ease-1);
+  transition: background-color var(--duration-1) var(--ease-1);
 }
-.menu-item:hover { background: var(--bg-hover); border-inline-start-color: var(--accent-solid); }
+.menu-item:hover { background: var(--bg-hover); }
 .menu-item:active { background: var(--bg-active); }
 /* 第二行（弱化目录）与文件名共享一个纵向列 */
 .menu-item .menu-text {
@@ -757,7 +767,7 @@ html.settings-open #btn-settings {
 /* 条目左侧的脏点（未保存）：与标签条上的 ● 同一颜色语义 */
 .menu-dot { flex: none; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--accent-solid); }
 .menu-dot[hidden] { display: none !important; }
-/* 菜单条目的按压缩进（.menu-item 已给 border-inline-start 占位） */
+/* 当前项悬停：浅主色底再深一档（左色条已按 2026-09-27 用户裁决移除） */
 .menu-item.is-current:hover { background: var(--accent-tint-hover); }
 /* 空态：见下方 .recent-empty（三者共用 --fg-dim） */
 .recent-menu .recent-empty,
@@ -823,14 +833,24 @@ html.settings-open #btn-settings {
   inset-inline-end: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--size-1);
-  min-inline-size: 248px;
+  gap: var(--size-2);
+  /* 2026-09-27 用户反馈批：卡片定宽（原先 min-width + 内容自适应 ⇒ 长字体名把卡片
+     无限撑宽、下拉溢出卡片）。定 320px + 视口兜底，行内控件全部收在这个盒子里。 */
+  inline-size: 320px;
+  max-inline-size: calc(100vw - var(--size-6));
   padding: var(--size-3);
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
   box-shadow: var(--shadow-2);
   animation: chrome-pop var(--duration-2) var(--ease-1);
+}
+/* 分组分隔线（2026-09-27）：字号/行宽 · 字体/实际生效 · 主题/配色/自动保存 三组 */
+.settings-sep {
+  block-size: 1px;
+  margin-block: calc(var(--size-1) * -0.5);
+  background: var(--hair);
+  flex: none;
 }
 /* 浮层统一起场：略上移 + 淡入，≤200ms */
 @keyframes chrome-pop {
@@ -842,7 +862,9 @@ html.settings-open #btn-settings {
   align-items: center;
   justify-content: space-between;
   gap: var(--size-3);
-  min-block-size: 30px;
+  /* 统一行高（2026-09-27 用户反馈：各控件高低不一）：行定 32px，
+     行内控件一律以 --h-ctl 为高度基准，行与行视觉节奏一致。 */
+  min-block-size: 32px;
 }
 /* 分组标签弱化：小一号 + 低对比 + 字距，不与控件抢注意力 */
 .settings-label {
@@ -856,8 +878,10 @@ html.settings-open #btn-settings {
    P6：--shadow-seg 的第一位消费方就是它（「分组里的白底选中项」正是本 token 的语义位）。 */
 .settings-fs > span {
   min-inline-size: 2.6em;
-  padding: 3px 0;
-  text-align: center;
+  block-size: var(--h-ctl);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--font-mono);
   font-size: var(--fs-chrome);
   font-variant-numeric: tabular-nums;
@@ -894,7 +918,11 @@ html.settings-open #btn-settings {
   background-color: var(--bg-app);     /* 白底 + 描边定形，不用灰块 */
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
-  padding: 4px var(--size-4) 4px var(--size-2);
+  /* 高度统一到 --h-ctl（2026-09-27 用户反馈：控件高低不一）：padding-block 归零，
+     由高度定形，文本垂直居中由 UA 完成 */
+  min-block-size: var(--h-ctl);
+  padding-block: 0;
+  padding-inline: var(--size-1) var(--size-4);
   box-shadow: var(--shadow-ctl);       /* P6：有描边的控件配一档轻投影 */
   cursor: pointer;
   transition: border-color var(--duration-1) var(--ease-1);
@@ -908,6 +936,21 @@ html.settings-open #btn-settings {
   accent-color: var(--accent-solid);
   cursor: pointer;
 }
+/* 「设为 .md 默认应用」行动按钮（2026-09-27 反馈批）：与 .empty-primary 同一套主行动语言 */
+.settings-action {
+  font: inherit;
+  font-size: var(--fs-chrome);
+  font-weight: 600;
+  color: var(--accent-text-hover);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
+  border-radius: var(--radius-2);
+  padding: 5px var(--size-3);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1);
+}
+.settings-action:hover { background: var(--accent-tint-hover); }
+.settings-action:active { background: var(--bg-active); }
 /* 说明：下拉的箭头与展开列表由 UA/系统绘制（color-scheme 会跟随亮暗），
    纯 CSS 无法定制展开列表的选项行——要完全自定义需换自绘 listbox（属 TS 改动，越界）。*/
 
@@ -919,14 +962,20 @@ html.settings-open #btn-settings {
    选择器写成 ≥(0,3,0)，可靠压过本文件 §7 的 `.settings-panel select`（(0,2,0)），
    不依赖两个样式表的加载先后（main.ts 导入次序见文件头）。
    ========================================================================== */
-.settings-panel .settings-font { inline-size: 100%; }
+/* 字体行改纵向堆叠（2026-09-27 反馈：下拉溢出卡片）：标签在上、下拉满宽在下，天然不溢出 */
+.settings-panel .settings-font {
+  inline-size: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--size-1);
+}
 
 /* 字体行与「实际生效」行是面板最宽的两行，标签不许折行（否则「字体」竖成两行） */
 .settings-panel .settings-font .settings-label,
 .settings-panel .settings-effective .settings-label { white-space: nowrap; }
 
-/* 字体下拉：把 §7 的 min-inline-size 拉满整行，长族名不折行 */
-.settings-panel .settings-select { min-inline-size: 100%; }
+/* 字体下拉：满宽（现在容器已是整行，不再是「标签右边的剩余空间」） */
+.settings-panel .settings-select { inline-size: 100%; min-inline-size: 0; }
 
 /* 「实际生效字体」：面板最该读清的一行——等宽读数 + 正文色 + 白底描边 */
 .settings-panel .settings-effective {
@@ -977,7 +1026,8 @@ html.settings-open #btn-settings {
 .settings-panel select option[value="mono-maple-mix"] { font-family: var(--font-pick-mono-maple-mix); }
 /* 首选未命中（多数是没装）：灰显并标注「本机未安装，将用兜底」，不做静默回退 */
 .settings-panel select option[data-unavailable="true"] {
-  color: var(--fg-dim);
+  /* 「本机未安装」用警示色（2026-09-27 UI 复查：缺失态与正常文字同色） */
+  color: var(--warn-text);
   font-family: var(--font-pick-cjk-yahei);
 }
 
@@ -1036,11 +1086,15 @@ html.settings-open #btn-settings {
   padding: var(--size-6);
   text-align: center;
   font-size: var(--fs-body);      /* 跟随用户字号设置，与正文同一档 */
-  color: var(--text-muted);
+  /* P1-5（2026-09-26 审查 B5）：亮态 5 主题 muted/canvas 3.79–4.16:1 < AA 4.5:1。
+     用 20% 主文字色加深 muted，实测全部 ≥ 4.5:1（暗态 6.16+ 不动也过 ⇒ color-mix 双态安全）。 */
+  color: color-mix(in oklab, var(--text-muted), var(--text) 20%);
 }
 .empty-panel {
   inline-size: 420px;             /* 稿子栏宽；窄窗由 max-inline-size 收 */
   max-inline-size: 100%;
+  /* 2026-09-27 用户反馈「按钮太靠边缘」：内容左右各收一档，全宽按钮不再贴面板边。 */
+  padding-inline: var(--size-2);
 }
 .empty-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .empty-wordmark {
@@ -1053,7 +1107,10 @@ html.settings-open #btn-settings {
   color: var(--text);
 }
 .empty-rule { inline-size: 44px; block-size: 1px; background: var(--line); }
-.empty-sub { font-size: .78125em; letter-spacing: .04em; color: var(--text-muted); }
+.empty-sub {
+  font-size: .78125em; letter-spacing: .04em;
+  color: color-mix(in oklab, var(--text-muted), var(--text) 20%);
+}
 
 .empty-primary {
   margin-block-start: var(--size-6);
@@ -1072,6 +1129,25 @@ html.settings-open #btn-settings {
 }
 .empty-primary:hover { background: var(--accent-tint-hover); }
 .empty-primary:active { background: var(--bg-active); }
+
+/* 次级行动（2026-09-27 反馈批新增：欢迎页选工作区入口）：纸面底 + 发丝线，与主按钮拉开层级。 */
+.empty-secondary {
+  margin-block-start: var(--size-2);
+  display: block;
+  inline-size: 100%;
+  block-size: 36px;
+  font: inherit;
+  font-size: .8125em;
+  color: var(--text);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              border-color var(--duration-1) var(--ease-1);
+}
+.empty-secondary:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.empty-secondary:active { background: var(--bg-active); }
 
 .empty-entries { margin-block-start: var(--size-4); display: flex; gap: var(--size-2); }
 .empty-entry {
@@ -1131,6 +1207,7 @@ html.settings-open #btn-settings {
   .empty-wordmark { font-size: 1.375em; }
   .empty-rule { display: none; }
   .empty-primary { margin-block-start: var(--size-5); block-size: 36px; }
+  .empty-secondary { block-size: 32px; }
   .empty-entries { margin-block-start: var(--size-3); }
   .empty-entry { padding: 7px 10px; }
   .empty-recent { margin-block-start: var(--size-4); }
@@ -1447,4 +1524,76 @@ html.editing .topbar { opacity: 1; }
   cursor: pointer;
 }
 .panel-tab:hover { background: var(--bg-hover); color: var(--text); }
-.panel-tab.active { background: var(--bg-hover); color: var(--text); font-weight: 600; }
+/* active = 浅主色底 + 主色文字（2026-09-27 反馈「看不出区别」）：与 hover 的中性浅底分档 */
+.panel-tab.active {
+  background: var(--accent-tint);
+  color: var(--accent-text-hover);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   D-11b. 工作区面板的皮（2026-09-27 反馈批重做）：空态三段各归各位 + 头部路径行
+   尾部优先 + 弱化移除按钮；全部走 token，不新增字面色值。
+   ========================================================================== */
+.workspace-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-3) var(--size-2);
+}
+.workspace-hint { font-size: var(--fs-chrome); color: var(--text-muted); }
+.workspace-pick {
+  font: inherit;
+  font-size: var(--fs-chrome);
+  font-weight: 600;
+  color: var(--accent-text-hover);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
+  border-radius: var(--radius-2);
+  padding: 7px var(--size-3);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1);
+}
+.workspace-pick:hover { background: var(--accent-tint-hover); }
+.workspace-pick:active { background: var(--bg-active); }
+/* 授权范围说明（护栏 5：可读写必须说出来）：比提示更小的注脚档 */
+.workspace-scope { font-size: var(--fs-chrome-sm); color: var(--fg-dim); }
+/* 头部：路径太长优先显示尾部（rtl 截断）+ 弱化移除 */
+.workspace-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-1) var(--size-2) var(--size-2);
+  border-bottom: 1px solid var(--hair);
+  margin-block-end: var(--size-1);
+}
+.workspace-path {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-chrome-sm);
+  color: var(--text-muted);
+  direction: rtl;   /* 路径截断时优先保留尾部（离文件夹名最近的那段） */
+  text-align: start;
+}
+.workspace-remove {
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-chrome-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  padding: 2px var(--size-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.workspace-remove:hover { background: var(--bg-hover); color: var(--text); }
+/* 工作区树：目录行加字重与文件区分（2026-09-27 用户反馈「不清晰」） */
+#workspace-list .menu-item[data-kind="dir"] { font-weight: 500; }
+/* 子层逐层缩进（2026-09-27 复查修复：子层原先与父级齐平） */
+.workspace-kids { padding-inline-start: var(--size-3); }

@@ -18,6 +18,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as SettingsModule from "../src/ui/settings";
 import type { applyThemePref as ApplyThemePref } from "../src/ui/theme";
 
+// 2026-09-27：settings.ts 新增 `import { invoke } from "@tauri-apps/api/core"`
+// （「设为 .md 默认应用」按钮接线）——jsdom 无 __TAURI_INTERNALS__，须 mock（同
+// workspace-panel.spec.ts 建立的惯例）。
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
 /** 只剥 HTML 注释：注释里的属性样例不该进 DOM（本文件用正则够，构建产物走真解析器） */
 function stripHtmlComments(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, "");
@@ -82,8 +87,9 @@ function mountPanel(): void {
         <option value="qingmo">青墨</option>
       </select>
       <input id="set-autosave" type="checkbox" />
-    </div>
-    <article id="doc" class="mdc"></article>`;
+      <button id="set-default-app" type="button">设为 .md 默认应用</button>
+</div>
+<article id="doc" class="mdc"></article>`;
 }
 
 /**

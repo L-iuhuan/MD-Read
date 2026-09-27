@@ -79,6 +79,7 @@
                   <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
                 </div>
               </div>
+              <div class="settings-sep" role="separator"></div>
               <!-- 字体（D-02）：推荐列表 = 中文正文 / 西文拉丁 / 代码 三组语义分组。
                    这里只放「id + 中文名 + 它对应 tokens.css 里的哪个栈变量」；
                    栈本身（完整回退链）与首选族名只写在 tokens.css 的 --font-pick-* 里，
@@ -118,6 +119,7 @@
                 <code id="set-font-effective-bold" data-role="font-effective-bold" title="加粗（700 字重）实际渲染的字体族；与 400 不同时会另有提示">检测中…</code>
                 <span id="set-font-hint" class="settings-effective-hint" data-role="font-effective-hint">正在探测本机字体…</span>
               </div>
+              <div class="settings-sep" role="separator"></div>
               <div class="settings-row">
                 <label class="settings-label" for="set-theme">主题</label>
                 <select id="set-theme" title="界面主题" aria-label="界面主题">
@@ -143,6 +145,15 @@
                 <label class="settings-label" for="set-autosave">自动保存</label>
                 <input id="set-autosave" type="checkbox" checked
                        title="编辑时改动停顿 2 秒后自动保存" aria-label="编辑时自动保存" />
+              </div>
+              <!-- 默认应用（2026-09-27 用户反馈「默认打开方式里选不到墨读」）：
+                   MSI 安装写了 ProgID 但扩展的 OpenWithProgids 链接键缺失（安全软件
+                   常拦安装器写扩展关联键）⇒ 系统选择器里看不到墨读。这里写全 HKCU
+                   用户级注册并自动打开系统默认应用页，点选「墨读」即完成。 -->
+              <div class="settings-row">
+                <span class="settings-label">默认应用</span>
+                <button id="set-default-app" type="button" class="settings-action"
+                        title="把墨读注册为 .md/.markdown/.mdx 的打开候选，并打开系统默认应用页">设为 .md 默认应用</button>
               </div>
             </div>
           </div>
@@ -216,6 +227,10 @@
                 <div class="empty-sub">本地 Markdown 阅读器</div>
               </div>
               <button id="empty-open" type="button" class="empty-primary">打开 Markdown 文件</button>
+              <!-- 工作区入口（2026-09-27 用户反馈批）：欢迎页也要能选文件夹。
+                   接线：empty-state 的 onPickFolder → workspace-panel.pickFromOutside；
+                   选完 body.has-workspace ⇒ 侧栏在空态保留（CSS 见 §5）。 -->
+              <button id="empty-folder" type="button" class="empty-secondary">打开文件夹为工作区</button>
               <div class="empty-entries">
                 <div class="empty-entry">
                   <span class="empty-ico" aria-hidden="true">⇣</span>

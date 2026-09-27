@@ -35,3 +35,6 @@ docs/demo/
 
 # 批次报告入仓（仅报告；决策登记/台账/待办对账等先不动）
 !docs/tasks/Phase3-*报告*.md
+
+# 另一个 agent（omo）的会话续跑状态，不入库
+.omo/

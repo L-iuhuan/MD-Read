@@ -63,6 +63,12 @@ const BUDGETS: Budget[] = [
     hard: 590,
     note: "标签管理偏大，同 main.ts 属超限项，拆分排在 Phase 2.5。hard 同属棘轮，只往紧的方向转。",
   },
+  {
+    file: "src/editor/editor.ts",
+    soft: 400,
+    hard: 500,
+    note: "编辑器会话（CodeMirror 接线 + 阅读态切换 + 块级定位）。2026-09-26 综合审查 B4 补录：491 行超 400 铁律但未入棘轮 → 现补上。hard 500（当前 491，只往紧的方向转）。拆分方向：位置映射（position-map.ts 已独立）之外的「编辑器工厂 + 搜索面板」可外移。",
+  },
 ];
 
 function lineCount(file: string): number {

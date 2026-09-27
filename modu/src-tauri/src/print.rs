@@ -1,4 +1,4 @@
-//! PDF 导出（M4 正式化；D-20 第二步换载体）。
+﻿//! PDF 导出（M4 正式化；D-20 第二步换载体）。
 //! 单路径 = CDP `Page.printToPDF`（`ICoreWebView2::CallDevToolsProtocolMethod`）静默直出：
 //! **同一条 Chromium 打印管线，只换了 API 入口**——无对话框、无 `window.print` 的实质约束不变。
 //! 换载体的原因：`ICoreWebView2PrintSettings` 的页眉页脚没有分离开关（四者共享一个布尔），
@@ -17,12 +17,48 @@ mod cdp;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::sync::Mutex;
 
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 /// 打印回调等待上限（CDP 打多页大文档也远快于此；超时视为引擎卡死）
 const PRINT_TIMEOUT_SECS: u64 = 90;
+
+/// ⭐ 导出路径票据（P0 安全修复，2026-09-26 综合审查 B1）：
+/// `export_pdf` 原先接受渲染层传入的任意路径——被攻陷的渲染层可覆盖任意用户可写文件
+/// （信任模型旁路：渲染层"不能写任意路径"的宪法承诺被打破）。
+/// 修复采用 consume-the-picked-ticket 模式：
+/// · `pick_save_path`（Rust 侧对话框）返回路径的**同时**在进程内登记一张一次性票据；
+/// · `export_pdf` 只消费票据（`ticket: u64`），**不接受路径参数**——渲染层伪造不了票据；
+/// · 每张票据只可消费一次（重放无效），30 秒未消费自动过期（防囤积）。
+static EXPORT_TICKETS: Mutex<Vec<(u64, PathBuf, std::time::Instant)>> = Mutex::new(Vec::new());
+static TICKET_SEQ: AtomicU64 = AtomicU64::new(1);
+const TICKET_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// 签发一张导出票据（pick_save_path 专用，不暴露为命令）。
+fn issue_ticket(path: &Path) -> u64 {
+    let id = TICKET_SEQ.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut tickets) = EXPORT_TICKETS.lock() {
+        tickets.retain(|(_, _, at)| at.elapsed() < TICKET_TTL); // 顺手清过期
+        tickets.push((id, path.to_path_buf(), std::time::Instant::now()));
+    }
+    id
+}
+
+/// 消费一张导出票据：有效则返回对应路径（一次性），无效/过期/不存在返回 None。
+fn consume_ticket(id: u64) -> Option<PathBuf> {
+    EXPORT_TICKETS
+        .lock()
+        .ok()
+        .and_then(|mut tickets| {
+            let now = std::time::Instant::now();
+            let pos = tickets
+                .iter()
+                .position(|(tid, _, at)| *tid == id && now.duration_since(*at) < TICKET_TTL);
+            pos.map(|i| tickets.remove(i)).map(|(_, path, _)| path)
+        })
+}
 
 /// 前端把结果回传 stdout（自动化采集用）
 #[tauri::command]
@@ -42,7 +78,7 @@ pub async fn spike_print_pdf(app: tauri::AppHandle) -> Result<String, String> {
         Err(e) => Ok(format!("Page.printToPDF 回调失败：{e}；路径={shown_path}")),
         Ok(bytes) => {
             let size = bytes.len();
-            std::fs::write(&pdf, &bytes).map_err(|e| format!("写临时 PDF 失败：{e}"))?;
+            std::fs::write(&pdf, &bytes).map_err(|e| format!("写临时 PDF 失败：{}", crate::fs::io_reason(&e)))?;
             let head = bytes[..bytes.len().min(8)]
                 .iter()
                 .map(|b| format!("{b:02X}"))
@@ -70,16 +106,16 @@ async fn request_cdp_pdf(app: &tauri::AppHandle) -> Result<Result<Vec<u8>, Strin
             match webview.controller().CoreWebView2() {
                 Ok(core) => cdp::run_cdp_chain(core, tx),
                 Err(e) => {
-                    let _ = tx.send(Err(format!("取得 WebView2 失败：{e}")));
+                    let _ = tx.send(Err(format!("取得 WebView2 失败：{}", e)));
                 }
             }
         })
-        .map_err(|e| format!("进入 WebView 失败：{e}"))?;
+        .map_err(|e| format!("进入 WebView 失败：{}", e))?;
     let waited = tauri::async_runtime::spawn_blocking(move || {
         rx.recv_timeout(std::time::Duration::from_secs(PRINT_TIMEOUT_SECS))
     })
     .await
-    .map_err(|e| format!("导出任务失败：{e}"))?;
+    .map_err(|e| format!("导出任务失败：{}", e))?;
     Ok(waited.unwrap_or_else(|_| {
         Err(format!("导出超时：打印引擎 {PRINT_TIMEOUT_SECS} 秒内未返回"))
     }))
@@ -132,7 +168,7 @@ fn rollback_export(temp: &Path, err: String) -> Result<String, String> {
 /// CDP 回包解码出的字节落进同目录临时文件。
 /// 与旧路径的差别：那时引擎自己写文件，现在文件由本进程写——写失败同样只清临时产物。
 fn write_temp(temp: &Path, bytes: &[u8]) -> Result<(), String> {
-    std::fs::write(temp, bytes).map_err(|e| format!("导出失败：无法写入临时文件（{e}）"))
+    std::fs::write(temp, bytes).map_err(|e| format!("导出失败：无法写入临时文件（{}）", crate::fs::io_reason(&e)))
 }
 
 /// 临时产物收尾（可在无 WebView2 环境下直接测试）：
@@ -145,7 +181,7 @@ fn finish_export(temp: &Path, dest: &Path, verdict: Result<(), String>) -> Resul
     let size = match std::fs::metadata(temp) {
         Ok(m) => m.len(),
         Err(e) => {
-            return rollback_export(temp, format!("导出失败：找不到打印结果：{e}"));
+            return rollback_export(temp, format!("导出失败：找不到打印结果：{}", crate::fs::io_reason(&e)));
         }
     };
     if size == 0 {
@@ -160,16 +196,17 @@ fn finish_export(temp: &Path, dest: &Path, verdict: Result<(), String>) -> Resul
     Ok(format!("已导出（{kb} KB）"))
 }
 
-/// 导出 PDF 到指定路径（pick_save_path 的产物）。成功返回中文结果（含字节数）。
-/// P0-8：**不再**先把目标文件删掉（旧实现失败即数据丢失）。改为把 CDP 回包解码成字节写到
-/// 同目录临时文件，成功才改名替换目标，失败只清理临时文件——原文件在任何失败/取消路径上
-/// 都原样保留。调用链外层错误（找不到窗口等）在此提前返回时临时文件尚未创建，不会留残局。
+/// 导出 PDF（pick_save_path 票据消费制，2026-09-26 安全修复）。
+/// ⚠ 签名变更：不再接受 `path: String`——改收 `ticket: u64`（`pick_save_path` 签发的一次性票据），
+/// 路径在 Rust 侧由票据取回。被攻陷的渲染层**无法**伪造票据 ⇒ 无法指定任意写入路径。
+/// 前端调用方（main.ts 的 onExportClick）已同步改为两步：先 invoke pick_save_path 拿
+/// `{path, ticket}`，再 invoke export_pdf 传 ticket。
+/// P0-8 语义保留：临时文件→成功才改名替换→失败只清临时（原文件任何路径上都原样保留）。
 #[tauri::command]
-pub async fn export_pdf(app: tauri::AppHandle, path: String) -> Result<String, String> {
-    if path.trim().is_empty() {
-        return Err("导出路径为空".into());
-    }
-    let dest = PathBuf::from(&path);
+pub async fn export_pdf(app: tauri::AppHandle, ticket: u64) -> Result<String, String> {
+    let dest = consume_ticket(ticket).ok_or_else(|| {
+        "导出会话已过期（超过 30 秒），请重新选择保存位置后再试".to_string()
+    })?;
     let temp = temp_export_path(&dest);
     cleanup_temp(&temp); // 清掉同名的陈旧残留（正常不命中），确保从零开始写
     let verdict = request_cdp_pdf(&app)
@@ -178,7 +215,8 @@ pub async fn export_pdf(app: tauri::AppHandle, path: String) -> Result<String, S
     finish_export(&temp, &dest, verdict)
 }
 
-/// 系统保存对话框（Rust 侧）。返回 None = 用户取消。
+/// 系统保存对话框（Rust 侧）。返回 `{path, ticket}`（None = 用户取消时 path 为 null）。
+/// ⭐ ticket 是一次性导出票据：export_pdf 只认票据不收路径（安全修复 B1）。
 ///
 /// blocking 查证结论（tauri-plugin-dialog 官方文档，v2）：
 /// `blocking_save_file` 等 blocking_* 系列会阻塞调用线程直到对话框关闭，文档明确
@@ -186,11 +224,17 @@ pub async fn export_pdf(app: tauri::AppHandle, path: String) -> Result<String, S
 /// 卡住事件循环），要求放在独立线程执行。规范上下文即 `spawn_blocking`
 /// （tauri::async_runtime 的 tokio 阻塞线程池）——异步命令本体虽不在主线程，
 /// 直接 block 也会占死一个执行器线程，故统一包进 spawn_blocking。
+#[derive(serde::Serialize)]
+pub struct SavePathWithTicket {
+    pub path: Option<String>,
+    pub ticket: Option<u64>,
+}
+
 #[tauri::command]
 pub async fn pick_save_path(
     app: tauri::AppHandle,
     default_name: String,
-) -> Result<Option<String>, String> {
+) -> Result<SavePathWithTicket, String> {
     let dialog_app = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         dialog_app
@@ -201,13 +245,17 @@ pub async fn pick_save_path(
             .blocking_save_file()
     })
     .await
-    .map_err(|e| format!("打开保存对话框失败：{e}"))?;
-    Ok(picked.and_then(|file| {
-        // FilePath 可能是 Path 或 Url（沙箱校验统一走 into_path）
-        file.into_path()
-            .ok()
-            .map(|p| p.to_string_lossy().into_owned())
-    }))
+    .map_err(|e| format!("打开保存对话框失败：{}", e))?;
+    match picked.and_then(|file| file.into_path().ok()) {
+        Some(path) => {
+            let ticket = issue_ticket(&path);
+            Ok(SavePathWithTicket {
+                path: Some(path.to_string_lossy().into_owned()),
+                ticket: Some(ticket),
+            })
+        }
+        None => Ok(SavePathWithTicket { path: None, ticket: None }),
+    }
 }
 
 #[cfg(test)]

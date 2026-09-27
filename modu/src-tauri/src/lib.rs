@@ -153,12 +153,13 @@ fn primary_work_area(monitor: &tauri::Monitor) -> WorkArea {
 /// （set_size 是异步派发），显式给位置不赌时序。
 fn adjust_window_size(app: &tauri::App, monitor: &tauri::Monitor) -> tauri::Result<()> {
     let Some(window) = app.get_webview_window("main") else {
-        println!("[window] GATHER 未找到 main 窗口，跳过尺寸夹取");
+        println!("[window] 未找到 main 窗口，跳过尺寸夹取");
         return Ok(());
     };
     let area = primary_work_area(monitor);
     // 当前逻辑尺寸 = config/overlay 声明的尺寸（Tauri 建窗时已按 minWidth/minHeight 兜底）。
     // 用**窗口自己的**缩放系数换算：多显示器下它未必等于主屏的系数。
+    // ⚠ 非提权启动时 inner_size 可能失败（webview 未应答）——由调用方兜底（沿用 config 尺寸）。
     let current = window.inner_size()?;
     let win_scale = safe_scale(window.scale_factor().unwrap_or(area.scale));
     let requested_w = f64::from(current.width) / win_scale;
@@ -172,40 +173,17 @@ fn adjust_window_size(app: &tauri::App, monitor: &tauri::Monitor) -> tauri::Resu
         }
         None => {
             println!(
-                "[window] GATHER 请求尺寸不可信（{requested_w:.0}×{requested_h:.0} 逻辑像素），改走兜底期望尺寸"
+                "[window] 请求尺寸不可信（{requested_w:.0}×{requested_h:.0} 逻辑像素），改走兜底期望尺寸"
             );
             let p = window_placement(&area);
             (p.width, p.height, p.x, p.y)
         }
     };
-    println!(
-        "[window] GATHER 主屏工作区=({},{} {}×{}) scale={} · 配置请求={}×{} → 目标={}×{} 位置=({},{})",
-        area.x,
-        area.y,
-        area.width,
-        area.height,
-        area.scale,
-        requested_w.round(),
-        requested_h.round(),
-        want_w.round(),
-        want_h.round(),
-        want_x.round(),
-        want_y.round()
-    );
     // 只缩不放：仅在真的超出工作区时才 set_size
     if (want_w - requested_w).abs() > 0.5 || (want_h - requested_h).abs() > 0.5 {
         window.set_size(LogicalSize::new(want_w.round(), want_h.round()))?;
     }
     window.set_position(LogicalPosition::new(want_x.round(), want_y.round()))?;
-    let now = window.inner_size()?;
-    println!(
-        "[window] GATHER 收工：请求={}×{} 现行物理={}×{}（缩过={}）",
-        requested_w.round(),
-        requested_h.round(),
-        now.width,
-        now.height,
-        (want_w - requested_w).abs() > 0.5 || (want_h - requested_h).abs() > 0.5
-    );
     Ok(())
 }
 
@@ -262,8 +240,32 @@ fn md_paths(args: &[String]) -> Vec<String> {
     found
 }
 
+/// 极简 stderr 日志接收器（2026-09-25）：装它之前，Tauri/wry 的 `log::error!`
+/// （例如 "failed to create webview: <HRESULT>"）**一条都不打印** ✗。
+/// 装上后这类错误直接进 stderr，诊断与用户反馈都有据可查。
+struct StderrLogger;
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Warn // 只收 Warn 以上，不刷屏
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            eprintln!("[{}] {} — {}", record.level(), record.target(), record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static STDERR_LOGGER: StderrLogger = StderrLogger;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 日志接收器（2026-09-25 长期保留）：Tauri/wry 的 webview 错误在无 logger 时被整条吞掉。
+    let _ = log::set_logger(&STDERR_LOGGER);
+    log::set_max_level(log::LevelFilter::Warn);
     tauri::Builder::default()
         // single-instance 必须第一个注册（见 single.rs 注释）
         .plugin(single::init())
@@ -277,6 +279,8 @@ pub fn run() {
             fs::list_dir,
             fs::pick_workspace_directory,
             fs::remove_workspace,
+            // 设为 .md 默认应用（2026-09-27 用户反馈）：HKCU 注册补齐 + 打开系统默认应用页
+            fs::register_markdown_default,
             // 路径形态归一（拖放入口用）：唯一实现在 fs::normalize_path，前端只是调用者
             fs::canonical_path,
             take_pending_files,
@@ -294,17 +298,42 @@ pub fn run() {
                 };
                 let raws: Vec<String> =
                     paths.iter().map(|p| p.to_string_lossy().into_owned()).collect();
-                let granted = fs::trust_all_existing(&state, &raws);
-                println!("[trust] 拖放注册 {granted}/{} 个 Markdown 文件", raws.len());
+                // ⭐ 目录也登记（缺口②）：**路径来自 OS 事件本身** ⇒ 渲染层伪造不了 ✓
+                //   ⇒ 这正是 R-01 的"OS 拖放"授权来源 ✓，**不是**渲染层自我授权 ✗。
+                //   分流逻辑抽成纯函数 `fs::trust_dropped` ⇒ 可单测 ✓（不必启动应用 ✓）。
+                let (files, dirs, first_dir) = fs::trust_dropped(&state, &raws);
+                match first_dir {
+                    Some(dir) => {
+                        println!("[trust] 拖放注册 {files} 个文件 / {dirs} 个目录（首个目录：{dir}）")
+                    }
+                    None => println!("[trust] 拖放注册 {files} 个文件 / {dirs} 个目录"),
+                }
             }
         })
+        .on_page_load(|_webview, _payload| {
+            // 页面开始加载 = webview 已活着：此刻起把导航守卫挂上（P5 批1·P0 #2 恢复点）。
+            // 之前的教训：在 setup 里 `with_webview` 派发到主线程会因 webview 未就绪而
+            // `FailedToReceiveMessage`（2026-09-25 实测两次 panic）；page_load 回调
+            // 在 webview 侧事件循环里执行，此刻 `with_webview` 一定有应答。
+            // 只挂一次（Tauri 的 page_load 每次导航都触发；用 once 防重复注册）。
+            use std::sync::Once;
+            static NAV_GUARD: Once = Once::new();
+            NAV_GUARD.call_once(|| {
+                attach_nav_guard(_webview.app_handle());
+            });
+        })
         .setup(|app| {
-            attach_nav_guard(app); // 整窗导航兜底：趁启动挂上 WebView2 事件（见函数注释）
-            // 默认窗口尺寸：按主屏工作区夹取后居中（见上方 WIN_* 常量说明与 AGENTS.md 契约）
+            // 默认窗口尺寸：按主屏工作区夹取后居中（见上方 WIN_* 常量说明与 AGENTS.md 契约）。
+            // 尺寸属「保证装得下」的**尽力而为** ⇒ 失败就沿用 config 尺寸并继续启动
+            // （2026-09-25 实测：非提权启动时此查询可能失败，`?` 会拖死整个应用）。
             match app.primary_monitor() {
-                Ok(Some(monitor)) => adjust_window_size(app, &monitor)?,
-                Ok(None) => println!("[window] GATHER 取不到主显示器，沿用 config 尺寸"),
-                Err(error) => println!("[window] GATHER 主显示器查询失败（{error}），沿用 config 尺寸"),
+                Ok(Some(monitor)) => {
+                    if let Err(error) = adjust_window_size(app, &monitor) {
+                        eprintln!("[window] 尺寸夹取失败（{error}）；沿用 config 尺寸，启动继续");
+                    }
+                }
+                Ok(None) => println!("[window] 取不到主显示器，沿用 config 尺寸"),
+                Err(error) => println!("[window] 主显示器查询失败（{error}），沿用 config 尺寸"),
             }
             let pending = md_paths(&std::env::args().collect::<Vec<String>>());
             app.manage(PendingFiles(Mutex::new(pending.clone())));
@@ -326,8 +355,104 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Ready = event {
+                // ⚠ Ready 阶段建 webview 探针已拆除（2026-09-27，Lead）：它给出的"成功"是
+                //   **假阳性** ✗ —— `WebviewWindowBuilder::build()` 在 webview 创建失败时只记日志、
+                //   Result 仍为 Ok ⇒ 判据无效。改用**子进程数**这一真判据后结论是：
+                //   本机（WebView2 运行时 153 与 154 均试过 × 非提权 UAC 过滤令牌）
+                //   **config 窗口与 Ready 后新建的窗口都拿不到 webview**（PPID 子进程数恒为 0 ✗）
+                //   ⇒ "失败在 Tauri 建窗上下文"这一推断**被否证** ✓；不必再改窗口结构 ✓。
+                //   至此已排除：运行时版本（153/154）· 加载器（静态/动态）· 浏览器参数 · 建立时机。
+                //   仍可用：**裸 wry**（`.verify/wvtest` 实测通过 ✓）⇒ 出路是换壳或换机器。
+                // ⭐ webview 存活检测（2026-09-26）：
+                // Tauri 的 build() 在 webview 创建失败时只记日志不报错 ⇒ 进程照常进入事件循环，
+                // 留下一个"窗口在、webview 死"的僵尸攥住单实例锁（后续启动全部秒退）。
+                // 这里在 Ready 后延迟检查：若 10 秒内无 msedgewebview2 子进程 = webview 死
+                // ⇒ 弹中文错误提示并干净退出（不留僵尸，下次启动不受影响）。
+                // 兼容性设计：本检测在**所有机器**上运行——健康机器 webview 子进程会在
+                // 启动后 1-2 秒出现，检测不触发；只有 webview 真死才走到弹窗退出。
+                #[cfg(target_os = "windows")]
+                {
+                    let handle = app_handle.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(10));
+                        if webview_children_alive() {
+                            return; // webview 活着，正常路径
+                        }
+                        eprintln!("[boot] webview 10 秒无子进程 ⇒ 弹错误提示并干净退出");
+                        // 顺序铁律（2026-09-27 实测翻车）：先弹框（阻塞到用户点确定），
+                        // 再关窗、退出。若先 win.close()，主事件循环会因「最后一个窗口
+                        // 关闭」直接终止进程，检测线程在弹框前就被带走 ⇒ 框永远不出现。
+                        show_webview_error_dialog();
+                        if let Some(win) = handle.get_webview_window("main") {
+                            let _ = win.close();
+                        }
+                        std::process::exit(1);
+                    });
+                }
+            }
+        });
+}
+
+/// 检测本进程是否有活的 msedgewebview2 子进程（仅 Windows）。
+/// 2026-09-27 修正：旧判据「系统里有任何 msedgewebview2 就算活」在装有
+/// Widgets/Teams 等常驻 WebView2 应用的机器上恒真（本机实测 19 个）⇒ webview
+/// 真死时 10 秒防线永不触发、应用变成无窗僵尸。改为按 PPID 精确匹配本进程的
+/// 直系 msedgewebview2 子进程（WebView2 的 browser 进程即直系子进程，够用）。
+/// 任一检测环节失败都按「活着」处理——防线只许漏报（留僵尸），不许误杀健康启动。
+#[cfg(target_os = "windows")]
+fn webview_children_alive() -> bool {
+    let script = format!(
+        "@(Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" \
+         | Where-Object {{ $_.ParentProcessId -eq {} }}).Count",
+        std::process::id()
+    );
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .output();
+    let alive = match output {
+        Ok(out) if out.status.success() => {
+            match String::from_utf8_lossy(&out.stdout).trim().parse::<u32>() {
+                Ok(n) => n > 0,
+                Err(_) => true, // 输出异常不误杀：假定活着
+            }
+        }
+        _ => true, // PowerShell 起不来/查询失败不误杀：假定活着
+    };
+    eprintln!("[boot] webview 子进程检测（按 PPID）：{alive}");
+    alive
+}
+
+// 直连 user32 弹原生 MessageBox（2026-09-27：mshta 子进程方案三连坑——先关窗后
+// 弹框的顺序竞态、CREATE_NO_WINDOW 秒退、javascript: 拆参后脚本不执行、以及
+// 本机 mshta 对 javascript: 宿主整体失效——最终回归零子进程的朴素做法）。
+// （普通注释而非 ///：rustdoc 不为 extern 块生成文档，/// 会触发 unused_doc_comments。）
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+extern "system" {
+    fn MessageBoxW(hwnd: isize, text: *const u16, caption: *const u16, utype: u32) -> i32;
+}
+
+/// webview 创建失败的中文错误提示（Windows 原生 MessageBox，兼容所有机器）。
+/// 文案面向使用者：告知发生了什么、怎么自救，不露技术黑话。
+#[cfg(target_os = "windows")]
+fn show_webview_error_dialog() {
+    const MSG: &str = "墨读启动失败：内置浏览器组件未能初始化。\n\n\
+        请尝试以下任一方法：\n\
+        · 若装有火绒/360 等安全软件，将墨读加入其信任区后重试\n\
+        · 右键墨读图标 →「以管理员身份运行」\n\
+        · 重启电脑后再试\n\n\
+        如仍失败，请将此情况反馈给开发者。";
+    const CAPTION: &str = "墨读启动失败";
+    // MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST：错误图标，且确保弹到最前不被白窗挡住
+    const FLAGS: u32 = 0x0000_0010 | 0x0001_0000 | 0x0004_0000;
+    let text: Vec<u16> = MSG.encode_utf16().chain(std::iter::once(0)).collect();
+    let caption: Vec<u16> = CAPTION.encode_utf16().chain(std::iter::once(0)).collect();
+    // 阻塞到用户点确定；返回值无需处理（错误路径上没有后续分支）
+    unsafe { MessageBoxW(0, text.as_ptr(), caption.as_ptr(), FLAGS) };
 }
 
 /// 取走启动参数携带的 Markdown 路径列表（一次性消费；无则空列表）。
@@ -362,7 +487,7 @@ pub fn validate_image_path(raw: &str) -> Result<std::path::PathBuf, String> {
     if !IMAGE_EXTENSIONS.contains(&extension.as_str()) {
         return Err(format!("不支持的图片格式：{raw}"));
     }
-    let metadata = std::fs::metadata(&path).map_err(|e| format!("无法读取图片：{raw}（{e}）"))?;
+    let metadata = std::fs::metadata(&path).map_err(|e| format!("无法读取图片：{raw}（{}）", crate::fs::io_reason(&e)))?;
     if !metadata.is_file() {
         return Err(format!("无法读取图片：{raw}（不是文件）"));
     }
@@ -417,7 +542,7 @@ fn allow_asset_paths(
         }
         app.asset_protocol_scope()
             .allow_file(&canonical)
-            .map_err(|e| format!("无法授权图片访问：{raw}（{e}）"))?;
+            .map_err(|e| format!("无法授权图片访问：{raw}（{}）", e))?;
     }
     Ok(())
 }
@@ -429,7 +554,7 @@ fn allow_asset_paths(
 /// `get_webview_window("main")`。故改挂 WebView2 原生 NavigationStarting 事件：
 /// 仅放行 devUrl 与 tauri 内部协议，其余整窗导航一律取消——
 /// 「点击外链整窗被导航走」的最后防线（渲染层 links.ts 为第一道）。
-fn attach_nav_guard(app: &tauri::App) {
+fn attach_nav_guard(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return; // 无 main 窗口：无可挂对象，渲染层拦截仍在
     };

@@ -22,6 +22,8 @@ export interface EmptyStateDeps {
   onOpen(): void;
   /** 点某条最近打开（= openPath） */
   onPick(path: string): void;
+  /** 点「打开文件夹为工作区」（2026-09-27 用户反馈批：欢迎页也要能选文件夹） */
+  onPickFolder(): void;
 }
 
 export interface EmptyState {
@@ -44,6 +46,7 @@ function fileName(path: string): string {
 
 export function setupEmptyState(deps: EmptyStateDeps): EmptyState {
   const openBtn = req<HTMLButtonElement>("empty-open");
+  const folderBtn = req<HTMLButtonElement>("empty-folder");
   const wrap = req<HTMLElement>("empty-recent");
   const list = req<HTMLElement>("empty-recent-list");
   const count = req<HTMLElement>("empty-recent-count");
@@ -85,6 +88,7 @@ export function setupEmptyState(deps: EmptyStateDeps): EmptyState {
   }
 
   openBtn.addEventListener("click", () => deps.onOpen());
+  folderBtn.addEventListener("click", () => deps.onPickFolder());
   refresh(); // 初值现算：启动即空态时列表必须已就位
   return { refresh };
 }

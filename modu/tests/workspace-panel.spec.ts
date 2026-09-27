@@ -51,10 +51,11 @@ function clickWorkspaceTab(): void {
   (document.getElementById("btn-panel-workspace") as HTMLButtonElement).click();
 }
 
-/** 找到树上方那行里的「移除工作区」按钮 ✓（形态：头行 + 按钮 + 树，全部在 nav 内 ✓）*/
+/** 找到树上方那行里的「移除」按钮 ✓（2026-09-27 反馈批改版：按钮文案精简为「移除」，
+ *  完整语义「移除工作区（该目录下的新文件将被拒绝）」进 title；形态：头行 + 按钮 + 树 ✓）*/
 function removeButton(): HTMLButtonElement {
-  const found = Array.from(nav().querySelectorAll("button")).find((b) => b.textContent === "移除工作区");
-  if (found === undefined) throw new Error("找不到「移除工作区」按钮（头行未渲染？）");
+  const found = Array.from(nav().querySelectorAll("button")).find((b) => b.textContent === "移除");
+  if (found === undefined) throw new Error("找不到「移除」按钮（头行未渲染？）");
   return found as HTMLButtonElement;
 }
 
