@@ -409,3 +409,34 @@
   （本会话真实踩过**两次**：第一次是排障报告里的 loader 版本，第二次是**这条纪律自己的示例** ✗ ——
    写纪律时把示例写成真值，等于把坑又埋回去。示例一律用 `1.0.864.x` 这种**末段非数字**形态 ✓）。
 
+## ⭐「exe 在某个目录起不来」先查【强制完整性标签】（2026-09-27 根因定案）
+
+- **现象**：**同一份 exe（SHA 相同）** 在 `…\modu\src-tauri\target\release\` **必失败**
+  （`[ERROR] tauri_runtime_wry — failed to create webview: HRESULT(0x800700AA)`），
+  复制到任何**仓库外**目录（`C:\`、`D:\`、`%LOCALAPPDATA%`）**必成功**。
+- **14 格实验逐一排除**（全部同一份 SHA ✓ 每格只改一个变量 ✓）：
+  兄弟条目数 ✗ · 兄弟 DLL ✗ · `CACHEDIR.TAG` ✗ · `NotContentIndexed` ✗ ·
+  ACL 里的 `Everyone:(DENY)(DC)` ✗ · 路径串含 `target` ✗ · 路径长度 ✗ · 残留 WebView2 宿主 ✗ ·
+  第三方杀软（火绒）✗ · cwd ✗ · 盘符 ✗ · 目录名 ✗ · owner/继承 ✗ · reparse point ✗。
+- **真因**：`D:\Files\projects\MD-Read` 被施加了 **`Low` 强制完整性标签**（`(OI)(CI)(NW)`）并**全树继承**
+  ⇒ 仓库内的 exe 以 **Low 完整性**启动 ⇒ **不能向上写**（`NW` = No-Write-Up）
+  ⇒ 创建 WebView2 宿主（Medium 上下文）失败 ⇒ **`0x800700AA` / ERROR_BUSY**。
+  **决定性对照**（同机、同一时刻）：能跑的 kanban-runner 全链**无标签** ✓ ｜ 本仓库全链 **Low** ✗ ｜
+  父目录 `D:\Files\projects` 无标签 ✓ ⇒ **同机唯一带 Low 标签的项目，就是唯一起不来的项目** ✓。
+- ⭐ **为什么"提权就能跑"**：**High 完整性不受 Low 标签约束**（完整性只限制**同级或更低**）
+  ⇒ 这个现象把整场排查带偏了一天 ✗。**下次先查标签，再查 WebView2。**
+- **修复**（需**管理员**：改标签要 `SeRelabelPrivilege`；非提权跑 `icacls /setintegritylevel` 会
+  "N 个处理 / M 个失败"且**标签一点不变** ✗ —— 本会话实测）：
+  ```
+  icacls "<目录>" /setintegritylevel "(OI)(CI)Medium" /T /C
+  ```
+  ⚠ **PowerShell 里括号参数必须加引号** ✗（不加会报 `OI : 无法将"OI"项识别为 cmdlet` ✓）。
+  **验证**：`icacls <exe> | Select-String 'Mandatory Label'` 应为 **Medium**（或"无标签"）；
+  然后从构建目录连起 **3 次**、三层判据全绿才算过 ✓（修复后实测 **3/3 成功** ✓，此前 **6/6 失败** ✗）。
+  **回退**：把 `Medium` 换回 `Low` 即可 ✓。
+- ⚠ **谁打的**：**agent 宿主（DSH/Codex 沙箱）给"工作区"打的安全戳** —— 同机只有本工作区有它 ✓。
+  它可能被**重新打回** ⇒ 修完要复验；若反复出现，就把开发/运行副本放到
+  **不被宿主接管为工作区**的目录里（天然无标签 ✓）。
+- ⚠ **检查器自证**：判"无标签"之前，先确认检查器**能看见**标签 ——
+  `icacls 'C:\$Recycle.Bin'` 必带 `Mandatory Label\Low` ✓（本会话用它自证通过 ✓）。
+
