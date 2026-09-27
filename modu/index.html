@@ -60,100 +60,117 @@
           </div>
           <div class="settings-wrap">
             <button id="btn-settings" type="button" title="字体与外观设置" aria-label="打开字体与外观设置面板">Aa</button>
-            <!-- 「Aa」设置面板（M2 波3 反馈⑥：字号/字体/主题；波4 起为卡片化浮层） -->
+            <!-- 「Aa」设置面板。2026-09-27 重做（用户反馈「一塌糊涂」）：
+                 ① 加面板标题 + 分组小标题（原先只有一条细横线，层次看不出来）
+                 ② 字体一律**短名**（全名进 title）、未安装标「· 未装」——原先「（本机未安装）」
+                    把选项撑得老长，整个卡片显乱 ✗
+                 ③ 字号/行宽补单位（px / em）
+                 ④ 「三组各选一个、互不影响」这句语义**常显**——原先看不出来，
+                    用户以为只有一个字体可设 ✗
+                 ⑤ 自动保存的说明从 tooltip 提到常显小字
+                 ⚠ 所有 id 与 data-* 原样保留 ⇒ settings.ts / font-picker.ts 接线零改动 ✓ -->
             <div id="settings-panel" class="settings-panel" hidden aria-label="字体与外观设置">
-              <div class="settings-row">
-                <span class="settings-label" id="set-fs-label">字号</span>
-                <div class="settings-fs" role="group" aria-labelledby="set-fs-label">
-                  <button id="set-fs-dec" type="button" title="减小字号" aria-label="减小字号">−</button>
-                  <span id="set-fs-val">16</span>
-                  <button id="set-fs-inc" type="button" title="增大字号" aria-label="增大字号">＋</button>
+              <div class="settings-title">设置</div>
+
+              <div class="settings-group" role="group" aria-label="排版">
+                <div class="settings-group-title">排版</div>
+                <div class="settings-row">
+                  <span class="settings-label" id="set-fs-label">字号</span>
+                  <div class="settings-fs" role="group" aria-labelledby="set-fs-label">
+                    <button id="set-fs-dec" type="button" title="减小字号" aria-label="减小字号">−</button>
+                    <span id="set-fs-val">16</span><span class="settings-unit">px</span>
+                    <button id="set-fs-inc" type="button" title="增大字号" aria-label="增大字号">＋</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label" id="set-width-label">行宽</span>
+                  <div class="settings-fs" role="group" aria-labelledby="set-width-label">
+                    <button id="set-width-dec" type="button" title="减小行宽" aria-label="减小行宽">−</button>
+                    <span id="set-width-val">46</span><span class="settings-unit">em</span>
+                    <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
+                  </div>
                 </div>
               </div>
-              <!-- 行宽（用户反馈批次·新功能）：40–60em 步进 2，写 --me-width（--measure 派生链） -->
-              <div class="settings-row">
-                <span class="settings-label" id="set-width-label">行宽</span>
-                <div class="settings-fs" role="group" aria-labelledby="set-width-label">
-                  <button id="set-width-dec" type="button" title="减小行宽" aria-label="减小行宽">−</button>
-                  <span id="set-width-val">46</span>
-                  <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
+
+              <div class="settings-group" role="group" aria-label="字体">
+                <div class="settings-group-title">
+                  字体
+                  <span class="settings-group-note">三组各选一个，互不影响；未安装自动回退</span>
+                </div>
+                <div class="settings-row settings-font">
+                  <label class="settings-label" for="set-font">选择</label>
+                  <select id="set-font" class="settings-select" title="按组选择字体（三组互不影响）" aria-label="按组选择字体">
+                    <optgroup label="① 中文正文" data-group="cjk">
+                      <option value="cjk-harmonyos" data-stack-var="--font-pick-cjk-harmonyos" title="HarmonyOS Sans SC">HarmonyOS Sans</option>
+                      <option value="cjk-yahei" data-stack-var="--font-pick-cjk-yahei" title="微软雅黑（Microsoft YaHei）">微软雅黑</option>
+                      <option value="cjk-lxgw" data-stack-var="--font-pick-cjk-lxgw" title="霞鹜文楷 屏幕版（LXGW WenKai Screen）">霞鹜文楷</option>
+                      <option value="cjk-songti" data-stack-var="--font-pick-cjk-songti" title="宋体（SimSun）">宋体</option>
+                      <option value="cjk-notoserif" data-stack-var="--font-pick-cjk-notoserif" title="思源宋体（Noto Serif SC）">思源宋体</option>
+                    </optgroup>
+                    <optgroup label="② 西文与数字" data-group="latin">
+                      <option value="latin-inter" data-stack-var="--font-pick-latin-inter" title="Inter">Inter</option>
+                      <option value="latin-segoe" data-stack-var="--font-pick-latin-segoe" title="Segoe UI Variable Text">Segoe UI Var.</option>
+                      <option value="latin-georgia" data-stack-var="--font-pick-latin-georgia" title="Georgia（衬线）">Georgia</option>
+                      <option value="latin-times" data-stack-var="--font-pick-latin-times" title="Times New Roman（衬线）">Times New R.</option>
+                      <option value="latin-yaheiui" data-stack-var="--font-pick-latin-yaheiui" title="Microsoft YaHei UI">YaHei UI</option>
+                    </optgroup>
+                    <optgroup label="③ 代码" data-group="mono">
+                      <option value="mono-maple-nf" data-stack-var="--font-pick-mono-maple-nf" title="Maple Mono NF">Maple Mono NF</option>
+                      <option value="mono-maple" data-stack-var="--font-pick-mono-maple" title="Maple Mono（变量版）">Maple Mono</option>
+                      <option value="mono-cascadia" data-stack-var="--font-pick-mono-cascadia" title="Cascadia Mono">Cascadia</option>
+                      <option value="mono-consolas" data-stack-var="--font-pick-mono-consolas" title="Consolas">Consolas</option>
+                      <option value="mono-maple-mix" data-stack-var="--font-pick-mono-maple-mix" title="Maple Mono NF（中文回雅黑）">Maple·中文回退</option>
+                    </optgroup>
+                  </select>
+                </div>
+                <div class="settings-row settings-effective">
+                  <span class="settings-label">实际生效</span>
+                  <code id="set-font-effective" data-role="font-effective" title="当前正文字体在 400 字重下实际渲染的字体族（拉丁串字宽探测）">检测中…</code>
+                  <code id="set-font-effective-bold" data-role="font-effective-bold" title="加粗（700 字重）实际渲染的字体族；与 400 不同时会另有提示">检测中…</code>
+                  <span id="set-font-hint" class="settings-effective-hint" data-role="font-effective-hint">正在探测本机字体…</span>
                 </div>
               </div>
-              <div class="settings-sep" role="separator"></div>
-              <!-- 字体（D-02）：推荐列表 = 中文正文 / 西文拉丁 / 代码 三组语义分组。
-                   这里只放「id + 中文名 + 它对应 tokens.css 里的哪个栈变量」；
-                   栈本身（完整回退链）与首选族名只写在 tokens.css 的 --font-pick-* 里，
-                   ui/font-catalog.ts 运行时读 CSSOM 取回，故 TS/CSS 逻辑文件零字体族名字面值。
-                   选项文案由 ui/font-picker.ts 按可用性补「（本机未安装）」标注。
-                   下面一行是本步最关键的常显项：**当前实际渲染出来的族名**，
-                   用拉丁串字宽在 400/700 两个字重上实测——「选了 A 实际是 B」由此直接暴露。 -->
-              <div class="settings-row settings-font">
-                <label class="settings-label" for="set-font">字体</label>
-                <select id="set-font" class="settings-select" title="正文字体" aria-label="正文字体">
-                  <optgroup label="中文正文" data-group="cjk">
-                    <option value="cjk-harmonyos" data-stack-var="--font-pick-cjk-harmonyos">HarmonyOS Sans SC</option>
-                    <option value="cjk-yahei" data-stack-var="--font-pick-cjk-yahei">微软雅黑</option>
-                    <option value="cjk-lxgw" data-stack-var="--font-pick-cjk-lxgw">霞鹜文楷 屏幕版</option>
-                    <option value="cjk-songti" data-stack-var="--font-pick-cjk-songti">宋体</option>
-                    <option value="cjk-notoserif" data-stack-var="--font-pick-cjk-notoserif">思源宋体（Noto Serif SC）</option>
-                  </optgroup>
-                  <optgroup label="西文拉丁" data-group="latin">
-                    <option value="latin-inter" data-stack-var="--font-pick-latin-inter">Inter</option>
-                    <option value="latin-segoe" data-stack-var="--font-pick-latin-segoe">Segoe UI Variable Text</option>
-                    <option value="latin-georgia" data-stack-var="--font-pick-latin-georgia">Georgia（衬线）</option>
-                    <option value="latin-times" data-stack-var="--font-pick-latin-times">Times New Roman（衬线）</option>
-                    <option value="latin-yaheiui" data-stack-var="--font-pick-latin-yaheiui">Microsoft YaHei UI</option>
-                  </optgroup>
-                  <optgroup label="代码" data-group="mono">
-                    <option value="mono-maple-nf" data-stack-var="--font-pick-mono-maple-nf">Maple Mono NF</option>
-                    <option value="mono-maple" data-stack-var="--font-pick-mono-maple">Maple Mono（变量版）</option>
-                    <option value="mono-cascadia" data-stack-var="--font-pick-mono-cascadia">Cascadia Mono</option>
-                    <option value="mono-consolas" data-stack-var="--font-pick-mono-consolas">Consolas</option>
-                    <option value="mono-maple-mix" data-stack-var="--font-pick-mono-maple-mix">Maple Mono NF（中文回雅黑）</option>
-                  </optgroup>
-                </select>
+
+              <div class="settings-group" role="group" aria-label="外观">
+                <div class="settings-group-title">外观</div>
+                <div class="settings-row">
+                  <label class="settings-label" for="set-theme">主题</label>
+                  <select id="set-theme" title="界面主题" aria-label="界面主题">
+                    <option value="light">浅色</option>
+                    <option value="dark">深色</option>
+                    <option value="auto">自动（跟随系统）</option>
+                  </select>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="set-palette">配色</label>
+                  <select id="set-palette" title="主题配色" aria-label="主题配色">
+                    <option value="dianlan">靛蓝</option>
+                    <option value="xuanzhi">宣纸</option>
+                    <option value="shimo">石墨</option>
+                    <option value="zidai">紫黛</option>
+                    <option value="qingmo">青墨</option>
+                  </select>
+                </div>
               </div>
-              <div class="settings-row settings-effective">
-                <span class="settings-label">实际生效</span>
-                <code id="set-font-effective" data-role="font-effective" title="当前正文字体在 400 字重下实际渲染的字体族（拉丁串字宽探测）">检测中…</code>
-                <code id="set-font-effective-bold" data-role="font-effective-bold" title="加粗（700 字重）实际渲染的字体族；与 400 不同时会另有提示">检测中…</code>
-                <span id="set-font-hint" class="settings-effective-hint" data-role="font-effective-hint">正在探测本机字体…</span>
-              </div>
-              <div class="settings-sep" role="separator"></div>
-              <div class="settings-row">
-                <label class="settings-label" for="set-theme">主题</label>
-                <select id="set-theme" title="界面主题" aria-label="界面主题">
-                  <option value="light">浅色</option>
-                  <option value="dark">深色</option>
-                  <option value="auto">自动（跟随系统）</option>
-                </select>
-              </div>
-              <!-- 配色（D-01）：5 套主题 × （上面的亮/暗/自动）= 10 组调色板；
-                   data-palette 是新维度，data-theme 语义不变（见 tokens.css 顶部契约）。 -->
-              <div class="settings-row">
-                <label class="settings-label" for="set-palette">配色</label>
-                <select id="set-palette" title="主题配色" aria-label="主题配色">
-                  <option value="dianlan">靛蓝</option>
-                  <option value="xuanzhi">宣纸</option>
-                  <option value="shimo">石墨</option>
-                  <option value="zidai">紫黛</option>
-                  <option value="qingmo">青墨</option>
-                </select>
-              </div>
-              <!-- 自动保存开关（用户反馈批次）：默认开，modu-autosave 持久化 -->
-              <div class="settings-row">
-                <label class="settings-label" for="set-autosave">自动保存</label>
-                <input id="set-autosave" type="checkbox" checked
-                       title="编辑时改动停顿 2 秒后自动保存" aria-label="编辑时自动保存" />
-              </div>
-              <!-- 默认应用（2026-09-27 用户反馈「默认打开方式里选不到墨读」）：
-                   MSI 安装写了 ProgID 但扩展的 OpenWithProgids 链接键缺失（安全软件
-                   常拦安装器写扩展关联键）⇒ 系统选择器里看不到墨读。这里写全 HKCU
-                   用户级注册并自动打开系统默认应用页，点选「墨读」即完成。 -->
-              <div class="settings-row">
-                <span class="settings-label">默认应用</span>
-                <button id="set-default-app" type="button" class="settings-action"
-                        title="把墨读注册为 .md/.markdown/.mdx 的打开候选，并打开系统默认应用页">设为 .md 默认应用</button>
+
+              <div class="settings-group" role="group" aria-label="编辑与系统">
+                <div class="settings-group-title">编辑与系统</div>
+                <!-- 自动保存（用户反馈批次）：说明常显（原先只在 tooltip 里，看不见 ✗） -->
+                <div class="settings-row settings-stack">
+                  <label class="settings-label" for="set-autosave">自动保存</label>
+                  <span class="settings-note">编辑时停顿 2 秒自动保存</span>
+                  <input id="set-autosave" type="checkbox" checked
+                         title="编辑时改动停顿 2 秒后自动保存" aria-label="编辑时自动保存" />
+                </div>
+                <!-- 默认应用（2026-09-27 用户反馈「默认打开方式里选不到墨读」）：
+                     MSI 安装写了 ProgID 但扩展的 OpenWithProgids 链接键缺失（安全软件
+                     常拦安装器写扩展关联键）⇒ 系统选择器里看不到墨读。这里写全 HKCU
+                     用户级注册并自动打开系统默认应用页，点选「墨读」即完成。 -->
+                <div class="settings-row">
+                  <span class="settings-label">默认应用</span>
+                  <button id="set-default-app" type="button" class="settings-action"
+                          title="把墨读注册为 .md/.markdown/.mdx 的打开候选，并打开系统默认应用页">设为 .md 默认应用</button>
+                </div>
               </div>
             </div>
           </div>

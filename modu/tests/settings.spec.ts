@@ -243,10 +243,16 @@ describe("字号步进（14–20px）", () => {
 });
 
 describe("字体推荐列表（D-02：三组语义分组）", () => {
-  it("目录按组齐备：中文正文 / 西文拉丁 / 代码 各 5 项", async () => {
+  it("目录按组齐备：中文正文 / 西文 / 代码 各 5 项", async () => {
     await freshSettings();
     const boxes = [...document.querySelectorAll<HTMLOptGroupElement>("#set-font optgroup")];
-    expect(boxes.map((b) => b.label)).toEqual(["中文正文", "西文拉丁", "代码"]);
+    // 2026-09-27 设置面板重做：分组标题加了序号（① 中文正文 / ② 西文与数字 / ③ 代码）。
+    // 锚的**意图**是"三组齐备"，不是逐字文案 ⇒ 改为语义包含：
+    // 原先 `toEqual([...])` 让"改一句措辞"就红 ✗，而它拦不住真正的回归（组少了/项数变了）。
+    expect(boxes.map((b) => b.label)).toHaveLength(3);
+    expect(boxes[0].label).toContain("中文正文");
+    expect(boxes[1].label).toContain("西文");
+    expect(boxes[2].label).toContain("代码");
     for (const box of boxes) {
       expect(box.querySelectorAll("option").length).toBe(5);
     }
@@ -268,16 +274,19 @@ describe("字体推荐列表（D-02：三组语义分组）", () => {
     }
   });
 
-  it("本机缺失的首选被标注「本机未安装」，已装的保持原名", async () => {
+  it("本机缺失的首选被标注「· 未装」，已装的保持短名", async () => {
     await freshSettings();
     const select = document.getElementById("set-font") as HTMLSelectElement;
     // 假字宽表里只登记了 HarmonyOS Sans SC / Microsoft YaHei UI / Noto Serif SC 三族
     const missing = select.querySelector('option[value="mono-maple-nf"]');
     expect(missing?.getAttribute("data-unavailable")).toBe("true");
-    expect(missing?.textContent).toContain("本机未安装");
+    // 2026-09-27 设置面板重做：标注从「（本机未安装）」压成「 · 未装」
+    //（用户反馈「字体名字特别长，你又不去限制，导致整个结构特别乱」✗；全名改由 title 承载 ✓）
+    expect(missing?.textContent).toContain("未装");
     const present = select.querySelector('option[value="cjk-harmonyos"]');
     expect(present?.getAttribute("data-unavailable")).toBe(null);
-    expect(present?.textContent).toBe("HarmonyOS Sans SC");
+    // 短名（原「HarmonyOS Sans SC」⇒ 「HarmonyOS Sans」；全名在 title 里 ✓）
+    expect(present?.textContent).toBe("HarmonyOS Sans");
     const serifPresent = select.querySelector('option[value="cjk-notoserif"]');
     expect(serifPresent?.getAttribute("data-unavailable")).toBe(null);
   });

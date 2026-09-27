@@ -135,7 +135,9 @@ export function renderFontPicker(select: HTMLSelectElement, hooks: FontPickerHoo
     if (option === undefined) continue;
     el.dataset.label = option.label; // 原始中文名留档，重渲染不会叠加标注
     el.dataset.generic = option.generic; // 通用族（衬线档契约据此判定）
-    el.textContent = option.available === false ? `${option.label}（本机未安装）` : option.label;
+    // 未安装标注走**短后缀**（2026-09-27 用户反馈「字体名字特别长，你又不去限制」✗）：
+    // 原先「（本机未安装）」把选项撑得老长、卡片显乱；全名已由 index.html 的 title 承载 ✓
+    el.textContent = option.available === false ? `${option.label} · 未装` : option.label;
     if (option.available === false) el.dataset.unavailable = "true";
   }
   return options;

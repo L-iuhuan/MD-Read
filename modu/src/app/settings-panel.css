@@ -1,0 +1,73 @@
+/* ==========================================================================
+   设置面板重做（2026-09-27，用户反馈「一塌糊涂」）——**只加皮，不动接线** ✓
+
+   为什么单独一个文件：本批加皮把 `src/app.css` 顶到 1601 行、撞上它自己的行数棘轮
+   （tests/css-budget.spec.ts，hard 1540，2026-09-27 刚从 1600 收紧）✗。
+   棘轮只许往紧的方向转 ✓ ⇒ 正解是**把这段搬出去**，不是抬上限 ✓。
+   外移方式与 `app/workspace-panel.css` 同一套：新文件在 `main.ts` 里
+   **紧跟 `./app.css` 导入** ⇒ 规则仍排在 app.css 之后；且这里的每条选择器
+   特异性都 ≥ 面板原有规则（`.settings-font .settings-select` 0,2,0 ＞ `.settings-panel select` 0,1,1）
+   ⇒ 层叠结果不变 ✓。
+
+   逐条对应用户原话：
+   · 「整个结构特别乱」⇒ 原先三组之间只有一条细横线，层次看不出来
+     ⇒ 加**面板标题 + 分组小标题**（排版 / 字体 / 外观 / 编辑与系统 ✓）
+   · 「字体名字特别长，你又不去限制」⇒ 选项短名 + 全名进 title（见 index.html）
+     ＋ 下拉定宽 + 省略号（长名不再撑破卡片）
+   · 「一个下拉框啊」⇒ 语义纠正：**三组各选一个、互不影响**，这句常显在分组标题右侧
+   · 「自动保存」原先只有一个孤零零的复选框 ⇒ 说明提到常显（不再只藏 tooltip）
+   · 「实际生效」原先堆成三行灰块（行高 61px，其他行 32px ⇒ 参差）
+     ⇒ 改成一行、允许换行，提示独占次行
+   ⚠ 全部走既有 token，无字面色值（符合 tokens 契约 ✓）
+   ========================================================================== */
+.settings-title {
+  font-size: var(--fs-chrome);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: .02em;
+  padding-block-end: var(--size-2);
+  border-block-end: 1px solid var(--hair);
+}
+.settings-group { display: flex; flex-direction: column; gap: var(--size-1); }
+.settings-group-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-chrome-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: .08em;
+  margin-block-start: var(--size-2);
+}
+.settings-group-note {
+  font-weight: 400;
+  letter-spacing: 0;
+  font-size: var(--fs-chrome-sm);
+  color: var(--fg-dim);
+}
+.settings-unit { font-size: var(--fs-chrome-sm); color: var(--text-muted); }
+.settings-note { font-size: var(--fs-chrome-sm); color: var(--fg-dim); }
+/* 自动保存：label · 说明 · 勾选框 同排，说明占中间（不再是一个孤零零的框 ✗） */
+.settings-stack { justify-content: flex-start; }
+.settings-stack .settings-note { flex: 1; min-inline-size: 0; }
+/* 字体下拉：定宽 + 省略号（长名不再撑破卡片 ✓） */
+.settings-font .settings-select {
+  flex: 1;
+  min-inline-size: 0;
+  max-inline-size: 190px;
+  text-overflow: ellipsis;
+}
+.settings-panel optgroup { font-style: normal; }
+/* 「实际生效」：一行放 400/700 两个读数，提示独占次行（原先三行灰块 ✗） */
+.settings-effective {
+  flex-wrap: wrap;
+  gap: var(--size-1) var(--size-2);
+  align-items: baseline;
+}
+.settings-effective > code { font-size: var(--fs-chrome-sm); }
+.settings-effective-hint {
+  flex-basis: 100%;
+  font-size: var(--fs-chrome-sm);
+  color: var(--fg-dim);
+}

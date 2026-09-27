@@ -52,6 +52,8 @@ import "./app.css";
 // ⚠ 紧跟 app.css：D-11b 工作区面板的皮自 app.css 整段外移（2026-09-27），
 // 放在这里才能保持与拆前**逐字等价**的层叠顺序 ✓（CSS 按导入顺序层叠）。
 import "./app/workspace-panel.css";
+// 设置面板重做（2026-09-27）的皮：同样紧跟 app.css 导入 ⇒ 规则仍排在 app.css 之后 ✓
+import "./app/settings-panel.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
 import "./typography/print.css";
