@@ -30,8 +30,8 @@ const BUDGETS: Budget[] = [
   {
     file: "src/app.css",
     soft: 1200,
-    hard: 1600,
-    note: "样式表不参与 400 行铁律 → 曾经从 957 涨到 1437。hard 先止住增长；按 §1…§13 分段物理拆分排在 Phase 2.5。",
+    hard: 1540,
+    note: "样式表不参与 400 行铁律 → 曾经从 957 涨到 1437。hard 属**棘轮，只往紧的方向转**：2026-09-27 把文件最后一段「D-11b 工作区面板的皮」整段外移到 `src/app/workspace-panel.css`（1599→1534 ⇒ hard 1600→1540）。⚠ 外移必须搬**最后**一段并让新文件紧跟 `./app.css` 导入，才能在层叠上逐字等价。继续拆的方向：按 §1…§13 分段物理拆分（Phase 2.5）。",
   },
   {
     file: "src/typography/tokens.css",

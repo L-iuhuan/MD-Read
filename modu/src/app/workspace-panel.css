@@ -1,0 +1,74 @@
+/* ==========================================================================
+   D-11b. 工作区面板的皮（2026-09-27 反馈批重做）：空态三段各归各位 + 头部路径行
+   尾部优先 + 弱化移除按钮；全部走 token，不新增字面色值。
+
+   ⚠ 2026-09-27：本段自 `src/app.css` **整段外移**至此（原文一字未改），原因是
+   `src/app.css` 的行数棘轮（tests/css-budget.spec.ts）只剩 1 行余量，不拆就没法做后续 UI。
+   外移时遵守两条：
+   · **只搬最后一段** —— CSS 层叠按导入顺序，搬最后一段并让本文件在 `main.ts` 里
+     **紧跟 `./app.css` 之后**导入 ⇒ 层叠顺序与拆前逐字等价 ✓；
+   · **不新建"打印样式"** —— 本项目规定 print.css 是 cjk.css 的唯一覆盖层 ✗，
+     所以本文件只管屏显的工作区面板，任何打印规则仍只能进 print.css。
+   ========================================================================== */
+.workspace-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-3) var(--size-2);
+}
+.workspace-hint { font-size: var(--fs-chrome); color: var(--text-muted); }
+.workspace-pick {
+  font: inherit;
+  font-size: var(--fs-chrome);
+  font-weight: 600;
+  color: var(--accent-text-hover);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
+  border-radius: var(--radius-2);
+  padding: 7px var(--size-3);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1);
+}
+.workspace-pick:hover { background: var(--accent-tint-hover); }
+.workspace-pick:active { background: var(--bg-active); }
+/* 授权范围说明（护栏 5：可读写必须说出来）：比提示更小的注脚档 */
+.workspace-scope { font-size: var(--fs-chrome-sm); color: var(--fg-dim); }
+/* 头部：路径太长优先显示尾部（rtl 截断）+ 弱化移除 */
+.workspace-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-1) var(--size-2) var(--size-2);
+  border-bottom: 1px solid var(--hair);
+  margin-block-end: var(--size-1);
+}
+.workspace-path {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-chrome-sm);
+  color: var(--text-muted);
+  direction: rtl;   /* 路径截断时优先保留尾部（离文件夹名最近的那段） */
+  text-align: start;
+}
+.workspace-remove {
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-chrome-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  padding: 2px var(--size-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.workspace-remove:hover { background: var(--bg-hover); color: var(--text); }
+/* 工作区树：目录行加字重与文件区分（2026-09-27 用户反馈「不清晰」） */
+#workspace-list .menu-item[data-kind="dir"] { font-weight: 500; }
+/* 子层逐层缩进（2026-09-27 复查修复：子层原先与父级齐平） */
+.workspace-kids { padding-inline-start: var(--size-3); }
