@@ -172,3 +172,60 @@ fn windows_rename_overwrites_existing_destination() {
     assert_eq!(bytes_of(&dst), b"SOURCE", "目标应被源文件取代");
     assert!(!src.exists(), "源文件应已消失（移动语义）");
 }
+
+/* ---- 导出票据（B1 安全修复）的运行期锚 ----
+ * 2026-09-26 综合审查给 B1 定的复验判据是「渲染层直传任意 path 被拒」。
+ * 命令签名层面 `export_pdf` **已不收路径参数**（编译期即拒，见 print.rs 的 `ticket: u64`），
+ * 所以运行期真正要钉住的是**票据本身**的性质：一次性、不可伪造、互不重复。
+ * ⚠ 未覆盖：TTL 30 秒过期那条需要注入时间（当前实现用 `Instant::now()`），如实记录。 */
+
+/// ⑩ 有效票据消费一次即失效，且拿回签发时的路径。
+#[test]
+fn ticket_is_single_use_and_carries_the_issued_path() {
+    let path = case_dir("ticket-once").join("目标.pdf");
+    let id = super::issue_ticket(&path);
+
+    let first = super::consume_ticket(id);
+    assert_eq!(
+        first.as_deref(),
+        Some(path.as_path()),
+        "首次消费应拿回签发时的路径"
+    );
+
+    let second = super::consume_ticket(id);
+    assert!(
+        second.is_none(),
+        "同一票据不得被消费第二次（重放必须被拒）"
+    );
+}
+
+/// ⑪ 伪造票据号必须被拒，且伪造尝试不得动到真票据。
+#[test]
+fn forged_ticket_id_is_refused() {
+    let path = case_dir("ticket-forge").join("x.pdf");
+    let issued = super::issue_ticket(&path); // 先让计数器前进，保证下面这个号绝未被签发
+    let forged = issued.wrapping_add(1_000_000);
+
+    assert!(
+        super::consume_ticket(forged).is_none(),
+        "未签发的票据号必须被拒：{forged}"
+    );
+    assert_eq!(
+        super::consume_ticket(issued).as_deref(),
+        Some(path.as_path()),
+        "伪造尝试不得影响真票据的有效性"
+    );
+}
+
+/// ⑫ 票据号互不重复（同一路径连签两次也要拿到两张不同的票据，各自可用一次）。
+#[test]
+fn tickets_have_distinct_ids() {
+    let path = case_dir("ticket-seq").join("y.pdf");
+    let a = super::issue_ticket(&path);
+    let b = super::issue_ticket(&path);
+
+    assert_ne!(a, b, "票据号必须互不相同");
+    assert_eq!(super::consume_ticket(a).as_deref(), Some(path.as_path()));
+    assert_eq!(super::consume_ticket(b).as_deref(), Some(path.as_path()));
+    assert!(super::consume_ticket(a).is_none(), "a 已用过，不得复活");
+}
