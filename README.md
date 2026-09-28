@@ -23,7 +23,8 @@
 
 ## 安装
 
-⚠ **本仓库目前【还没有 Release】** ✗（实测 GitHub Releases 为空 ✓ —— 所以别去 Releases 找 ✗）。想用有两种办法：
+⚠ **本仓库目前【还没有 Release】** ✗（实测 GitHub Releases 为空 ✓ —— 所以别去 Releases 找 ✗）。
+⭐ 版本 tag 已打：**`v0.1.0`**（annotated，指向交付加固版的顶端提交 ✓）。想用有两种办法：
 
 **A. 自己构建**（约 5–10 分钟 ✓）
 
