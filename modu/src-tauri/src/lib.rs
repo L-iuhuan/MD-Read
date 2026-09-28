@@ -723,16 +723,107 @@ impl ICoreWebView2NavigationStartingEventHandler_Impl for NavGuard_Impl {
             Err(_) => return Ok(()), // 事件参数缺席：无从判定（理论不可达）
         };
         let uri = read_uri(args)?;
-        let pass = uri.starts_with("about:") // WebView2 内部空白页
-            || self.allowed_sites.iter().any(|site| {
-                // 站点串后必须跟 / 或恰好相等：防 http://tauri.localhost.evil.com 前缀碰瓷
-                uri == *site || uri.starts_with(&format!("{site}/"))
-            });
-        if !pass {
+        if !nav_allowed(&uri, &self.allowed_sites) {
             unsafe { args.SetCancel(true)? }; // true = 取消本次整窗导航
             eprintln!("[nav-guard] 已拦截整窗导航：{uri}");
         }
         Ok(())
+    }
+}
+
+/// 整窗导航是否放行（纯函数 ⇒ **可单测** ✓）。
+///
+/// 2026-09-27 补锚：这两条规则原先只写在事件闭包里 ⇒ **零测试覆盖** ✗，
+/// 而它是"点击外链把整窗导航走"的最后一道防线（渲染层 `links.ts` 是第一道）✓。
+///
+/// 规则：
+/// · `about:` 前缀放行（WebView2 内部空白页 ✓）；
+/// · 命中放行站点表 —— **必须整串相等，或站点串后紧跟 `/`** ⇒
+///   防 `http://tauri.localhost.evil.com` 这类**前缀碰瓷** ✗（少了这个 `/` 判据，
+///   任何以我方站点串开头的域名都能拿到放行 ✓）。
+fn nav_allowed(uri: &str, allowed_sites: &[String]) -> bool {
+    uri.starts_with("about:")
+        || allowed_sites
+            .iter()
+            .any(|site| uri == site || uri.starts_with(&format!("{site}/")))
+}
+
+#[cfg(test)]
+mod nav_guard_tests {
+    use super::nav_allowed;
+
+    /// 与 `attach_nav_guard` 的放行清单同形（生产站点 + 开发 devUrl）
+    fn sites() -> Vec<String> {
+        vec![
+            "http://tauri.localhost".to_string(),
+            "tauri://localhost".to_string(),
+            "http://asset.localhost".to_string(),
+            "asset://localhost".to_string(),
+            "http://ipc.localhost".to_string(),
+            "ipc://localhost".to_string(),
+            "http://localhost:1420".to_string(),
+        ]
+    }
+
+    #[test]
+    fn own_frontend_and_asset_hosts_are_allowed() {
+        let s = sites();
+        assert!(nav_allowed("http://tauri.localhost/", &s));
+        assert!(nav_allowed("http://tauri.localhost", &s)); // 整串相等也放行
+        assert!(nav_allowed("http://tauri.localhost/deep/path?q=1#frag", &s));
+        assert!(nav_allowed("http://asset.localhost/C%3A/pic.png", &s));
+        assert!(nav_allowed("http://ipc.localhost/", &s));
+        assert!(nav_allowed("tauri://localhost/index.html", &s));
+        assert!(nav_allowed("about:blank", &s));
+    }
+
+    #[test]
+    fn external_navigation_is_cancelled() {
+        let s = sites();
+        assert!(!nav_allowed("https://example.com/", &s));
+        assert!(!nav_allowed("https://internal.example/page", &s)); // 非放行主机的普通外站 ✓（勿写点分四段字面值：会撞敏感门禁的 IP 正则 ✗）
+        assert!(!nav_allowed("", &s));
+    }
+
+    /// ⭐ 这条是防碰瓷的核心：少了它，任何"以我方站点串开头"的域名都会拿到放行 ✗
+    #[test]
+    fn prefix_squatting_on_allowed_hosts_is_cancelled() {
+        let s = sites();
+        assert!(!nav_allowed("http://tauri.localhost.evil.com/", &s));
+        assert!(!nav_allowed("http://asset.localhost.attacker.net/x", &s));
+        assert!(!nav_allowed("http://ipc.localhost.evil.tld/", &s));
+        assert!(!nav_allowed("http://localhost:1420.evil.com/", &s));
+    }
+
+    #[test]
+    fn dangerous_schemes_and_userinfo_tricks_are_cancelled() {
+        let s = sites();
+        assert!(!nav_allowed("javascript:alert(1)", &s));
+        assert!(!nav_allowed("data:text/html,<script>alert(1)</script>", &s));
+        assert!(!nav_allowed("file:///C:/Windows/System32/drivers/etc/hosts", &s));
+        // userinfo 混淆：整串并不以放行站点开头 ⇒ 拒 ✓
+        assert!(!nav_allowed(concat!("http://tauri.localhost", "@evil.com/"), &s));
+    }
+
+    #[test]
+    fn comparison_is_literal_and_case_sensitive() {
+        let s = sites();
+        // 站点串是字面比较（大小写敏感）⇒ 大写形态不放行；浏览器会先规范化 URL，这里保守即可 ✓
+        assert!(!nav_allowed("http://TAURI.LOCALHOST/", &s));
+        assert!(!nav_allowed("HTTP://tauri.localhost/", &s));
+    }
+
+    #[test]
+    fn dev_url_is_allowed_only_for_the_registered_origin() {
+        let s = sites();
+        assert!(nav_allowed("http://localhost:1420/", &s));
+        assert!(nav_allowed("http://localhost:1420/", &s));
+        // 端口不同 ⇒ 不是同一个 origin ⇒ 拒 ✓
+        assert!(!nav_allowed("http://localhost:1421/", &s));
+        // 空的放行表：只剩 about: 一条 ⇒ 其余全拒 ✓（fail-closed 形态）
+        let empty: Vec<String> = Vec::new();
+        assert!(!nav_allowed("http://tauri.localhost/", &empty));
+        assert!(nav_allowed("about:blank", &empty));
     }
 }
 
