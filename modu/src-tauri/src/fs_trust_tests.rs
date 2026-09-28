@@ -223,7 +223,34 @@ fn vanished_dir_is_still_revocable_by_exact_match_only() {
     assert_eq!(trust.counts().1, 1, "反例不得删掉任何授权 ✓");
 }
 
+/// ⭐ **同一目录的另一种书写形态**也必须能撤销（2026-09-28：CI run #71 红的根因 ✓）。
+///
+/// 为什么单独立锚：CI runner 的 `%TEMP%` 是 **8.3 短名**（`C:\Users\RUNNER~1\…`），
+/// 而 `trust_dir` 存的是 `canonicalize` 出的**长名**键 ⇒ 目录一删，短名形态就再也匹配不上 ✗
+/// （本机 `%TEMP%` 没有短名 ⇒ 那条测试在本机**永远绿** ✗ ⇒ 需要一条**本机也能红**的等价锚 ✓）。
+///
+/// 这里用**正斜杠**形态复现同一类问题：文本不同、指向同一目录 ✓。
+/// 修前：候选键里没有长名形态 ⇒ `forget_dir` 报"不在清单中" ✗（本锚会红 ✓）；
+/// 修后：祖先 `canonicalize` 出长名 + 接回尾部 ⇒ 全等命中 ✓。
+#[test]
+fn vanished_dir_is_revocable_even_in_another_spelling() {
+    let dir = temp_dir("撤销异形写法");
+    let ws = dir.join("工作区");
+    std::fs::create_dir_all(&ws).expect("工作区应可创建");
+    let raw = ws.to_string_lossy().into_owned();
+    let slashed = raw.replace('\\', "/"); // Windows 上同样指向该目录 ✓
+    assert_ne!(raw, slashed, "前置：两种形态必须真的不同 ✓（否则锚是空心的 ✗）");
+    let trust = TrustedPaths::in_memory();
+    trust.trust_dir(&raw).expect("注册应成功");
+    std::fs::remove_dir_all(&ws).expect("把目录从盘上删掉");
+    trust
+        .forget_dir(&slashed)
+        .expect("目录已消失时，另一种书写形态也必须能撤销 ✓");
+    assert_eq!(trust.counts().1, 0, "该授权应已被删掉 ✓");
+}
+
 /// ② 不可读/不可列 ⇒ **显示中文原因、不崩** ✓
+
 ///
 /// **免 ACL 夹具**（Lead 给的口径 ✓）：在**受信目录之内**放一个**普通文件** ⇒
 /// 用它的路径调 `list_dir` ⇒ 受信判定通过 ✓（在受信目录之下 ✓）但底层 `read_dir` 必然失败（不是目录 ✗）

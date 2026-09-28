@@ -94,6 +94,31 @@ pub fn key_of(canonical: &Path) -> String {
     canonical.to_string_lossy().to_lowercase()
 }
 
+/// ⭐ 把 `raw` 里【仍然存在的最近祖先】`canonicalize`（Windows 上顺带把 **8.3 短名**解析成长名 ✓），
+/// 再逐级接回缺失的分量 ⇒ 得到与 `trust_dir` 存储形态**一致**的键 ✓。
+///
+/// **为什么需要**（2026-09-28 · CI run #71 红的根因）：Windows 上同一目录可以有**多种书写形态**，
+/// 最典型是 **8.3 短名** —— CI runner 的 `%TEMP%` 就是 `C:\Users\RUNNER~1\AppData\Local\Temp` ✗。
+/// `trust_dir` 存的是 `canonicalize` 出的**长名**键；而路径被删后 `canonicalize(raw)` **必然失败**，
+/// 于是回退路径若只比"原样拼 `\\?\`"的键，**短名形态永远匹配不上** ✗ ⇒ **该授权永远撤不掉** ✓
+/// —— 正是 `forget_dir` 护栏 4 要治的那个洞（本机 `%TEMP%` 无短名 ⇒ 只有 CI 会红 ✗）。
+///
+/// ⚠ 只用于生成**精确候选键** ✓，**不引入任何前缀语义** ✗。
+pub fn long_form_key(raw: &str) -> Option<String> {
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut cur = Path::new(raw);
+    loop {
+        if let Ok(mut base) = std::fs::canonicalize(cur) {
+            for seg in tail.iter().rev() {
+                base.push(seg);
+            }
+            return Some(key_of(&base));
+        }
+        tail.push(cur.file_name()?.to_os_string());
+        cur = cur.parent()?;
+    }
+}
+
 /// **纯策略**：候选（已规范化）是否落在受信集合内。
 /// 命中规则只有两条：① 精确命中受信文件；② 位于某个受信目录之下（按路径分量，不是字符串前缀）。
 pub fn is_trusted(candidate: &Path, files: &HashSet<String>, dirs: &HashSet<String>) -> bool {
@@ -279,6 +304,14 @@ impl TrustedPaths {
                 let extended_key = key_of(Path::new(&extended));
                 if !keys.contains(&extended_key) {
                     keys.push(extended_key);
+                }
+                // ⭐ 再来一种**等价形态**：祖先长名 + 原样尾部（解析 8.3 短名 ✓）
+                // ⇒ 短名 / 正斜杠 / 大小写等"同一目录的另一种写法"也能撤回授权 ✓
+                // ⚠ 依旧是逐个**全等**比较 ✓（只是多几个精确候选键）
+                if let Some(k) = long_form_key(raw) {
+                    if !keys.contains(&k) {
+                        keys.push(k);
+                    }
                 }
                 (keys, None)
             }
