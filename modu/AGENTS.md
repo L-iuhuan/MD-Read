@@ -2,7 +2,7 @@
 
 > 只写"agent 否则会搞错的事"。需求与架构裁决以 `docs/specs/2026-09-21-墨读设计规格.md`（**v1.5**）为唯一事实源；本文件是环境与铁律的执行层。
 > ⚠ **规格版本号在本文件与规格之间【两处必须一致】** —— 改一处就同批改另一处（历史上已踩两次：标题停在 v1.1 而 §10 到 v1.3 ✗；本次 D-11 升 v1.5 时又漏了本行 ✗）。
-> （2026-09-23 同步：规格标题此前停在 `v1.1`，而其 §10 变更记录早已到 `v1.3` —— 本次补录 D-22 时一并升到 **v1.4**，两处对齐。）
+> （历史：2026-09-23 补录 D-22 时两处对齐到 **v1.4**；2026-09-27 D-11 升 **v1.5** 时本行也同批改过 ✓ —— 现行值 = 上方那行 ✓。）
 
 ## 项目
 
@@ -146,6 +146,15 @@
     磁盘侧按 origin 分域 dump。用法：`node tests/tools/dump-origins.mjs --page --port 9222` / `--leveldb <dir>`
   - `clear-recent.mjs` —— 清空 `modu-recent` 的**受控**工具（`--before` + `--expect-keep`；当前值 ≠ before 即**拒绝写回**）
     用法：`node tests/tools/clear-recent.mjs --before <before.json> --expect-keep <keep.json> [--port 9222]`
+  - `check-portability.mjs` —— **换机自检**（一条命令，只读 ✓）：系统 / **WebView2 运行时**（官方 Evergreen GUID
+    三处查，读不到 = FAIL 而非"未覆盖" ✓）/ %LOCALAPPDATA% 可写 / 产物 + **msi ≤8MB 门禁** /
+    ⭐ **发行物不许依赖未随包发布的 DLL**（扫 exe 与两个安装包 ✓）/ .md 关联 + 目标 exe 是否存在 /
+    运行中实例；有 FAIL 则退出码 1 ✓
+    用法：`node modu/tests/tools/check-portability.mjs [--bundle <目录>] [--json]`
+  - `kbd-audit.mjs` —— **键盘可达性审计**：CDP 派发**真实 Tab/Esc 键** ✓，逐次记录焦点元素 /
+    焦点环（computed outline）/ 是否可见；判据 = **无焦点环 0 · 焦点落不可见 0 · Esc 能收浮层** ✓
+    ⚠ Tab 序列里出现一次 BODY 是**浏览器正常回绕** ✓ 不是缺陷 ✗
+    用法：起带 CDP 的应用后 `node modu/tests/tools/kbd-audit.mjs [--port 9222] [--steps 22]`
   - ⚠ **门禁数值不要写进文档**（每轮都变）：一律写"跑 `pnpm run check` 看当前值"。
 
 ## 性能归因（已实测，别再走弯路）
@@ -399,6 +408,12 @@
 - ⚠ **不要在字符串插值里塞 `;` 分隔语句**（如 `'…' + ((& cmd); $LASTEXITCODE) + '…'`）✗ ——
   整条命令**语法错误、什么都没执行**，却看起来"跑过了"（本会话连犯两次）。
   要拿退出码就先 `$out = & cmd 2>&1 | Out-String`，再单独读 `$LASTEXITCODE` ✓。
+- ⚠ **PowerShell 里 `*> $null` / `> $null` 会让原生命令的退出码不可信** ✗（本会话**两次**误判 ✓）：
+  同一句 `pnpm install --frozen-lockfile`，`*> $null` 读出 **EXIT=1** ✗，改成
+  `*> <文件>` 再读 ⇒ **EXIT=0** ✓「Already up to date」✓。
+  ⇒ 规矩：**要判退出码，输出一律落文件**（`*> $env:TMP\x.log`），**绝不落 `$null`** ✓；
+    并且**同一步至少复跑两次**再下结论 ✓（这次就是靠"第二次单跑"才发现是读数问题 ✗，而不是真有失败 ✓）。
+  ⚠ 症状与"真失败"**完全一样** ⇒ 与"搜不到 ≠ 不存在""读到非零 ≠ 有失败"是**同一族** ✓。
 - ⚠ **`.NET [IO.File]` 用进程 cwd，不认 PowerShell 的 `Set-Location`** ✗ ⇒ 一律给**绝对路径**
   （本会话据此把行数/守卫自检读成 `DirectoryNotFoundException`，白跑一轮）。
 - ⭐ **`commit-with-gates.mjs --full` 现在跑三道门禁**：敏感 → `check:full` → **`cargo test`** ✓。
@@ -479,6 +494,7 @@
   ⇒ 写锚前先问："**我假设渲染器怎么处理这段？这个假设有锚支撑吗？**" ✓
 - ⭐ **数结构前先排除围栏内部** ✗（本会话**第三次**犯）：`# 生成索引` 是 bash 块里的注释、不是标题 ✓；
   `#`/`-`/`|` 在代码块里到处都是 ⇒ 任何"按行数结构"的统计都要带**围栏状态** ✓。
-- ⭐ **CSS 不参与 400 行铁律，但 app.css 有行数棘轮**（1538/1538 **零余量** ✗）：
+- ⭐ **CSS 不参与 400 行铁律，但 app.css 有行数棘轮**（当前值跑 `pnpm run check` 看 ✓ ——
+  ⚠ **本行原先写死了具体数字，2026-09-27 已删** ✗：那条数字每次外移都变 ✓，写进文档必然过时 ✓）：
   想给它加皮必须**先外移**（见 `src/app/workspace-panel.css` / `settings-panel.css` 两例 ✓），
   否则"加几行就红" ✓ —— 本会话新增的首次运行引导因此**复用了既有 `.empty-foot` 皮**，未新增 CSS ✓。
