@@ -23,8 +23,13 @@
 
 ## 安装
 
-⚠ **本仓库目前【还没有 Release】** ✗（实测 GitHub Releases 为空 ✓ —— 所以别去 Releases 找 ✗）。
-⭐ 版本 tag 已打：**`v0.1.0`**（annotated，指向交付加固版的顶端提交 ✓）。想用有两种办法：
+⭐ **直接下载（推荐）** —— [Releases → v0.1.0](https://github.com/L-iuhuan/MD-Read/releases/tag/v0.1.0)
+| 包 | 体积 | 说明 |
+|---|---|---|
+| ⭐ [`MoDu_0.1.0_x64-setup.exe`](https://github.com/L-iuhuan/MD-Read/releases/download/v0.1.0/MoDu_0.1.0_x64-setup.exe) | 3.58 MB | **推荐**：per-user 安装，**不需要管理员** |
+| [`MoDu_0.1.0_x64_en-US.msi`](https://github.com/L-iuhuan/MD-Read/releases/download/v0.1.0/MoDu_0.1.0_x64_en-US.msi) | 4.36 MB | per-machine 安装，需要管理员 |
+
+也可以从源码自己构建（见下方 A），或向作者索取安装包 ✓
 
 **A. 自己构建**（约 5–10 分钟 ✓）
 
