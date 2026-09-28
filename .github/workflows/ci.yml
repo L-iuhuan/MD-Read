@@ -80,6 +80,10 @@ jobs:
     name: Rust 单测（cargo test）
     runs-on: windows-latest
     timeout-minutes: 40
+    env:
+      # ⭐ 让失败可读：panic 带栈 + 关增量（CI 上增量编译常拖慢且掩盖问题 ✓）
+      RUST_BACKTRACE: "1"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -101,9 +105,29 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: modu/src-tauri
+      # ⭐ 2026-09-27 改：把"编译"与"跑测试"**分成两步** —— 这决定了排查方向完全不同 ✓
+      #   （编译失败 = 工具链/依赖；测试失败 = 断言/环境 ⇒ 一步合着跑只会看到"cargo test failed" ✗）
+      - name: cargo build --tests（先分清：编译失败 vs 测试失败）
+        working-directory: modu/src-tauri
+        run: cargo build --tests --locked
+
+      # ⭐ 失败时把完整输出落盘 ⇒ 下一步上传成 artifact
+      #   ⚠ 为什么必须上传：失败日志通过 API 下载需要**仓库管理员**权限 ✗（本会话实测 403 ✓）
+      #     而 artifact **仓库自己的 Actions 页面就能下载** ✓ ⇒ 不必求人 ✓
       - name: cargo test（含 R-01 受信路径单测）
         working-directory: modu/src-tauri
-        run: cargo test
+        run: |
+          cargo test --locked 2>&1 | Tee-Object -FilePath cargo-test.log
+          exit $LASTEXITCODE
+
+      - name: 失败时上传 cargo 日志（⭐ 无需管理员权限即可查因）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-test-log-${{ github.run_number }}
+          path: |
+            modu/src-tauri/cargo-test.log
+          if-no-files-found: ignore
 
   sensitive:
     name: 敏感信息门禁
