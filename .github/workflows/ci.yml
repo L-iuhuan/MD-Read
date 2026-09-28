@@ -3,12 +3,16 @@
 # ⚠️ runner 必须是 windows-latest：本项目 Windows-only（Tauri 2 + WebView2），
 #    ubuntu 上 cargo test 会因为缺 WebView2 直接失败。
 #
-# ⚠️ 本文件由 R-01/批次 1 编写：**未在 GitHub 上真跑过**（本机到 github.com 不稳，
-#    Actions 是否可跑取决于仓库侧）。这里只保证：YAML 语法有效、命令与**本机实测命令**逐字一致。
-#    本地等价命令（均已实测通过）：
-#      cd modu && pnpm install --frozen-lockfile && pnpm run check      # 以当轮输出为准（门禁数值不写死）
-#      cd modu/src-tauri && cargo test                                  # 45 + 4 passed
-#      scripts\check-sensitive.cmd                                      # exit 0（无词条文件时降级并告警）
+# ⚠️ **更正（2026-09-27）**：本文件原先写着"**未在 GitHub 上真跑过**" ✗ —— 那是陈旧的 ✗。
+#    实测（GitHub API）：该仓库 CI **已跑过 69 次**，最近几次都在 main 上：
+#      ⭐ 敏感信息门禁 ⇒ success ✓ ｜ 前端门禁 ⇒ success ✓ ｜ **Rust 单测（cargo test）⇒ failure** ✗
+#    ⇒ **main 的 CI 当前是红的，红在 `cargo test` 这个 job** ✓（失败日志需仓库管理员权限才能下载 ✗）。
+#    ⚠ 本机 `cargo test` 是 **79 passed / 0 failed** ✓ ⇒ 差异**在 runner 环境**，不在产品代码 ✓
+#    ⇒ 谁先拿到失败日志，请贴到 docs 里再动手改 ✓（别按猜测改代码 ✗）。
+#    本地等价命令（均已实测通过，数值不写死 ✓）：
+#      cd modu && pnpm install --frozen-lockfile && pnpm run check:full
+#      cd modu/src-tauri && cargo test
+#      scripts\check-sensitive.cmd
 #
 # 大件（MSI ≤8MB）走单独的手动工作流 `msi-size.yml`，不塞进每次 push。
 
@@ -19,6 +23,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # ⭐ 2026-09-27 新增：**手动触发**（Actions 页面点 "Run workflow" ✓）
+  #    为什么需要：上面的 push 只监听 main ⇒ **推 feature 分支根本不会跑 CI** ✗
+  #    （实测：推 feat/delivery-hardening 后 `?branch=` 查到的 run 数 = **0** ✓）
+  #    ⇒ 有了它，任意分支都能在 GitHub 上真跑一次 ✓（这也是"CI 真跑一次"的可行路径 ✓）
+  workflow_dispatch:
 
 # 最小权限：CI 只读仓库
 permissions:
