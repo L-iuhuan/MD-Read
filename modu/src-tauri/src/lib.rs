@@ -384,13 +384,20 @@ pub fn run() {
                         const LIMIT: u32 = 12; // 12 × 5s = 60s
                         for attempt in 1..=LIMIT {
                             std::thread::sleep(POLL);
-                            if webview_alive() {
-                                println!("[boot] webview 已就绪（第 {attempt} 次检测，{attempt}×5s）");
-                                return;
-                            }
-                            // 用户已把窗口关掉 ⇒ 正常退出路径，不做任何兜底动作
-                            if handle.get_webview_window("main").is_none() {
+                            // ⚠ 2026-09-27：窗口句柄与"可见性"必须**每轮重取** ——
+                            // 它是判活合取式的**前提**（僵尸现场：窗口没了却还有 stale renderer ✗；
+                            // 健康复用：窗口可见 ✓）。原顺序是"先判活、后查窗口"，于是
+                            // "复用宿主 + 无主窗口"这一格被误判成活 ✗。
+                            let Some(win) = handle.get_webview_window("main") else {
+                                // 用户已把窗口关掉 ⇒ 正常退出路径，不做任何兜底动作
                                 println!("[boot] 主窗口已不存在，兜底检测收工");
+                                return;
+                            };
+                            // `is_visible()` 对**最小化**窗口仍为 true（Win32 IsWindowVisible 语义 ✓）
+                            // ⇒ 用户把窗口最小化不会误杀 ✓；拿不到时按"可见"处理（不误杀 ✓）
+                            let visible = win.is_visible().unwrap_or(true);
+                            if webview_alive(visible) {
+                                println!("[boot] webview 已就绪（第 {attempt} 次检测，{attempt}×5s）");
                                 return;
                             }
                         }
@@ -411,19 +418,45 @@ pub fn run() {
         });
 }
 
+/// 判活的三路判据合成（纯函数 ⇒ 可单测，且把"不许误杀"写成一眼能读的合取式）。
+///
+/// `alive = 主窗口可见 ∧ (直系子进程 > 0 ∨ renderer∩UDF > 0)`
+///
+/// 为什么是**合取**（2026-09-27 第三次修正，现场抓到过反例 ✗）：
+/// 并集版（只看进程）在下面这个场景**恒真**——上一个实例被强杀后，它的 WebView2 宿主
+/// 还活着（带我们的 UDF、还挂着 renderer ✗），新实例的 webview **其实没建起来**，
+/// 却因"存在 renderer∩UDF"被判活 ⇒ 看门狗不弹框、不退出 ⇒ 留下**无主窗口的僵尸攥着
+/// 单实例锁**（现场：PID 1228，`MainWindowTitle` 只剩 `com.modu.reader-siw` ✗，
+/// 表现就是用户说过的"双击没反应"）。三路读数在那次现场是：renderer=1 ✓ / 直系子进程=0 ✗ /
+/// **主窗口不可见** ✗ ⇒ 只有把"窗口可见"并进来才能判死 ✓。
+///
+/// 又为什么**不能只加"renderer 必须是我们子进程"**✗：AGENTS 记着"同一 UDF 下 WebView2 会
+/// **复用**已有 browser 进程 ⇒ 新进程 PPID 下 0 个子进程，但页面完全正常" ——
+/// 那种健康复用场景里 `直系子进程 = 0` **且** renderer 的父进程**不是我们** ⇒
+/// 加强版进程判据会把它**误杀** ✗，与"防线只许漏报、不许误杀"的契约直接冲突。
+/// ⇒ 于是用"窗口可见"当**前提**：健康复用 ✅（窗口在）+ 进程读数 ✅（renderer 在）⇒ 活；
+///   僵尸 ✗（窗口没了）⇒ 死；真失败（窗口在、但 children=0 ∧ renderers=0）⇒ 死。
+///
+/// 任一读数拿不到（PowerShell 起不来 / 查询失败 / 窗口 API 失败）一律**假定活着**，不误杀 ✓。
+fn alive_from(renderers: Option<u32>, children: Option<u32>, window_visible: Option<bool>) -> bool {
+    match (renderers, children, window_visible) {
+        (Some(r), Some(c), Some(v)) => v && (r > 0 || c > 0),
+        _ => true,
+    }
+}
+
 /// 检测本应用的 webview 是否真的活着（仅 Windows）。
-/// 判据演进（2026-09-27 二次修正，依据见 `AGENTS.md`「启动类故障排查」）：
+/// 判据演进（2026-09-27 三次修正，依据见 `AGENTS.md`「启动类故障排查」）：
 /// ① 最初「系统里有任何 msedgewebview2 就算活」在本机**恒真**（实测 19 个别人的宿主：
 ///    搜索/看板/PC Manager…）⇒ 真死时防线永不触发；
 /// ② 中间版「按 PPID 数直系子进程」会**假阴**——同一 UDF 下 WebView2 会**复用**已有
 ///    browser 进程 ⇒ 新进程 PPID 下 0 个子进程，但页面完全正常 ⇒ **误杀健康启动** ✗
 ///    （与下方"不许误杀"的契约直接矛盾）；
-/// ⇒ 本版取**并集**，满足任一条即视为活着：
-///    (a) 存在 `--type=renderer` 且 `--user-data-dir` 含本应用标识的进程（真正渲染中）；
-///    (b) 存在以本进程为父的 `msedgewebview2`（覆盖"已拉起、尚未到 renderer"的窗口期）。
+/// ③ 并集版（现行之前）解决了误杀，但**漏掉了"复用宿主"这条假阳路径** ✗ ⇒ 见 `alive_from` 文档。
+/// 现取**合取**：窗口可见 ∧（直系子进程 > 0 ∨ renderer∩UDF > 0）。
 /// 任一环节失败一律按"活着"处理——防线只许漏报（留个空窗让人手动关），不许误杀健康启动。
 #[cfg(target_os = "windows")]
-fn webview_alive() -> bool {
+fn webview_alive(window_visible: bool) -> bool {
     // 与 tauri.conf.json 的 identifier 保持一致（WebView2 的 UDF 落在
     // %LOCALAPPDATA%\<identifier>\EBWebView；单实例 mutex 亦由它派生）。
     const APP_ID: &str = "com.modu.reader";
@@ -445,21 +478,62 @@ fn webview_alive() -> bool {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let alive = match command.output() {
+    let (renderers, children) = match command.output() {
         Ok(out) if out.status.success() => {
             let text = String::from_utf8_lossy(&out.stdout);
             let mut parts = text.split_whitespace();
-            let renderers = parts.next().and_then(|v| v.parse::<u32>().ok());
-            let children = parts.next().and_then(|v| v.parse::<u32>().ok());
-            match (renderers, children) {
-                (Some(r), Some(c)) => r > 0 || c > 0,
-                _ => true, // 输出形态异常不误杀：假定活着
-            }
+            (
+                parts.next().and_then(|v| v.parse::<u32>().ok()),
+                parts.next().and_then(|v| v.parse::<u32>().ok()),
+            )
         }
-        _ => true, // PowerShell 起不来/查询失败不误杀：假定活着
+        _ => (None, None), // PowerShell 起不来/查询失败 ⇒ 交给 alive_from 走"不误杀"分支 ✓
     };
-    eprintln!("[boot] webview 存活检测（renderer∩UDF ∪ 直系子进程）：{alive}");
+    let alive = alive_from(renderers, children, Some(window_visible));
+    eprintln!(
+        "[boot] webview 存活检测（窗口可见 ∧（子进程 ∪ renderer∩UDF））：{alive} \
+         [renderers={renderers:?} children={children:?} window_visible={window_visible}]"
+    );
     alive
+}
+
+#[cfg(test)]
+mod watchdog_decision_tests {
+    use super::alive_from;
+
+    // ⭐ 三种真实场景各一条锚（都是 2026-09-27 现场/文档里的形态 ✓）
+    #[test]
+    fn healthy_fresh_start_is_alive() {
+        // 新起：窗口可见 + 有直系子进程（browser 进程）
+        assert!(alive_from(Some(1), Some(2), Some(true)));
+    }
+
+    #[test]
+    fn healthy_reuse_with_zero_children_is_alive_not_killed() {
+        // ⚠ 健康复用：窗口可见 + renderer∩UDF 在，但**直系子进程 = 0**
+        //（AGENTS 记着的场景）⇒ 必须判活，否则误杀 ✗
+        assert!(alive_from(Some(1), Some(0), Some(true)));
+    }
+
+    #[test]
+    fn zombie_with_reused_renderer_but_no_window_is_dead() {
+        // ⭐ 本批修的洞：stale 宿主还挂着 renderer（renderers=1），但没有直系子进程、
+        // 主窗口也不可见（现场 PID 1228：MainWindowTitle 只剩 com.modu.reader-siw）⇒ 判死 ✓
+        assert!(!alive_from(Some(1), Some(0), Some(false)));
+    }
+
+    #[test]
+    fn real_failure_window_present_but_no_webview_readings_is_dead() {
+        assert!(!alive_from(Some(0), Some(0), Some(true)));
+    }
+
+    #[test]
+    fn missing_readings_never_kill_a_healthy_start() {
+        // PowerShell 起不来 / 查询失败 ⇒ 宁可漏报也不误杀（防线契约 ✓）
+        assert!(alive_from(None, None, Some(true)));
+        assert!(alive_from(Some(1), None, Some(false)));
+        assert!(alive_from(Some(1), Some(1), None));
+    }
 }
 
 // 直连 user32 弹原生 MessageBox（2026-09-27：mshta 子进程方案三连坑——先关窗后
