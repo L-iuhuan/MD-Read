@@ -23,9 +23,27 @@
 
 ## 安装
 
-从 [Releases](https://github.com/L-iuhuan/MD-Read/releases) 下载 `.msi` 安装，或直接运行 `MSI` 后双击任意 `.md` 文件。
+⚠ **本仓库目前【还没有 Release】** ✗（实测 GitHub Releases 为空 ✓ —— 所以别去 Releases 找 ✗）。想用有两种办法：
 
-要求：Windows 10/11（依赖系统自带的 WebView2 运行时）。
+**A. 自己构建**（约 5–10 分钟 ✓）
+
+```powershell
+# 前置：Node 22+ / pnpm / Rust(stable, MSVC) / VS BuildTools(C++)
+git clone https://github.com/L-iuhuan/MD-Read.git
+cd MD-Read/modu
+pnpm install --frozen-lockfile
+pnpm tauri build          # 产物在 src-tauri/target/release/bundle/
+```
+⭐ 装 **NSIS 那个**（`…-setup.exe`）—— 它是 **per-user ⇒ 免管理员** ✓；
+MSI 是 per-machine ⇒ 需要管理员 ✓
+
+**B. 向作者要一份已构建好的安装包** ✓
+
+要求：Windows 10/11（依赖系统自带的 **WebView2 运行时** ✓；缺失时安装包会联网自动补 ✓，
+离线机器需另带 WebView2 安装器 ✓）
+
+⭐ **装完第一次启动会看到三步引导** ✓：打开一个 `.md` → 点 `Aa`「设为 .md 默认应用」→
+**在系统「默认应用」页手动选一次** ✓（Windows 不允许安装器代设 `UserChoice` ✓ —— **这是系统保护，不是缺陷** ✓）
 
 ---
 
@@ -45,11 +63,11 @@
 
 | 指标 | 预算 | 实测（本机） |
 |---|---|---|
-| 冷开 ≤ 10 页 | ≤ 80 ms | 38 ms |
-| 冷开 ≤ 30 页 | ≤ 100 ms | 43 ms（含 38 个公式 62 ms） |
-| 冷开 ≤ 100 页 | ≤ 200 ms | 102 ms |
-| 冷开 ≤ 200 页 | ≤ 300 ms | 165 ms |
-| 滚动 | ≥ 55 FPS | 73.6 ~ 75.0（贴显示器 vsync） |
+| 冷开 ≤ 10 页 | ≤ 80 ms | **46 ms** |
+| 冷开 ≤ 30 页 | ≤ 100 ms | **61 ms** |
+| 冷开 ≤ 100 页 | ≤ 200 ms | **67 ms** |
+| 冷开 ≤ 200 页 | ≤ 300 ms | **92 ms** |
+| 滚动（确定性下行） | ≥ 55 FPS | ⭐ **74.97**（＝ 75Hz vsync 上限 ✓） |
 
 **远超这个规模（数千页 / 数十 MB）不在设计范围内**，也不必为它加特判 —— 阅读区虚拟化是另一个量级的改造。
 
@@ -69,7 +87,7 @@
 pnpm install
 pnpm tauri dev        # 开发运行
 pnpm tauri build      # 打包（产出 msi / nsis）
-pnpm run check        # 全量门禁：tsc ×2 + eslint + vitest
+pnpm run check:full   # tsc ×2 + eslint + vitest + vite build（**只跑 check 不压 CSS** ✗）
 ```
 
 Rust 侧测试**必须在 `modu/src-tauri/` 下跑**（`modu/` 没有 `Cargo.toml`，在 `modu/` 下会报 `EXIT=101`）：
@@ -83,7 +101,7 @@ cargo test
 
 | 门禁 | 命令 | 当前基线 |
 |---|---|---|
-| 类型 + lint + 单测 | `pnpm run check`（在 `modu/`） | EXIT 0 · eslint 0 error（断言数以当轮输出为准） |
+| 类型 + lint + 单测 + 构建 | `pnpm run check:full`（在 `modu/`） | EXIT 0（断言数以当轮输出为准 ✓） |
 | Rust 单测 | `cargo test`（在 `modu/src-tauri/`） | EXIT 0（以当轮 `cargo test` 输出为准） |
 | 敏感信息扫描 | `scripts/check-sensitive.ps1` | 0 命中 |
 | 安装包体积 | `pnpm tauri build` 后看 `.msi` | **≤ 8 MB**（以当轮打包产物为准 —— 门禁数值不写进文档 ✓） |
@@ -94,6 +112,11 @@ cargo test
 - **`modu/宪法.md`** —— 项目红线（打印、安全、编码、数学分隔符等），**违者返工**
 - **`modu/AGENTS.md`** —— 环境怪癖、代码铁律、**性能归因结论与预算**、踩过的坑（很多是"照着旧结论动手会白干"的教训）
 - **`docs/specs/`** —— 需求与架构裁决的唯一事实源
+- **`docs/tasks/2026-09-27-项目现状与交付路线报告.md`** —— ⭐ **接手总账**：能用吗 / 做了什么 / 还差什么 / 评分口径
+- **`docs/tasks/2026-09-27-换机交付与验收报告.md`** —— 交付六步 + 13 条验收清单 + **一条命令自检**
+- ⭐ 改完代码**提交走脚本**（不是手动 `git commit` ✓）：
+  `node modu/tests/tools/commit-with-gates.mjs --full --msg <消息文件> -- <显式路径…>`
+  —— 它跑三道门禁，**红时拒绝提交** ✓（让人没有机会"先提交后看结果" ✗）
 
 ---
 
@@ -104,7 +127,13 @@ modu/
   index.html            壳层结构
   src/
     main.ts             接线与启动
-    app/                业务模块（tabs / recent / drop / outline-follow / md-ext …）
+    app/                业务模块（tabs / recent / drop / outline-follow / md-ext / **zoom** / **tab-hotkeys** …）
+    app/*.css           面板样式（workspace-panel / settings-panel / shell-tail —— 为守住 app.css 的**行数棘轮**而外移 ✓）' },
+  @{ old = '| **编码** | 读：UTF-8 优先、GB18030 回退检测；写：**保持原编码**，不静默转 UTF-8 |';
+     new = @'
+| **编码** | 读：UTF-8 优先、GB18030 回退检测；写：**保持原编码**，不静默转 UTF-8 |
+| **缩放** | 面板 `±`、`Ctrl+滚轮`、`Ctrl+=` `Ctrl+-` `Ctrl+0`（100% 复位）—— 三档入口都作用在正文层 |
+| **无障碍** | 全部控件键盘可达（有实测审计工具 `modu/tests/tools/kbd-audit.mjs` ✓）；焦点态统一 |
     ui/                 界面模块（findbar / settings / theme / font-* / close-confirm / empty-state …）
     render/             渲染管线（markdown-it 插件、KaTeX、Mermaid、打印就绪、离屏策略）
     typography/         tokens.css（**色值与刻度的唯一落点**）/ cjk.css / hljs.css / print.css
@@ -115,7 +144,10 @@ docs/specs/             设计规格（唯一事实源）
 scripts/                敏感信息扫描门禁
 ```
 
-> 过程产物（任务书、评审记录、演示、参考资料）**刻意不进本仓库**，只作本地留档。
+> ⚠ **更正（2026-09-27）**：本行原先写"过程产物**刻意不进本仓库**" ✗ —— 那是**不再成立**的 ✗。
+> 现状：`docs/tasks/` 下**交付与现状类报告是入库的** ✓（如上面两份 2026-09-27 报告 ✓，
+> 由 `.gitignore` 的负向规则放行 ✓）；**评审原文与演示/参考资料仍不入库** ✓
+> （`docs/review/` 含攻击面细节 ⇒ **刻意保持 gitignore** ✓，理由见现状报告 §6 ✓）。
 
 ---
 
