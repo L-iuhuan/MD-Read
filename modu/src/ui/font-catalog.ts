@@ -80,7 +80,7 @@ export function readStackVar(name: string): string {
 export function readFontCatalog(): FontPickOption[] {
   const select = document.getElementById("set-font");
   if (!(select instanceof HTMLSelectElement)) {
-    throw new Error("界面元素缺失：#set-font");
+    throw new Error("字体设置未就绪，请重启墨读");
   }
   const options: FontPickOption[] = [];
   for (const group of select.querySelectorAll("optgroup")) {
@@ -90,7 +90,7 @@ export function readFontCatalog(): FontPickOption[] {
     }
   }
   if (options.length === 0) {
-    throw new Error("字体目录为空：#set-font 下没有可用的 option 骨架");
+    throw new Error("字体列表为空，请重启墨读");
   }
   return options;
 }

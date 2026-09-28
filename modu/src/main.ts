@@ -88,7 +88,12 @@ const $ = req;
  *  D-05 起中间那个「与标签重复的文件名」已从顶栏删除，故这里不再需要复位标题；
  *  当前文档名改由窗口标题承担（见 mountRendered）。 */
 function showError(error: unknown): void {
-  flashStatus(`打开失败：${String(error)}`, "error");
+  // ⚠ 别用 `String(error)`：JS 的 Error 会变成「Error: 具体消息」✗ ——
+  // 状态栏是**面向使用者**的通道，多一个 "Error:" 前缀就是行话 ✓
+  //（Rust 侧的错误经 invoke 拒绝时是**字符串** ⇒ String(error) 恰好等于消息本身 ✓，两路都对 ✓）
+  // 2026-09-27 阶段④-② 实测修正。
+  const text = error instanceof Error ? error.message : String(error);
+  flashStatus(`打开失败：${text}`, "error");
 }
 
 /* ---- 大纲 ---- */

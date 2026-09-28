@@ -55,7 +55,10 @@ impl ICoreWebView2CallDevToolsProtocolMethodCompletedHandler_Impl for PrintToPdf
 /// 回包 JSON → PDF 字节：hr 不合格、缺 `data` 字段、base64 坏，三种都转成中文错误
 fn read_pdf_result(errorcode: windows_core::HRESULT, result: &PCWSTR) -> Result<Vec<u8>, String> {
     if !errorcode.is_ok() {
-        return Err(format!("打印引擎返回错误：hr={errorcode:?}"));
+        // ⚠ 这个串会**直接上屏**（经 invoke 拒绝 ⇒ 状态栏）✗ ⇒ 不许露 HRESULT 行话 ✓（2026-09-27 阶段④-②）
+        // 错误码记进 stderr 供排障，给使用者只留白话 ✓
+        eprintln!("[print] 打印引擎返回错误：hr={errorcode:?}");
+        return Err("打印引擎未能完成导出，请重试一次".to_string());
     }
     let json = String::from_utf16_lossy(unsafe { result.as_wide() });
     let data = serde_json::from_str::<serde_json::Value>(&json)
@@ -161,7 +164,14 @@ mod cdp_tests {
 
         let failed = call(r#"{"data":"SGVsbG8="}"#, 0x8000_4004u32 as i32)
             .expect_err("hr 失败必须转错");
-        assert!(failed.contains("hr="), "应带上 hr：{failed}");
+        // ⚠ 2026-09-27 阶段④-② 改锚：这个串会**直接上屏**（经 invoke 拒绝 ⇒ 状态栏）✗
+        // ⇒ 旧锚"错误里要带 hr=" 等于**把行话钉成正确行为** ✗ ⇒ 反过来钉：
+        //   · 返回值**不许**带 HRESULT 行话 ✓
+        //   · 必须是白话中文 ✓
+        // ⚠ stderr 拿不到（`eprintln!` 不走返回值）⇒ "hr 确实被打印"由 TS 侧
+        //   `tests/error-copy.spec.ts` 扫源码覆盖 ✓（那条锚同时钉了正反两面 ✓）
+        assert!(!failed.contains("hr="), "上屏文案不许带 HRESULT 行话：{failed}");
+        assert!(failed.contains("打印引擎"), "应是白话中文错误：{failed}");
 
         let missing = call("{}", 0).expect_err("缺 data 必须转错");
         assert!(missing.contains("没有返回 PDF 数据"), "应说明缺数据：{missing}");
