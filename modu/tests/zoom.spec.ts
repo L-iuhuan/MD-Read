@@ -103,3 +103,78 @@ describe("页面整体缩放（Webview.setZoom）", () => {
     expect(h.setZoom).toHaveBeenLastCalledWith(1.25);
   });
 });
+describe("阶段④-③ Ctrl+滚轮 与快捷键（三条入口同源）", () => {
+  const wheel = (init: WheelEventInit): void => {
+    document.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, ...init }));
+  };
+  const key = (k: string): KeyboardEvent => {
+    const e = new KeyboardEvent("keydown", { key: k, ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(e);
+    return e;
+  };
+
+  /** ⚠ 滚轮节流是**跨手势共用的 120ms 窗口**（对真实使用正确 ✓：人手势间隔远超它）⇒
+   *  单测里两次手势之间必须**等过节流窗**，否则第二次被吃掉 ⇒ 假红 ✗（本批实测）*/
+  const pastThrottle = (): Promise<void> => new Promise((r) => setTimeout(r, 140));
+
+  it("Ctrl+滚轮向上 ⇒ 放大一档；向下 ⇒ 缩小一档", async () => {
+    mount();
+    setupZoom(); // 默认 100%
+    await pastThrottle();
+    wheel({ deltaY: -100, ctrlKey: true });
+    expect(readZoomPref()).toBe(110);
+    await pastThrottle();
+    wheel({ deltaY: 100, ctrlKey: true });
+    expect(readZoomPref()).toBe(100);
+  });
+
+  it("⭐ 普通滚轮**绝不拦**（不带修饰键 ⇒ 不缩放、不 preventDefault ✓）", () => {
+    mount();
+    setupZoom();
+    const e = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+    document.dispatchEvent(e);
+    expect(readZoomPref()).toBe(100); // 没缩放 ✓
+    expect(e.defaultPrevented).toBe(false); // 正文照旧滚 ✓
+  });
+
+  it("节流：同一次手势连发多个 wheel 只走一档（不滑到底 ✗）", async () => {
+    mount();
+    setupZoom();
+    await pastThrottle(); // 先过掉上一用例留下的节流窗 ✓
+    for (let i = 0; i < 8; i++) {
+      wheel({ deltaY: -100, ctrlKey: true });
+    }
+    expect(readZoomPref()).toBe(110); // 只 +1 档 ✓（后面 7 个被 120ms 节流吃掉）
+  });
+
+  it("Ctrl+= 放大 / Ctrl+- 缩小 / Ctrl+0 复位（不是减到最小 ✗）", () => {
+    mount();
+    setupZoom();
+    key("=");
+    expect(readZoomPref()).toBe(110);
+    key("=");
+    key("=");
+    expect(readZoomPref()).toBe(150);
+    key("-");
+    expect(readZoomPref()).toBe(125);
+    key("0");
+    expect(readZoomPref()).toBe(100);
+  });
+
+  it("快捷键会 preventDefault（不让浏览器默认缩放插手 ✓）", () => {
+    mount();
+    setupZoom();
+    expect(key("=").defaultPrevented).toBe(true);
+    expect(key("-").defaultPrevented).toBe(true);
+    expect(key("0").defaultPrevented).toBe(true);
+  });
+
+  it("无修饰键的 = / - / 0 **不触发**缩放（只认 Ctrl/⌘ ✓）", () => {
+    mount();
+    setupZoom();
+    for (const k of ["=", "-", "0"]) {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+    }
+    expect(readZoomPref()).toBe(100);
+  });
+});

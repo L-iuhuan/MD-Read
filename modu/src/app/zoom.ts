@@ -62,19 +62,85 @@ function setZoom(z: number): void {
   }
 }
 
-/** 启动/接线：回填当前档位 + 绑 ± 两键（与字号/行宽同一套交互语言 ✓） */
+/**
+ * ⚠ **幂等守卫**（2026-09-27 阶段④-③ 由单测抓出 ✗）：`setupZoom()` 若被调两次，
+ * 滚轮/键盘这两个 **document 级** 监听会**叠加** ⇒ 一次手势跳多档
+ * （实测：8 次 setup 后一次 wheel 直接顶到 150% ✗）。
+ * ⇒ 只注册一次 ✓；**档位回填仍每次执行**（那才是"回填"的语义 ✓）。
+ * ⚠ 只守 document 级：`±` 按钮的监听挂在元素上，DOM 重建后自然消失 ⇒ 无需守 ✓
+ *   （也因此单测里每次重建 DOM 后 `setupZoom()` 仍能正常绑上按钮 ✓）
+ */
+let documentWired = false;
+
+/** 按档位表走一格（± 键 / Ctrl+滚轮 / 快捷键三条入口共用，避免三份逻辑 ✗） */
+function stepZoom(delta: number): void {
+  const steps = ZOOM_STEPS as readonly number[];
+  const i = steps.indexOf(readZoomPref());
+  const next = Math.min(steps.length - 1, Math.max(0, i + delta));
+  setZoom(steps[next]);
+}
+
+/**
+ * Ctrl/⌘ + 滚轮 = 整体缩放（浏览器手感 ✓）。
+ * ⚠ 三条纪律：
+ *  ① **普通滚轮一律不拦**（不带修饰键直接 return ✓）—— 正文滚动是主行为，不能被抢 ✗
+ *  ② 监听必须 `{ passive: false }` 才能 `preventDefault()` ✓（否则报"无法取消"并静默失效 ✗）
+ *  ③ **节流 120ms**：一次触控板手势会连发几十个 wheel 事件 ⇒ 不节流会一滑到底 ✗
+ *  （Windows 的触控板捏合也走 ctrl+wheel ⇒ 顺带支持 ✓）
+ */
+function wireZoomWheel(): void {
+  let last = 0;
+  document.addEventListener(
+    "wheel",
+    (event) => {
+      if (!(event.ctrlKey || event.metaKey)) {
+        return;
+      }
+      event.preventDefault();
+      const now = Date.now();
+      if (now - last < 120) {
+        return;
+      }
+      last = now;
+      stepZoom(event.deltaY < 0 ? 1 : -1);
+    },
+    { passive: false },
+  );
+}
+
+/** 键盘：Ctrl+= 放大 / Ctrl+- 缩小 / Ctrl+0 复位（与浏览器一致 ✓）。
+ *  ⚠ 这三个组合在本应用**未被占用**（现有只有 Ctrl+P 导出 / Ctrl+F 查找 / Ctrl+E 编辑 ✓，2026-09-27 全仓核对）。 */
+function wireZoomKeys(): void {
+  document.addEventListener("keydown", (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) {
+      return;
+    }
+    const key = event.key;
+    if (key === "=" || key === "+") {
+      event.preventDefault();
+      stepZoom(1);
+    } else if (key === "-" || key === "_") {
+      event.preventDefault();
+      stepZoom(-1);
+    } else if (key === "0") {
+      event.preventDefault();
+      setZoom(100); // 复位到 100%（不是"减到最小"✗）
+    }
+  });
+}
+
+/** 启动/接线：回填当前档位 + 绑 ± 两键（与字号/行宽同一套交互语言 ✓）+ 滚轮/快捷键 ✓ */
 export function setupZoom(): void {
   applyZoom(readZoomPref()); // 启动回填：面板显示值与实际缩放必须一致 ✓
   const val = document.getElementById("set-zoom-val");
   if (val !== null) {
     val.textContent = String(readZoomPref());
   }
-  document.getElementById("set-zoom-dec")?.addEventListener("click", () => {
-    const i = (ZOOM_STEPS as readonly number[]).indexOf(readZoomPref());
-    setZoom((ZOOM_STEPS as readonly number[])[Math.max(0, i - 1)]);
-  });
-  document.getElementById("set-zoom-inc")?.addEventListener("click", () => {
-    const i = (ZOOM_STEPS as readonly number[]).indexOf(readZoomPref());
-    setZoom((ZOOM_STEPS as readonly number[])[Math.min(ZOOM_STEPS.length - 1, i + 1)]);
-  });
+  document.getElementById("set-zoom-dec")?.addEventListener("click", () => stepZoom(-1));
+  document.getElementById("set-zoom-inc")?.addEventListener("click", () => stepZoom(1));
+  if (!documentWired) {
+    documentWired = true;
+    wireZoomWheel();
+    wireZoomKeys();
+  }
 }
