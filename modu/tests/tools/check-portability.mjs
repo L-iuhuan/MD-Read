@@ -194,6 +194,53 @@ function tryRun(file, args) {
   }
 }
 
+/* ---------- ⑨ 中文字体（清单第 11 条：非中文 Windows 上界面会成豆腐块 ✗） ---------- */
+{
+  const out = tryRun("reg", ["query", "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts"]);
+  if (out === null) {
+    add("WARN", "中文字体", "读不到字体注册表（未覆盖）");
+  } else {
+    // 常见 CJK 族名（覆盖简中/繁中/日文兜底），命中任一即可显示中文 ✓
+    const cjk = ["YaHei", "SimSun", "SimHei", "NSimSun", "FangSong", "KaiTi", "Noto Sans CJK", "Noto Serif CJK", "Source Han", "MS Gothic", "Meiryo", "Malgun"];
+    const hit = cjk.filter((n) => out.includes(n));
+    add(
+      hit.length > 0 ? "PASS" : "FAIL",
+      "中文字体",
+      hit.length > 0
+        ? `命中：${hit.slice(0, 3).join(" / ")}${hit.length > 3 ? " …" : ""} ✓`
+        : "❌ 注册表里找不到任何常见中文字体 ⇒ 界面会显示成方块（豆腐块）✗",
+    );
+  }
+}
+
+/* ---------- ⑩ 用户名含空格（清单第 8 条：路径拼接缺引号的经典雷 ✗） ---------- */
+{
+  const home = process.env.USERPROFILE ?? "";
+  const profile = process.env.USERPROFILE ? path.basename(process.env.USERPROFILE) : "";
+  if (!home) {
+    add("WARN", "用户名形态", "读不到 USERPROFILE（未覆盖）");
+  } else if (/\s/.test(home)) {
+    add("WARN", "用户名形态", `路径含空格（${profile.replace(/[^ ]/g, "x")} 形态）⇒ 凡拼命令行的路径必须加引号 ✗；安装与应用本身已按此设计 ✓（此项**未覆盖**：需走一遍第 8 条清单 ✓）`);
+  } else {
+    add("PASS", "用户名形态", "路径不含空格 ✓（第 8 条清单里「含空格用户名」那一支本机覆盖不到 —— 想验就去建一个带空格的账户 ✗）");
+  }
+}
+
+/* ---------- ⑪ 构建工具链（清单第 12 条：目标机自己能不能 build） ---------- */
+{
+  const probe = (bin, args) => {
+    const out = tryRun(bin, args);
+    return out === null ? null : out.trim().split(/\r?\n/)[0];
+  };
+  const node = process.version; // 本进程就是 node ✓（跑这个脚本就说明它存在 ✓）
+  const pnpm = probe("pnpm", ["--version"]);
+  const cargo = probe("cargo", ["--version"]);
+  const parts = [`node ${node} ✓`];
+  parts.push(pnpm === null ? "pnpm ✗ 未在 PATH" : `pnpm ${pnpm} ✓`);
+  parts.push(cargo === null ? "cargo ✗ 未在 PATH" : cargo);
+  // 只有 node 是硬前提（跑本脚本要它）；pnpm/cargo 属"想自己 build 才需要"⇒ 缺了报未覆盖 ✓
+  add(pnpm !== null && cargo !== null ? "PASS" : "WARN", "构建工具链", parts.join(" · "));
+}
 /* ---------- ⑧ 报告 ---------- */
 function readdirSafe(dir) {
   try {
