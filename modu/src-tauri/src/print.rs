@@ -36,28 +36,117 @@ static EXPORT_TICKETS: Mutex<Vec<(u64, PathBuf, std::time::Instant)>> = Mutex::n
 static TICKET_SEQ: AtomicU64 = AtomicU64::new(1);
 const TICKET_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// 票据是否还"新鲜"（纯函数：`now` 由调用方给 ⇒ **过期行为可单测** ✓）。
+///
+/// ⚠ 为什么值得单独抽出来（2026-09-27 补锚）：原实现把 `Instant::now()` 直接埋在
+/// `EXPORT_TICKETS` 的锁里 ⇒ **"过期票据必须被拒"这条安全性质从来没有测试覆盖** ✗
+/// —— `tests/a6-ticket-guard.spec.ts` 覆盖的是"单次使用 / 伪造 id 被拒"，
+/// **TTL 过期那一路是空的** ✗。安全相关的分支不能靠"读代码看起来对" ✓。
+fn ticket_fresh(at: std::time::Instant, now: std::time::Instant) -> bool {
+    // ⚠ 用 `checked_duration_since` 而不是 `duration_since`：后者在 `at > now` 时
+    // **panic** ✗。时钟不会倒退，但这是 O(1) 的防御，而且让"未来时间戳"变成可测输入 ✓
+    now.checked_duration_since(at)
+        .is_some_and(|age| age < TICKET_TTL)
+}
+
+/// 在票据表里定位一张**仍然有效**的票据（纯函数 ⇒ 可单测 ✓）
+fn ticket_pos_at(
+    tickets: &[(u64, PathBuf, std::time::Instant)],
+    id: u64,
+    now: std::time::Instant,
+) -> Option<usize> {
+    tickets
+        .iter()
+        .position(|(tid, _, at)| *tid == id && ticket_fresh(*at, now))
+}
+
 /// 签发一张导出票据（pick_save_path 专用，不暴露为命令）。
 fn issue_ticket(path: &Path) -> u64 {
     let id = TICKET_SEQ.fetch_add(1, Ordering::Relaxed);
     if let Ok(mut tickets) = EXPORT_TICKETS.lock() {
-        tickets.retain(|(_, _, at)| at.elapsed() < TICKET_TTL); // 顺手清过期
-        tickets.push((id, path.to_path_buf(), std::time::Instant::now()));
+        let now = std::time::Instant::now();
+        tickets.retain(|(_, _, at)| ticket_fresh(*at, now)); // 顺手清过期
+        tickets.push((id, path.to_path_buf(), now));
     }
     id
 }
 
 /// 消费一张导出票据：有效则返回对应路径（一次性），无效/过期/不存在返回 None。
 fn consume_ticket(id: u64) -> Option<PathBuf> {
-    EXPORT_TICKETS
-        .lock()
-        .ok()
-        .and_then(|mut tickets| {
-            let now = std::time::Instant::now();
-            let pos = tickets
-                .iter()
-                .position(|(tid, _, at)| *tid == id && now.duration_since(*at) < TICKET_TTL);
-            pos.map(|i| tickets.remove(i)).map(|(_, path, _)| path)
-        })
+    EXPORT_TICKETS.lock().ok().and_then(|mut tickets| {
+        let now = std::time::Instant::now();
+        let pos = ticket_pos_at(&tickets, id, now);
+        pos.map(|i| tickets.remove(i)).map(|(_, path, _)| path)
+    })
+}
+
+#[cfg(test)]
+mod ticket_ttl_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// 造一张 `age` 秒之前签发的票据（`Instant` 只能由 now 加减得到 ⇒ 用 checked_sub ✓）
+    fn aged(id: u64, age: Duration) -> (u64, PathBuf, Instant) {
+        let at = Instant::now()
+            .checked_sub(age)
+            .expect("测试用时长不应超过进程 uptime");
+        (id, PathBuf::from(format!("C:/out/{id}.pdf")), at)
+    }
+
+    fn pos(tickets: &[(u64, PathBuf, Instant)], id: u64) -> Option<usize> {
+        ticket_pos_at(tickets, id, Instant::now())
+    }
+
+    #[test]
+    fn fresh_ticket_is_valid() {
+        let list = vec![aged(7, Duration::from_secs(1))];
+        assert_eq!(pos(&list, 7), Some(0));
+    }
+
+    #[test]
+    fn expired_ticket_is_rejected() {
+        // ⭐ 本批补的空白：TTL(30s) 之外必须被拒（原实现无任何测试覆盖 ✗）
+        let list = vec![aged(7, Duration::from_secs(31))];
+        assert_eq!(pos(&list, 7), None);
+    }
+
+    #[test]
+    fn ttl_boundary_is_enforced() {
+        // 29s 仍有效 ✓ / 31s 失效 ✓（< 是严格小于 ⇒ 恰好 30s 视为过期）
+        assert_eq!(pos(&[aged(1, Duration::from_secs(29))], 1), Some(0));
+        assert_eq!(pos(&[aged(2, Duration::from_secs(31))], 2), None);
+    }
+
+    #[test]
+    fn unknown_id_is_rejected_even_if_others_are_fresh() {
+        let list = vec![aged(1, Duration::from_secs(1)), aged(2, Duration::from_secs(2))];
+        assert_eq!(pos(&list, 99), None);
+    }
+
+    #[test]
+    fn future_timestamp_does_not_panic() {
+        // at > now ⇒ checked_duration_since 给 None ⇒ 判定为"不新鲜"，**不 panic** ✓
+        let future = Instant::now() + Duration::from_secs(5);
+        let list = vec![(1u64, PathBuf::from("C:/out/1.pdf"), future)];
+        assert!(!ticket_fresh(future, Instant::now()));
+        assert_eq!(pos(&list, 1), None);
+    }
+
+    #[test]
+    fn expired_entries_are_the_ones_retain_drops() {
+        // 与 issue_ticket 里那句 `retain` 同源：过期项应被清掉、新鲜项保留 ✓
+        let now = Instant::now();
+        let list = vec![
+            (1u64, PathBuf::from("a"), now.checked_sub(Duration::from_secs(31)).unwrap()),
+            (2u64, PathBuf::from("b"), now.checked_sub(Duration::from_secs(1)).unwrap()),
+        ];
+        let kept: Vec<u64> = list
+            .into_iter()
+            .filter(|(_, _, at)| ticket_fresh(*at, now))
+            .map(|(id, _, _)| id)
+            .collect();
+        assert_eq!(kept, vec![2]);
+    }
 }
 
 /// 前端把结果回传 stdout（自动化采集用）
