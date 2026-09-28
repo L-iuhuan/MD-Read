@@ -14,6 +14,18 @@
 #      cd modu/src-tauri && cargo test
 #      scripts\check-sensitive.cmd
 #
+#
+# ⭐ **2026-09-27 追加：干净 clone 复现实验（否定性结果，比猜测有价值 ✓）**
+#    为了定位"main 的 cargo test job 为什么红"，本机做了**干净 clone 全流程**（clone 到工作区外，
+#    避开工作区那个 Low 完整性标签 ✗ —— 见 modu/AGENTS.md）：
+#      · 分支 feat/delivery-hardening（领先 main 37 提交）⇒ install 0 · build 0 · **cargo test 0**（79+4）✓
+#      · ⭐ **main 本身（01befba，= CI 那次红所跑的提交）⇒ 同样全绿** ✓（59+4 passed，全量编译 89 秒）✓
+#    ⇒ **"缺文件 / 未入库 / 干净 clone 建不出来"这一整类原因被排除** ✓
+#      （本文件顶部曾担心的 `../dist` 缺失也已被上面的"前端产物"步覆盖 ✓）
+#    ⇒ 剩下的候选**只在 runner 侧**：镜像差异（WebView2 / MSVC / Node 22）·
+#      `Swatinem/rust-cache@v2` 的**陈旧缓存**（经典成因 ✓）· `actions/*` 行为
+#    ⚠ **结论：不许按猜测改代码** ✓ —— 要么拿到失败日志（需仓库管理员 ✗），
+#      要么用 `workflow_dispatch` 在**任意分支**上真跑一次看是否复现 ✓（见下面 on: 段 ✓）
 # 大件（MSI ≤8MB）走单独的手动工作流 `msi-size.yml`，不塞进每次 push。
 
 name: CI
