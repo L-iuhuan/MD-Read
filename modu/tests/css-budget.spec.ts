@@ -54,7 +54,7 @@ const BUDGETS: Budget[] = [
   {
     file: "src/main.ts",
     soft: 400,
-    hard: 760,
+    hard: 707,
     note: "接线与启动逻辑全堆在一个文件里 → 仍超铁律 ≤400。**棘轮已收紧两次**：批次 3-7（2026-09-23）把顶栏拥挤态整段搬到 `src/app/shell-overflow.ts`（811→738 ⇒ hard 900→780）；2026-09-27 把无边框窗口标题栏整段搬到 `src/app/window-controls.ts`（779→742 ⇒ hard 780→760）。**不要为了塞新代码往上抬**，继续按段外移（下一个候选：导出 PDF 那一段）。",
   },
   {

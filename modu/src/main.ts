@@ -20,6 +20,7 @@ import {
   type TabManager,
 } from "./app/tabs";
 import { createCloseGuard } from "./app/close-guard";
+import { setupTabHotkeys } from "./app/tab-hotkeys";
 import { hydrateRecentOnBoot, pushRecent, setupRecentMenu } from "./app/recent";
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
@@ -353,54 +354,6 @@ function setupGlobalKeys(): void {
  *      有绑定的 Tab 缩进被 preventDefault 接管）。 ---- */
 
 /** 循环切换：delta=1 下一个（Ctrl+Tab），-1 上一个（Ctrl+Shift+Tab），环回 */
-function cycleTab(delta: number): void {
-  const tabs = activeTabs;
-  if (tabs === null) {
-    return;
-  }
-  const paths = tabs.paths();
-  if (paths.length < 2) {
-    return; // 0/1 张标签无可切换
-  }
-  const active = tabs.activeTab();
-  if (active === null) {
-    return;
-  }
-  const idx = paths.indexOf(active.path);
-  if (idx < 0) {
-    return;
-  }
-  tabs.activateTab(paths[(idx + delta + paths.length) % paths.length]);
-}
-
-function setupTabHotkeys(): void {
-  document.addEventListener(
-    "keydown",
-    (event) => {
-      if (!(event.ctrlKey || event.metaKey)) {
-        return;
-      }
-      if (event.key.toLowerCase() === "w") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (activeTabs !== null) {
-          const tab = activeTabs.activeTab();
-          if (tab !== null) {
-            activeTabs.closeTab(tab.path); // dirty 标签走 confirmClose 确认
-          }
-        }
-        return;
-      }
-      if (event.key === "Tab") {
-        event.preventDefault();
-        event.stopPropagation();
-        cycleTab(event.shiftKey ? -1 : 1);
-      }
-    },
-    true,
-  );
-}
-
 function setupDragDrop(tabs: TabManager): void {
   void getCurrentWebview().onDragDropEvent((event) => {
     if (event.payload.type === "drop") {
@@ -571,7 +524,7 @@ function injectLoadingStyle(): void {
 
 async function boot(): Promise<void> {
   setupGlobalKeys(); // 先于 setupFindbar：统一 Esc 仲裁须最先注册（见函数注释）
-  setupTabHotkeys(); // Ctrl+W / Ctrl+Tab(+Shift)：capture 拦截，先于 CM 键位
+  setupTabHotkeys(() => activeTabs); // Ctrl+W / Ctrl+Tab(+Shift)：capture 拦截，先于 CM 键位
   injectLoadingStyle(); // loading 指示符样式一次就位（P5 批3）
   setupThemeEngine((theme) => refreshMermaidTheme(theme)); // 主题引擎钩子（三档）
   applyPrefs(); // 内含 applyThemePref（自动档按系统解析落 data-theme）
@@ -745,7 +698,6 @@ async function startApp(): Promise<void> {
     stopWatchdog(); // 走到这里首帧必已放行，看门狗不许再留一个待触发的定时器
   }
 }
-
 window.addEventListener("DOMContentLoaded", () => {
   // 冒烟信号：boot 失败时此行不会出现在 tauri dev 的 stdout
   void invoke("spike_log", { msg: "boot: 应用壳启动" }).catch((e: unknown) => {

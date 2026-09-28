@@ -15,6 +15,10 @@ const cjk = readFileSync("src/typography/cjk.css", "utf8");
 const tokens = readFileSync("src/typography/tokens.css", "utf8");
 const printCss = readFileSync("src/typography/print.css", "utf8");
 const main = readFileSync("src/main.ts", "utf8");
+// ⚠ **锚读"最终形态"，不读文件名** ✗（Phase 2.5 外移教训，2026-09-27）：
+//   标签快捷键已搬到 src/app/tab-hotkeys.ts ⇒ 只读 main.ts 会假红 ✓。
+//   **以后每外移一段 TS，把它加进这个清单，别改断言** ✓。
+const mainPlusMovedModules = [main, readFileSync("src/app/tab-hotkeys.ts", "utf8")].join("\n");
 const html = readFileSync("index.html", "utf8");
 
 describe("M2 波3 CSS 修复锚点（波4 归位后）", () => {
@@ -176,6 +180,6 @@ describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () 
 
   it("标签快捷键：Ctrl+W 关标签 + Ctrl+Tab 循环（capture 拦截）", () => {
     expect(main).toMatch(/setupTabHotkeys/);
-    expect(main).toMatch(/cycleTab\(event\.shiftKey \? -1 : 1\)/);
+    expect(mainPlusMovedModules).toMatch(/cycleTab\(getTabs, event\.shiftKey \? -1 : 1\)/);
   });
 });
