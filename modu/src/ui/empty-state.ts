@@ -44,7 +44,47 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
+/** 首次运行引导的存储键（只判"见过没有"，不存版本号 —— 升级不该重弹 ✗） */
+const FIRST_RUN_KEY = "modu-first-run-done";
+
+/**
+ * 首次运行引导（2026-09-27 阶段③-②「交付可移植性」）。
+ *
+ * 为什么需要：换到**新机器**装完后，用户不知道还要做什么 —— 尤其"设为 .md 默认应用"
+ * 那一步（Windows 不允许安装器代设 `UserChoice`，必须手动选一次 ✓）。
+ * ⚠ 本机永远验不出这条：排障期写过 HKCU 关联**影子** ⇒「双击能开」恒真 ✗
+ * ⇒ 只能靠应用内引导 + `tests/tools/check-portability.mjs` 自检两边夹 ✓。
+ *
+ * 行为：显示一次；点「知道了」后写键不再出现。**存储不可用 ⇒ 当作已见过**（不打扰 ✓）；
+ * 存不下 ⇒ 下次再显示（无害，不致命 ✓）。节点缺失（如单测夹具没造它）⇒ 静默返回 ✓。
+ */
+function wireFirstRun(): void {
+  const box = document.getElementById("empty-first-run");
+  if (box === null) {
+    return;
+  }
+  let seen = false;
+  try {
+    seen = window.localStorage.getItem(FIRST_RUN_KEY) === "1";
+  } catch {
+    seen = true; // 存储完全不可用：宁可不提示，也不每次启动都打扰 ✓
+  }
+  if (seen) {
+    return;
+  }
+  box.hidden = false;
+  document.getElementById("empty-first-run-close")?.addEventListener("click", () => {
+    box.hidden = true;
+    try {
+      window.localStorage.setItem(FIRST_RUN_KEY, "1");
+    } catch {
+      // 存不下就下次再显示一次；不影响使用 ✓
+    }
+  });
+}
+
 export function setupEmptyState(deps: EmptyStateDeps): EmptyState {
+  wireFirstRun();
   const openBtn = req<HTMLButtonElement>("empty-open");
   const folderBtn = req<HTMLButtonElement>("empty-folder");
   const wrap = req<HTMLElement>("empty-recent");

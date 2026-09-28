@@ -279,6 +279,19 @@
               <div class="empty-foot">
                 打开文档后按 <code>Ctrl+E</code> 进入编辑，<code>Ctrl+P</code> 导出 PDF
               </div>
+              <!-- 首次运行引导（2026-09-27 阶段③-②「交付可移植性」）：
+                   换到新机器装完后，用户**不知道还要做什么**——尤其第 ③ 步：
+                   Windows 不允许安装器代设默认应用（UserChoice 受保护），必须手动选一次 ✓。
+                   本机永远验不出这一条（排障期写过关联影子 ⇒「双击能开」恒真 ✗）
+                   ⇒ 只能靠**应用内引导** + `tests/tools/check-portability.mjs` 自检 ✓。
+                   只显示一次；点「知道了」写 modu-first-run-done 后不再出现 ✓ -->
+              <p id="empty-first-run" class="empty-foot empty-first-run" hidden>
+                <strong>第一次用？</strong>
+                <span class="empty-first-run-step">① 打开一个 .md 试试</span>
+                <span class="empty-first-run-step">② 点右上 <code>Aa</code> → 「设为 .md 默认应用」</span>
+                <span class="empty-first-run-step">③ 在系统「默认应用」页把 .md 指给墨读（Windows 不允许应用代设，这步必须手动一次）</span>
+                <button id="empty-first-run-close" type="button">知道了</button>
+              </p>
             </section>
           </div>
           <article id="doc" class="mdc" hidden></article>
