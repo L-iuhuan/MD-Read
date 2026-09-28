@@ -200,7 +200,10 @@ async fn request_cdp_pdf(app: &tauri::AppHandle) -> Result<Result<Vec<u8>, Strin
             match webview.controller().CoreWebView2() {
                 Ok(core) => cdp::run_cdp_chain(core, tx),
                 Err(e) => {
-                    let _ = tx.send(Err(format!("取得 WebView2 失败：{}", e)));
+                    // ⚠ 这个串会经 invoke 拒绝**直接上屏** ✗ ⇒ 不许露实现细节（2026-09-27 阶段④-④）
+                // 技术原因落 stderr 供排障 ✓，给使用者只留白话 ✓
+                eprintln!("[print] 取得 WebView2 失败：{e}");
+                let _ = tx.send(Err("打印引擎未就绪，请稍后重试".to_string()));
                 }
             }
         })
