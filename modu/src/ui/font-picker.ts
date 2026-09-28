@@ -161,7 +161,15 @@ export function refreshEffective(hooks: FontPickerHooks): void {
   const text = describeResolved(resolveFamilies(stack, measure));
   const pick = resolvePick(localStorage.getItem(FONT_KEY));
   code.textContent = `400 · ${text.regular}`;
+  // ⚠ 文本**一字不改**（`settings.spec.ts` 的三条锚钉的就是这两串 ✗ 别动它们 ✓）：
+  // 面板观感问题改用"**相同时隐藏第二行**"解决 ✓（隐藏元素的 textContent 仍可读 ⇒ 锚保持绿 ✓）
   codeBold.textContent = `700 · ${text.bold}`;
+  // 2026-09-27 阶段④-①：两个字重落在**同一族**时（常见情形 ✓），
+  // 两行读数把行高从 32 顶到 61、且信息重复 ⇒ 隐藏第二行，由 CSS 在第一行尾部补「· 700 同」✓
+  // 只有**真的不同**（"选了 A 加粗变 B"）时才占两行 —— 那正是需要看见的情况 ✓
+  const boldSame = text.regular === text.bold;
+  codeBold.hidden = boldSame;
+  code.dataset.boldSame = boldSame ? "1" : "0";
   // ⭐ 2026-09-27：无异常时**不再显示**「当前选择：X」——它与上面下拉框显示的值完全重复 ✗
   //（用户反馈面板乱 ✓）。这行提示的价值是"**选了 A、实际渲染成 B**"时给出解释 ⇒ 只在有话说时显示 ✓
   hint.textContent = text.hint === "" ? "" : `${pick.label}：${text.hint}`;

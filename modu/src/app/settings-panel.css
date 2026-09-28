@@ -121,3 +121,14 @@
    只写 `.settings-font`（0,1,0）会被它压住 ⇒ 实测 fonts 行仍竖排、行高 47 ✗ ⇒ 用同级 + 后加载取胜 ✓ */
 .settings-row.settings-font { flex-direction: row; flex-wrap: nowrap; align-items: center; }
 .settings-row { justify-content: flex-start; }
+/* ---- 阶段④-① 「实际生效」行收成一行（2026-09-27）----------------------------
+   实测：两个字重落在同一族时，两行读数把该行行高从 **32 顶到 61** ✗，
+   而面板里其他行都是 32 ⇒ 视觉参差（用户原话"控件的位置、高度、大小"都乱了 ✓）。
+   做法：JS 在**两者相同时**给第二个 code 打 `hidden`（文本不动 ⇒ settings.spec 的锚保持绿 ✓），
+        再用这里的 ::after 在第一个 code 尾部补一句「· 700 同」✓
+   只有真的不同（"选了 A 但加粗是 B"）时才占两行 —— 那正是需要看见的情况 ✓ */
+#set-font-effective[data-bold-same="1"]::after {
+  content: " · 700 同";
+  color: var(--fg-dim);
+}
+#set-font-effective-bold[hidden] { display: none; }

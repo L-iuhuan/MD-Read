@@ -423,6 +423,31 @@ describe("常显「实际生效字体」（D-02 第三步最关键项）", () =>
   });
 });
 
+  // ---- 阶段④-①（2026-09-27）：读数行收成一行 ------------------------------------
+  // 判据：**400/700 同族时隐藏第二行**（面板观感）但**文本一字不改**（上面三条锚仍绿 ✓）；
+  //      两者不同时必须**两行都显示**（那正是"选了 A 加粗变 B"要暴露的情况 ✓）
+  it("两个字重同族 ⇒ 隐藏第二行并打标记（文本不变 ✓）", async () => {
+    seedComputedStyle("--font-pick-cjk-harmonyos");
+    await freshSettings();
+    const code = document.getElementById("set-font-effective");
+    const bold = document.getElementById("set-font-effective-bold");
+    expect(bold?.hidden).toBe(true);
+    expect(code?.dataset.boldSame).toBe("1");
+    // ⚠ 关键：隐藏**不影响文本** ⇒ 上面那三条锚继续有效 ✓
+    expect(code?.textContent).toBe("400 · HarmonyOS Sans SC");
+    expect(bold?.textContent).toBe("700 · HarmonyOS Sans SC");
+  });
+
+  it("两个字重不同族 ⇒ 两行都显示（不隐藏 ✓）", async () => {
+    // 造"400 命中 A、700 命中 B"：resolveFamilies 逐候选取首个真命中 ⇒ 用两个字宽表分叉
+    seedComputedStyle("--font-pick-bold-only");
+    await freshSettings();
+    const bold = document.getElementById("set-font-effective-bold");
+    const code = document.getElementById("set-font-effective");
+    // 无论具体族名是什么，只要两者不同就必须两行都显示；相同则必须隐藏 ✓
+    const same = code?.textContent?.replace("400 · ", "") === bold?.textContent?.replace("700 · ", "");
+    expect(bold?.hidden).toBe(same);
+  });
 describe("主题下拉（三档接线，状态机在 ui/theme.ts）", () => {
   it("选深色 → html[data-theme=dark] + modu-theme 持久化", async () => {
     await freshSettings();
