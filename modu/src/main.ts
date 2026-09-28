@@ -55,6 +55,7 @@ import "./app.css";
 import "./app/workspace-panel.css";
 // 设置面板重做（2026-09-27）的皮：同样紧跟 app.css 导入 ⇒ 规则仍排在 app.css 之后 ✓
 import "./app/settings-panel.css";
+import "./app/shell-tail.css";
 import "./typography/tokens.css";
 import "./typography/cjk.css";
 import "./typography/print.css";

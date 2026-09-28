@@ -1,0 +1,96 @@
+/* ==========================================================================
+   app.css 的**尾段**（侧栏页签 `.outline-title`/`.panel-tab` ＋ 关窗浮层 §13 的尾部皮）—— 自 `src/app.css` 整段外移（2026-09-27，Phase 2.5）。
+
+   为什么要拆：`src/app.css` 的行数棘轮已经**零余量**（1538/1538 ✗）⇒
+   任何"加几行皮"的改动都会红 ✓。棘轮只许往紧的方向转 ⇒ 正解是**继续外移**，不是抬上限 ✓。
+
+   等价性（搬移三条 ✓）：
+   · 搬的是 **app.css 的最后一段** ⇒ 新文件在 `main.ts` 里**紧跟** `app.css` 一族导入 ✓
+     （`tokens.css` 等在其后，但它们只声明变量、与本段的类选择器无交集 ⇒ 层叠等价 ✓）
+   · **逐字搬移**，不做缩进归一化 ✓（本文件内容与搬走前逐字相同 ✓）
+   · 改这里的样式**只改本文件** ✗ —— 别回头往 app.css 里加 ✗
+   ========================================================================== */
+
+/* ==========================================================================
+   13. 关窗三选一浮层（P0-7）—— F 批由 main.ts 的内联 <style> 迁来，规则字面照抄
+   为什么迁：壳层所有浮层都该在壳层样式表里可查（§4 查找条 / §6 最近 / §7 Aa 面板
+   三处四件套 + 本处的遮罩卡片），注入 <style> 等于多一份 grep 不到、改不动的 CSS。
+   运行时形态不变：节点 #close-guard 由 ui/close-confirm.ts 动态创建（index.html
+   里没有该节点），故本文件是它唯一的样式来源。
+   层级：与顶栏同档（--z-float + 10），且 #close-guard 挂在 body 末尾、晚于 #app
+   绘制，同档也压得住顶栏；遮罩用 color-mix 半透明墨色，配色全走 tokens 变量，
+   亮暗自动跟随（本文件不出现字面色值）。
+   注：本节的 #close-guard button 是 (1,1,1) 特异的按钮皮，故意不复用 .topbar 那套
+   （本浮层的按钮坐在纸面卡片上、尺寸更小），与迁移前的内联规则逐字一致。
+   P4（本批）：主按钮「保存」原先用 --accent-solid 实心填充 + 纸面色文字，是全站
+   唯一的实心强调填充。实测白字对比：靛蓝·亮 6.70:1 ✔，但**宣纸·亮只有 4.39:1**
+   （该主题的 accent 是暖棕、纸面近白），13px 文字需 ≥4.5:1 才算达标；且实测该填充上
+   无论用纸面色（4.39）还是纯白（4.43）都到不了 4.5 —— **改文字色这条路走不通**
+   （改用深色正文更差，3.61:1）。故按审计 §I-5 的取向改走「软底 + 强调描边 + 软底文字」：
+     底 --accent-tint / 描边 --accent-solid / 字 --on-accent-soft
+   实测 10 组文字对比 5.76~9.86:1（最低宣纸·亮 5.76），描边对卡片 4.39~8.44:1（≥3:1），
+   与「强调色只做软底/文字，不做大色块填充」的整体语言一致。
+   高度复核：block-size 走 --h-ctl = 28px（D-01 已从 31px 落下，本批复测确认 28）。 */
+#close-guard {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-float) + 10);
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--text) 28%, transparent);
+}
+#close-guard .close-guard-card {
+  min-inline-size: 320px;
+  padding: var(--size-4);
+  color: var(--text);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  font-size: var(--fs-chrome);
+}
+#close-guard p { margin: 0 0 var(--size-3); line-height: 1.6; }
+#close-guard .close-guard-actions { display: flex; justify-content: flex-end; gap: var(--size-2); }
+#close-guard button {
+  font: inherit;
+  block-size: var(--h-ctl);      /* D-01：由 padding 撑出的 31px 落回控件统一高 28px */
+  padding: 0 var(--size-3);
+  color: var(--text);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+}
+#close-guard button:hover { background: var(--bg-hover); }
+/* 主操作：软底 + 强调描边 + 软底文字（见本节说明）。
+   hover 单独抬一档（--accent-tint-hover）：主按钮在 :hover 上的特异性与本节
+   上面的 `#close-guard button:hover` 相同，靠「写在后面」取胜，不能省。 */
+#close-guard button.guard-primary {
+  color: var(--on-accent-soft);
+  background: var(--accent-tint);
+  border-color: var(--accent-solid);
+}
+#close-guard button.guard-primary:hover {
+  color: var(--on-accent-soft);
+  background: var(--accent-tint-hover);
+  border-color: var(--accent-solid);
+}
+/* D-11 文件夹工作区：侧栏标题行的「大纲 / 文件夹」切换（壳层，全部走 token，D-01 不新造字面色值）*/
+.outline-title { display: flex; gap: var(--size-1); align-items: center; }
+.panel-tab {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-1);
+  padding: 2px var(--size-2);
+  font: inherit;
+  cursor: pointer;
+}
+.panel-tab:hover { background: var(--bg-hover); color: var(--text); }
+/* active = 浅主色底 + 主色文字（2026-09-27 反馈「看不出区别」）：与 hover 的中性浅底分档 */
+.panel-tab.active {
+  background: var(--accent-tint);
+  color: var(--accent-text-hover);
+  font-weight: 600;
+}
+

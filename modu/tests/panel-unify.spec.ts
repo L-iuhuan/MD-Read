@@ -14,7 +14,19 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const app = readFileSync("src/app.css", "utf8");
+// ⚠ 壳层 CSS = app.css ＋ **已外移的分片**（Phase 2.5 逐段拆分）。
+//   锚必须读"**最终层叠**"而不是某个文件名 ✗ —— 2026-09-27 拆 `shell-tail.css` 时，
+//   本文件因写死 src/app.css 而**假红**（规则搬对了、锚读错了文件 ✓）。
+//   ⇒ 以后每外移一段，**加进这个清单**，别改断言 ✗。
+const shellCss = [
+  "src/app.css",
+  "src/app/shell-tail.css",
+  "src/app/workspace-panel.css",
+  "src/app/settings-panel.css",
+]
+  .map((f) => readFileSync(f, "utf8"))
+  .join("\n");
+const app = shellCss;
 const cjk = readFileSync("src/typography/cjk.css", "utf8");
 const hljs = readFileSync("src/typography/hljs.css", "utf8");
 const tokens = readFileSync("src/typography/tokens.css", "utf8");

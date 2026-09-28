@@ -13,7 +13,19 @@ import { askCloseChoice } from "../src/ui/close-confirm";
 import { closeTopmostOverlay, type Findbar } from "../src/ui/findbar";
 
 const main = readFileSync("src/main.ts", "utf8");
-const app = readFileSync("src/app.css", "utf8");
+// ⚠ 壳层 CSS = app.css ＋ **已外移的分片**（Phase 2.5 逐段拆分）。
+//   锚必须读"**最终层叠**"而不是某个文件名 ✗ —— 2026-09-27 拆 `shell-tail.css` 时，
+//   本文件因写死 src/app.css 而**假红**（规则搬对了、锚读错了文件 ✓）。
+//   ⇒ 以后每外移一段，**加进这个清单**，别改断言 ✗。
+const shellCss = [
+  "src/app.css",
+  "src/app/shell-tail.css",
+  "src/app/workspace-panel.css",
+  "src/app/settings-panel.css",
+]
+  .map((f) => readFileSync(f, "utf8"))
+  .join("\n");
+const app = shellCss;
 const closeConfirm = readFileSync("src/ui/close-confirm.ts", "utf8");
 
 const buttons = (): HTMLButtonElement[] =>
