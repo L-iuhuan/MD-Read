@@ -56,17 +56,18 @@ describe("F · askCloseChoice 运行时契约（保持与抽出前一致）", ()
     document.body.innerHTML = "";
   });
 
-  it("浮层形态：单块 #close-guard 遮罩 + 卡片 + 三按钮，次序为 保存/放弃/取消", async () => {
-    const answer = askCloseChoice("有 2 个文件尚未保存，关闭窗口前要保存吗？");
+  it("浮层形态：单块 #close-guard 遮罩 + 卡片 + 三按钮，次序为 保存并关闭/放弃修改/取消", async () => {
+    const answer = askCloseChoice("有 2 个文件尚未保存（a.md、b.md），关闭窗口前要保存吗？");
     const overlays = document.querySelectorAll("#close-guard");
     expect(overlays.length).toBe(1);
     const overlay = overlays[0] as HTMLElement;
     expect(overlay.getAttribute("role")).toBe("dialog");
     expect(overlay.getAttribute("aria-modal")).toBe("true");
     expect(overlay.querySelector(".close-guard-card")).not.toBeNull();
-    expect(buttons().map((button) => button.textContent)).toEqual(["保存", "放弃", "取消"]);
+    // UX-7（des-5）：按钮文案自含后果（原先裸「保存/放弃」不说清点了会发生什么）
+    expect(buttons().map((button) => button.textContent)).toEqual(["保存并关闭", "放弃修改", "取消"]);
     expect(overlay.querySelector("p")?.textContent).toBe(
-      "有 2 个文件尚未保存，关闭窗口前要保存吗？",
+      "有 2 个文件尚未保存（a.md、b.md），关闭窗口前要保存吗？",
     );
     // 收场：settle 才会摘掉本模块挂在 document 上的捕获监听。残留监听会在
     // 后续 Esc 用例里抢先吃掉按键（A3 改用 stopImmediatePropagation 后尤其致命）

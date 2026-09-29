@@ -468,58 +468,34 @@ html.editing #btn-edit:not(:disabled) {
    （--size-1），留着会让 PDF 与窗口三钮之间多出一小段空档。
    按钮的 hidden 仍由 JS 同步（语义与可测性的唯一来源，jsdom 里没有本样式表）。 */
 
-/* 开关状态回显（主题态挂在 <html data-theme> 上，既有契约直接读）。
-   Aa 面板打开时按钮同样点灯：这是状态回显，不是装饰。填充与描边一起换，
-   否则白底按钮配蓝底会露原先的灰发丝线。
-   ⚠ 面板开合判据 2026-09-23 第二批从 `html:has(#settings-panel:not([hidden]))`
-     换成 `html.settings-open`（状态类由 ui/overlay-state.ts 单一入口同步，判据仍是
-     那个 hidden 属性）——根级 :has() 会让每次 DOM 变动退化成整文档样式重算（X1）。 */
-html[data-theme="dark"] #btn-theme,
-html.settings-open #btn-settings {
+/* 开关状态回显与点亮（P2-31 / G3，2026-09-29 降档）。
+   · Aa：面板打开时点灯（状态回显，不是装饰）；判据是 html.settings-open
+     （状态类由 ui/overlay-state.ts 单一入口同步，判据仍是那个 hidden 属性；
+     根级 :has() 会让每次 DOM 变动退化成整文档样式重算（X1），故不用）。
+   · ◐：主题态改由 title/aria-label 回显（theme.ts 同文案）；暗色常驻点亮会与
+     「最近」等按钮抢同一强调档 ⇒ **只在悬停时**点灯（下面同组选择器）。
+   填充与描边一起换，否则白底按钮配蓝底会露原先的灰发丝线。 */
+html.settings-open #btn-settings,
+.actions > #btn-theme:hover:not(:disabled) {
   background: var(--accent-tint);
   border-color: var(--accent-tint-border);
   color: var(--accent-text-hover);
 }
 
-/* --- 窗口三钮：内联 SVG（10px 线条 / 16×16 视觉盒），三枚同色同尺寸，只有 close 热区更宽。
-   SVG 用 currentColor，hover/按压换色即整枚图标换色，不必写两套图形。
-   ⚠ 选择器用「顶栏直属 id」写法，不用 `.titlebar button`——后者已随 .titlebar 消失，
-   且越窄的选择器越不会误伤动作按钮。 --- */
-.topbar > #win-min,
-.topbar > #win-max,
-.topbar > #win-close {
-  flex: none;
-  display: grid;
-  place-items: center;
-  align-self: stretch;
-  inline-size: var(--w-winbtn);
-  font: inherit;
-  line-height: 1;
-  color: var(--text-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  transition: background-color var(--duration-1) var(--ease-1),
-              color var(--duration-1) var(--ease-1);
-}
-.topbar > #win-min svg,
-.topbar > #win-max svg,
-.topbar > #win-close svg { display: block; }
-.topbar > #win-min:hover,
-.topbar > #win-max:hover { background: var(--bg-hover); color: var(--text); }
-.topbar > #win-min:active,
-.topbar > #win-max:active { background: var(--bg-active); }
-/* close 热区 +8px（Windows 习惯：关闭总是最宽的一枚），图标仍居中 —— 靠 grid 居中，
-   不补内边距，故三枚图标的视觉重心各自落在自己的按钮里。 */
-.topbar > #win-close { inline-size: calc(var(--w-winbtn) + 8px); }
-/* 关闭钮用语义红（Windows 习惯），不新增色值；按压态用实心反白，反馈明确 */
-#win-close:hover { background: var(--danger-bg); color: var(--danger-text); }
-#win-close:active { background: var(--danger-text); color: var(--bg-app); }
+/* 窗口三钮的皮已整段外移至 `src/app/window-controls.css`（2026-09-29，G10 棘轮拆分）；
+   外移的是本段最内聚且零测试锚点的一块，接线在 index.html。改窗口钮样式去那个文件 ✗。 */
 
 /* --- 历史说明（防回归）：旧版这里有 #doc-title（居中文件名）、.topbar-spacer、
    .titlebar-drag 三块。D-05 全部删除：文件名与标签重复（用户点名要去掉），
    另两块垫片的职责（把右侧按钮组顶到最右）现在由标签条的 flex 承担（见 §1）。
    拖拽/双击最大化的接线改在 main.ts 的 setupWindowControls，按事件目标排除控件。 --- */
+
+/* G1/G4 同源基准（2026-09-29）：查找条右缘与状态栏两端读数按**纸列**对齐，不再贴窗口。
+   有侧栏时纸列中轴右移 --w-outline（存进 --paper-shift）；侧栏隐（空态无工作区 / 折叠 /
+   ≤840 窄窗，判据见 §5/§12）时归零。 */
+body { --paper-shift: 0px; }
+body:not(.outline-off):not(.empty),
+body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
 
 /* ==========================================================================
    4. 查找条 —— 浮于内容区顶部右侧（不占流、不随正文滚动）
@@ -530,12 +506,14 @@ html.settings-open #btn-settings {
    命中分色只用 accent 族两阶：find-hit = accent-tint，find-current = blue-7。
    两种底色都不含 padding/border/字重变化 —— mark 只包字符不增删一字，
    加内边距会让正文在搜索期间重排（M1 复制保真红线）。
-   定位单处书写（含顶栏高度）：D-05 起顶栏只剩一层 --h-chrome。 */
+   定位单处书写（含顶栏高度）：D-05 起顶栏只剩一层 --h-chrome；右缘基准 = 纸列右缘（G1）。 */
 .findbar {
   position: absolute;
   z-index: var(--z-float);
   inset-block-start: calc(var(--h-chrome) + var(--size-2));
-  inset-inline-end: var(--size-4);
+  /* P2-27（G1）：右缘贴纸面右缘（与设置面板同基准）。纸面右缘距窗口右缘 =
+     (100% − 侧栏 − 纸宽) / 2；窄窗/慢退到 --size-4。 */
+  inset-inline-end: max(var(--size-4), calc((100% - var(--paper-shift) - var(--measure) - 2 * var(--pad-page)) / 2));
   display: flex;
   align-items: center;
   gap: var(--size-1);
@@ -569,6 +547,9 @@ html.settings-open #btn-settings {
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
+/* G8（UX-3 样式半边，2026-09-29）：「无结果」态——只换文案色为 --amber-11，字号字重不动。
+   类名契约：JS（Lane I）0 命中时给 #find-count 挂 `.no-hit`、有命中即摘；样式不带接线。 */
+.find-count.no-hit { color: var(--amber-11); }
 .findbar button {
   flex: none;
   display: grid;
@@ -1066,6 +1047,14 @@ html.settings-open #btn-settings {
   padding: var(--size-7) var(--pad-page) 25vh;
   background: var(--bg-app);
 }
+/* P2-13b（G5，2026-09-29）：mermaid 越界的第二道护栏——纸面自身裁剪一切越界绘制。
+   ⚠ 必须包 @media screen：分页媒体里 paint containment 会裁在页边，print.css 不归本批。 */
+@media screen {
+  #doc { contain: paint; }
+}
+/* P2-29（G6，2026-09-29）：暗色下纸面与画布暗差只剩 ~1.1:1 ⇒ 纸缘 1px 内线。inset 阴影
+   （layout 零影响，不裁内容）；亮色不加——白纸对画布已有色差，「整页纸不做描边」仅此例外。 */
+:root[data-theme="dark"] #doc { box-shadow: inset 0 0 0 1px var(--border-chrome); }
 
 /* 空态（首访欢迎页）：2026-09-23 第二批按用户选定的 **V1「克制」** 设计稿落地。
    旧形态（一枚 15px 灰胶囊词标 + 一行灰提示）的三个问题：无品牌感、无主行动、
@@ -1221,6 +1210,9 @@ html.settings-open #btn-settings {
    9. 状态栏 —— 低调一行（D-05 定稿：11.5px / 次级色 / chrome 底 + 上沿 1px --hair）
    高度 22px；上沿从 --border-chrome 改为 --hair —— 它要与正文纸面接壤，用的是
    「同类细线」的语义（--rule/--hair 一族），比壳层分隔线更轻，不与顶栏下沿争。
+   P2-32（G4，2026-09-29）：两端读数改按**纸宽**居中——左右内边距 = 纸列左/右缘
+   （左 (100% + 侧栏 − 纸宽)/2、右 (100% − 侧栏 − 纸宽)/2，即 §4 前的 --paper-shift），
+   与正文纸列同源；窄窗退到 --size-3，不再贴窗口。
    ========================================================================== */
 .statusbar {
   display: flex;
@@ -1228,7 +1220,9 @@ html.settings-open #btn-settings {
   flex: none;
   gap: var(--size-3);
   height: var(--h-status);
-  padding: 0 var(--size-3);
+  padding-block: 0;
+  padding-inline: max(var(--size-3), calc((100% + var(--paper-shift) - var(--measure) - 2 * var(--pad-page)) / 2))
+                 max(var(--size-3), calc((100% - var(--paper-shift) - var(--measure) - 2 * var(--pad-page)) / 2));
   background: var(--bg-chrome);
   border-top: 1px solid var(--hair);
   color: var(--text-muted);
@@ -1442,6 +1436,9 @@ html.editing .topbar { opacity: 1; }
 }
 @media (max-width: 840px) {
   .outline { display: none; }     /* 窄窗优先保正文宽度 */
+  /* G1/G4：侧栏隐 ⇒ 纸列回到全窗中轴（与 §4 前的 --paper-shift 同条件，靠后覆盖） */
+  body:not(.outline-off):not(.empty),
+  body:not(.outline-off).empty.has-workspace { --paper-shift: 0px; }
 }
 @media (prefers-reduced-motion: reduce) {
   #app *, #app *::before, #app *::after {

@@ -21,7 +21,7 @@ import {
 } from "./app/tabs";
 import { createCloseGuard } from "./app/close-guard";
 import { setupTabHotkeys } from "./app/tab-hotkeys";
-import { hydrateRecentOnBoot, pushRecent, setupRecentMenu } from "./app/recent";
+import { hydrateRecentOnBoot, pushRecent, removeRecent, setupRecentMenu } from "./app/recent";
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
 import { setupWindowControls } from "./app/window-controls";
@@ -52,12 +52,11 @@ import {
 import { createEditSession, flashStatus, type EditSession } from "./editor/editor";
 import { firstVisibleLine } from "./editor/position-map";
 import "./app.css";
-// ⚠ 紧跟 app.css：D-11b 工作区面板的皮自 app.css 整段外移（2026-09-27），
-// 放在这里才能保持与拆前**逐字等价**的层叠顺序 ✓（CSS 按导入顺序层叠）。
-import "./app/workspace-panel.css";
-// 设置面板重做（2026-09-27）的皮：同样紧跟 app.css 导入 ⇒ 规则仍排在 app.css 之后 ✓
-import "./app/settings-panel.css";
+// ⚠ 后三个分片必须紧跟 app.css 导入：CSS 按导入顺序层叠，外移的皮才与拆前等价
+import "./app/workspace-panel.css"; // D-11b 工作区面板（2026-09-27 外移）
+import "./app/settings-panel.css"; // 设置面板重做（2026-09-27 外移）
 import "./app/shell-tail.css";
+import "./ui/export-state.css"; // H 批：导出冻结层——独立新文件，绝不进 app.css（其棘轮 1455 满载）
 import "./typography/tokens.css";
 import "./typography/cjk.css";
 import "./typography/print.css";
@@ -85,13 +84,9 @@ let exportButton: HTMLButtonElement | null = null;
 /** 取界面元素（批次 3-7：实现搬到 `app/dom.ts` 的 `req`；此处保留 `$` 别名 ⇒ 原有调用点一字未动） */
 const $ = req;
 
-/** 打开失败（P5 批2·错误通道统一）：不清正文、不顶标签——当前标签内容保持，
- *  状态栏红字闪错（多文件拖放单个失败同走此道，不中断其余）。
- *  D-05 起中间那个「与标签重复的文件名」已从顶栏删除，故这里不再需要复位标题；
- *  当前文档名改由窗口标题承担（见 mountRendered）。 */
+/** 打开失败（P5 批2·错误通道统一）：不清正文、不顶标签，状态栏红字闪错；多文件拖放单个失败同走此道不中断其余（文档名由窗口标题承担，见 D-05）。 */
 function showError(error: unknown): void {
-  // ⚠ 别用 `String(error)`：JS 的 Error 会带「Error: 」前缀 ✗（状态栏面向使用者，
-  //  2026-09-27 实测修正）；Rust 侧 invoke 拒绝的是字符串 ⇒ String(error) 恰为消息本身 ✓。
+  // ⚠ Error 带「Error: 」前缀不适状态栏；Rust invoke 拒绝的是字符串 ⇒ String() 恰为消息
   const text = error instanceof Error ? error.message : String(error);
   flashStatus(`打开失败：${text}`, "error");
 }
@@ -122,11 +117,9 @@ function mountOutline(items: OutlineItem[]): void {
   list.appendChild(frag);
 }
 
-/* ---- 大纲滚动跟随（F4）· X2（2026-09-23 第二批）----
-   旧实现用 IntersectionObserver 观察**全部** h1–h6（本机 2MB 语料实测 4,715 个），
-   computeIntersections 占滚动墙钟 26.3%~33.6%（单它超过 vsync 预算）；现改成每帧一次
-   **实时二分**（log₂n ≈ 13 次 getBoundingClientRect），语义与旧逐条比较逐点等价——
-   推导与边界写在 app/outline-follow.ts 顶部注释。rAF 节流不变：M10 已判不做。 */
+/* ---- 大纲滚动跟随（F4）· X2：旧实现 IntersectionObserver 观察 2MB 语料实测 4,715 个
+   h1–h6，computeIntersections 占滚动墙钟 26.3%~33.6%；现改每帧一次实时二分
+   （log₂n ≈ 13 次 getBoundingClientRect），逐点等价。推导见 outline-follow.ts 顶部。 ---- */
 
 /** 大纲跟随实例：deps 惰性取 DOM，模块级创建不碰 DOM；正文换/回空态时 reset。 */
 const outlineFollow = createOutlineFollow({
@@ -223,7 +216,16 @@ function createTabs(session: EditSession, mountRendered: (ctx: MountContext) => 
       $("content").scrollTop = top;
     },
     onEmpty: resetToWelcome,
-    confirmClose: (tab) => window.confirm(`「${tab.title}」有未保存的修改，确定要关闭吗？`),
+    // F1（P1-7）：关脏标签与关窗同一套三选一浮层（语言一致、补上「保存」、
+    // 环境抑制 JS dialog 也不再关不掉）。「保存」走单标签保存链 saveTabNow。
+    confirmClose: async (tab) => {
+      const choice = await askCloseChoice(`「${tab.title}」有未保存的修改，关闭前要保存吗？`);
+      return choice === "discard" || (choice === "save" && (await saveTabNow(activeTabs, tab)));
+    },
+    // F2（P2-1）：脏标签同路径重开前三选一（取消＝中止重开；保存＝落盘且保留现场）
+    askReopen: (tab) =>
+      askCloseChoice(`「${tab.title}」在磁盘上已有新内容，重新打开前要保存当前修改吗？`),
+    saveTab: (tab) => saveTabNow(activeTabs, tab),
     saveEditorState: () => session.saveEditorState(), // 切走标签：编辑器态存回
     loadEditorState: (saved) => session.loadEditorState(saved), // 切入标签：按档恢复
   });
@@ -231,22 +233,22 @@ function createTabs(session: EditSession, mountRendered: (ctx: MountContext) => 
 
 /** activate=false：多文件连开的中间项——只开标签不挂载（P5 批2，见 drop.ts） */
 async function openPath(tabs: TabManager, path: string, activate = true): Promise<void> {
+  let canonical = path; // UX-8：失败移除最近条目需要归一串；归一本身失败则拿原始串尽力一删
   try {
-    // 路径形态归一：标签身份就是路径串（tabs.ts 的 find 按 === 比），原始串与 canonical
-    // 混进来会开出两个同名标签。归一唯一实现是 Rust fs.rs::normalize_path，此处是渲染层
-    // 唯一边界——read_file 与 pushRecent 的串就此收敛，tab.path/modu-recent/受信登记同源。
-    const canonical = await normalizePath(path);
+    // 路径形态归一：标签身份就是路径串（find 按 === 比），原始串与 canonical 混进会开
+    // 重名标签。归一唯一实现是 Rust normalize_path；read_file/pushRecent 就此收敛同源。
+    canonical = await normalizePath(path);
     const file = await invoke<LoadedFile>("read_file", { path: canonical });
     tabs.openTab(canonical, file, activate);
     pushRecent(canonical);
   } catch (error) {
     showError(error);
+    removeRecent(canonical); // UX-8（des-5）：打不开的死条目不再躺在最近列表里
   }
 }
 
-/** 打开对话框：**对话框在 Rust 侧**（R-01）——用户亲手选中的文件由 Rust 登记为受信路径，
- *  渲染层拿不到"凭空登记"的能力（否则攻陷页面可 `登记任意路径 → 读任意文件`）。
- *  filter/多选由 Rust 命令设定（`md/markdown/mdx`，与关联注册/拖放/命令行同一份清单）。 */
+/** 打开对话框：**对话框在 Rust 侧**（R-01）——用户选中的文件由 Rust 登记为受信路径，
+ *  渲染层拿不到"凭空登记"能力（否则攻陷页面可 登记任意路径 → 读任意文件）。 */
 async function onOpenClick(tabs: TabManager): Promise<void> {
   try {
     const pickedPaths = await invoke<string[]>("pick_markdown_files");
@@ -281,15 +283,17 @@ async function onExportClick(tabs: TabManager): Promise<void> {
   if (doc === null) {
     return;
   }
-  // C1+C4（2026-09-29）导出版式归一：暗色主题在白纸上印出近白浅灰字（不可读）、根 zoom
-  // 让 markPrintBlocks 量宽漂移 ⇒ 先存偏好与 zoom、临时切亮色并让 mermaid 重渲（UI 短暂
-  // 变亮可接受），finally 无条件按原偏好还原（取消/失败路径也还原）。
+  // C1+C4 导出版式归一：暗色近白不可读、根 zoom 让量宽漂移 ⇒ 存偏好与 zoom、临时切亮色重渲
+  // mermaid，finally 无条件还原。H 静默化：exporting 冻结层与归一同一同步块（同一次 recalc）。
+  // F6（fix-22）：冻结/变亮/重渲 mermaid 三行挪进 try——若 refreshMermaidTheme 同步
+  // 抛异常，finally 仍会揭幕还原，冻结层不再滞留整窗。
   const savedThemePref = readThemePref(); // 权威来源（theme.ts），不自己摸 localStorage
   const savedZoom = document.documentElement.style.zoom;
   document.documentElement.style.zoom = "";
-  document.documentElement.dataset.theme = "light"; // 不落盘：崩溃后偏好不被改成亮色
-  refreshMermaidTheme("light");
   try {
+    document.documentElement.classList.add("exporting"); // 与下行同一同步块：先遮屏再变亮，中间不得有异步断点
+    document.documentElement.dataset.theme = "light"; // 不落盘：崩溃后偏好不被改成亮色
+    refreshMermaidTheme("light");
     const failed = doc.querySelectorAll(".mermaid[data-mmd-error]").length;
     if (failed > 0) {
       flashStatus(`有 ${failed} 张图渲染失败，将按占位导出`, "warn"); // 告警不阻断（P5 批2）
@@ -304,12 +308,10 @@ async function onExportClick(tabs: TabManager): Promise<void> {
     } else if (ready.imageFailures.length > 0) {
       flashStatus(`有 ${ready.imageFailures.length} 张图片未就绪，将按当前版式导出`, "warn");
     }
-    // P1-4(b)+宽表：竖版放不下的表自动横排；连横版都放不下的再压列换行（用户裁决 ④）。
-    // 「可能被截」提醒已于 2026-09-23 撤除：压列后表格不丢列、图片有 max-inline-size:100%、
-    // pre 会换行 ⇒ 已无会静默丢内容的类别，留着就是会撒谎的提示。
+    // P1-4(b)+宽表：竖版放不下的表自动横排，连横版都放不下再压列换行（用户裁决 ④）。
+    // 「可能被截」提醒已撤：压列不丢列、图片限宽、pre 换行 ⇒ 无静默丢内容，留着就是撒谎。
     markPrintBlocks(doc);
-    // 票据制（P0 安全修复 B1）：pick_save_path 返回 {path, ticket}，export_pdf 只认 ticket。
-    // 渲染层不再向 export_pdf 传路径 ⇒ 被攻陷的渲染层无法指定任意写入路径。
+    // 票据制（P0 安全修复 B1）：pick_save_path 返回 {path, ticket}，export_pdf 只认 ticket ⇒ 渲染层无法指定任意写入路径。
     interface SaveResult { path: string | null; ticket: number | null }
     let saveResult: SaveResult;
     try {
@@ -334,6 +336,7 @@ async function onExportClick(tabs: TabManager): Promise<void> {
     document.documentElement.dataset.theme = restored;
     refreshMermaidTheme(restored);
     document.documentElement.style.zoom = savedZoom;
+    document.documentElement.classList.remove("exporting"); // 揭幕放最后：先还原主题后揭幕，同一同步块（顺序反了会闪亮）
   }
 }
 
@@ -355,10 +358,8 @@ function setupGlobalKeys(): void {
   });
 }
 
-/* ---- 标签快捷键（用户反馈批次）：Ctrl+W 关标签、Ctrl+Tab / Ctrl+Shift+Tab
- *      循环切换。capture 阶段全局拦截——Ctrl+Tab 若放行会先被 CM 的面板/编辑器
- *      键位吃掉，先于一切目标定夺；编辑态照常工作（CM 对 Mod-w / Tab 无默认绑定，
- *      有绑定的 Tab 缩进被 preventDefault 接管）。 ---- */
+/* ---- 标签快捷键（用户反馈批次）：Ctrl+W 关标签、Ctrl+Tab(±Shift) 循环切换。
+ *      capture 阶段全局拦截（Ctrl+Tab 放行会先被 CM 键位吃掉）；编辑态照常工作。 ---- */
 
 /** 循环切换：delta=1 下一个（Ctrl+Tab），-1 上一个（Ctrl+Shift+Tab），环回 */
 /** C6：非 Markdown 文件不静默丢弃——状态栏闪示被忽略数（通道复用 flashStatus） */
@@ -382,11 +383,8 @@ function setupDragDrop(tabs: TabManager): void {
 
 /* ---- 顶栏拥挤态（D-05 定稿）已搬至 app/shell-overflow.ts（批次 3-7）---- */
 
-/* ---- 关闭守卫（P0-7）：窗口关闭请求前拦一道——有未保存改动就问
- *      保存 / 放弃 / 取消，别让防抖窗口里的编辑随窗口一起没。
- *      判据/状态机在 app/close-guard.ts（shouldGuardClose / resolveCloseAction /
- *      createCloseGuard），浮层在 ui/close-confirm.ts（F 批抽出的三选一对话框，
- *     样式在 app.css §13），本文件只负责接线。 ---- */
+/* ---- 关闭守卫（P0-7）：关窗前有未保存改动就三选一。状态机在 app/close-guard.ts，
+ *      浮层在 ui/close-confirm.ts（样式 app.css §13），本文件只负责接线。 ---- */
 
 /** 未落盘文本：活动标签以体内 source 为准（回阅读态时已同步，编辑器存档可能滞后），
  *  非活动标签取切走时存的编辑器态（存档 sliceDoc 按行分隔符 join，CRLF 保真）。 */
@@ -395,49 +393,53 @@ function unsavedText(tab: Tab, isActive: boolean): string {
   return isActive || saved === null ? tab.source : saved.state.sliceDoc();
 }
 
-/** 逐个落盘未保存标签（P0-7）：活动编辑标签走会话保存链（原编码/BOM 保真、
- *  失败文案复用），其余按未落盘文本直存。任一失败返回 false（窗口不关）。 */
+/** 单标签落盘（F1/F2 共用）：活动编辑标签走会话保存链（原编码/BOM 保真、失败
+ *  文案复用，成败按 dirty 回读判定），其余按未落盘文本直存并复位脏位。 */
+async function saveTabNow(tabs: TabManager | null, tab: Tab): Promise<boolean> {
+  const active = tabs?.activeTab() ?? null;
+  const isActive = active !== null && tab.path === active.path;
+  const session = editorSession;
+  if (isActive && session !== null && session.isEditing()) {
+    await session.save();
+    return !tab.dirty;
+  }
+  const text = unsavedText(tab, isActive);
+  try {
+    await invoke<void>("save_file", {
+      path: tab.path,
+      text,
+      encoding: tab.encoding,
+      bom: tab.bom,
+    });
+    tab.source = text;
+    tabs?.setDirty(tab.path, false);
+    return true;
+  } catch (error) {
+    flashStatus(`保存失败：${String(error)}`, "error");
+    return false;
+  }
+}
+
+/** 逐个落盘未保存标签（P0-7）：任一失败返回 false（窗口不关）。 */
 async function saveDirtyTabs(tabs: TabManager): Promise<boolean> {
-  const active = tabs.activeTab();
   let allSaved = true;
   for (const tab of tabs.dirtyTabs()) {
-    const isActive = active !== null && tab.path === active.path;
-    const session = editorSession;
-    if (isActive && session !== null && session.isEditing()) {
-      await session.save(); // 失败自闪「保存失败：…」，成败按 dirty 回读判定
-      if (tab.dirty) {
-        allSaved = false;
-      }
-      continue;
-    }
-    const text = unsavedText(tab, isActive);
-    try {
-      await invoke<void>("save_file", {
-        path: tab.path,
-        text,
-        encoding: tab.encoding,
-        bom: tab.bom,
-      });
-      tab.source = text;
-      tabs.setDirty(tab.path, false);
-    } catch (error) {
-      flashStatus(`保存失败：${String(error)}`, "error");
+    if (!(await saveTabNow(tabs, tab))) {
       allSaved = false;
     }
   }
   return allSaved;
 }
 
-/** 关闭请求处理（P0-7）：Alt+F4 与标题栏 ✕ 在 Tauri 2 上是同一条 close-requested
- *  事件（tao 的 WM_CLOSE → CloseRequested → 前端事件），只此一处入口，不另设键位。
- *  回归教训（2026-09-23 实测）：旧版无条件 preventDefault 再自己 destroy()，但彼时
- *  capabilities 缺 core:window:allow-destroy；且 onCloseRequested 在未被 prevent 时会
- *  **自动 destroy 收尾**（被旧版一并掐掉）⇒ 两道 destroy 全废、窗口关不掉。
- *  修法：preventDefault 只在真要拦的那一轮调，放行的一轮交给自动 destroy；用户选
- *  「保存/放弃」后用 close() 重入一次。状态机在 app/close-guard.ts，此处只接线。 */
+/** 关闭请求处理（P0-7）：Alt+F4 与 ✕ 同走 close-requested，只此一处入口。
+ *  回归教训（2026-09-23 实测）：无条件 preventDefault 会掐掉 onCloseRequested 未被
+ *  prevent 时的**自动 destroy 收尾**，手动 destroy 又被 ACL 拒 ⇒ 窗口关不掉。
+ *  修法：只在真要拦的那一轮 preventDefault，放行轮交给自动 destroy；
+ *  「保存/放弃」成功后用 close() 重入。状态机在 app/close-guard.ts，此处只接线。 */
 const closeGuard = createCloseGuard({
   hasDirty: () => activeTabs?.hasDirty() ?? false,
   dirtyCount: () => activeTabs?.dirtyTabs().length ?? 0,
+  dirtyTitles: () => activeTabs?.dirtyTabs().map((tab) => tab.title) ?? [], // UX-7：文案列前 3 个文件名
   ask: (message) => askCloseChoice(message),
   save: async () => {
     const tabs = activeTabs;
@@ -483,11 +485,8 @@ function setupProgress(): void {
   });
 }
 
-/* ---- loading 指示符（P5 批3）：#content.content-loading 顶部 2px 脉冲条 ---- */
-
-/** 样式走 main 内联注入而非 cjk.css：它是壳层反馈不是正文排版，且批3 对
- *  cjk.css 的改动面限定为 content-visibility 屏显规则。选 class 方案
- *  （不占状态栏 flashStatus 单槽，长渲染不打扰错误/保存提示）。 */
+/* ---- loading 指示符（P5 批3）：#content.content-loading 顶部 2px 脉冲条。
+ *      内联注入而非 cjk.css：壳层反馈不是正文排版；class 方案不占状态栏单槽。 ---- */
 const LOADING_STYLE = `
 #content.content-loading::before {
   content: "";
@@ -532,8 +531,7 @@ async function boot(): Promise<void> {
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
   setupZoom(); // 页面整体缩放（用户反馈 2026-09-27）：启动回填 + 面板 ± 两键 ✓
-  // 关闭守卫：✕ 的 close() 与 Alt+F4 都发 close-requested（同一入口）。控件已外移
-  // window-controls.ts，守卫依赖本文件的 closeGuard 实例故留在此——搬移不可漏。
+  // 关闭守卫：✕ 与 Alt+F4 同发 close-requested（唯一入口）；守卫依赖本文件的 closeGuard 实例故留在此。
   void getCurrentWindow().onCloseRequested((event) => closeGuard(event));
   setupShellOverflow(); // D-05：顶栏拥挤态（标签装不下 → 收成「编辑 + ⋯」，判据见函数处注释）
 
@@ -547,12 +545,14 @@ const workspacePanel = setupWorkspacePanel({
   setupOverlayState();
   setupOutlineToggle(); // ☰ 大纲折叠（P5 批2）
   // 「Aa」设置面板（反馈⑥）：恢复字号/行宽/字体 + 面板接线；钩子接排版重算
+  const refitDoc = (): void => {
+    const doc = document.getElementById("doc");
+    if (doc !== null) refitView(doc);
+  };
   setupSettings({
     getDoc: () => document.getElementById("doc"),
-    onFontChange: () => {
-      const doc = document.getElementById("doc");
-      if (doc !== null) refitView(doc); // 字体度量变了：断行守卫与公式缩放重算
-    },
+    onFontChange: refitDoc, // 字体度量变了：断行守卫与公式缩放重算
+    onWidthChange: refitDoc, // F3（P2-2）：行宽变了同样重跑守卫（settings 侧已防抖）
     notify: (message, kind) => flashStatus(message, kind), // 「设为默认应用」的状态栏反馈
   });
   const findbar = setupFindbar(() => document.getElementById("doc"));
@@ -561,10 +561,8 @@ const workspacePanel = setupWorkspacePanel({
   function mountRendered(ctx: MountContext): void {
     const doc = $<HTMLElement>("doc");
     ctx.tab.cachedFragment = null; // 挂载即消费：rerenderRead 等旁路入口同样作废旧缓存
-    // P1（2026-09-23）：按文档形态决定是否**保留** content-visibility 的离屏跳过。
-    // ⚠ 必须在 adoptNode 之前量：fragment 搬进 #doc 后就被掏空了。
-    // 判据是纯函数（render/offscreen-policy.ts），默认保留（= 今天的行为），
-    // 只有"确信是轻块文档"时才加 .cv-off 把它关掉。
+    // P1：按文档形态决定是否保留 content-visibility 离屏跳过（判据纯函数在
+    // offscreen-policy.ts）；⚠ 须在 adoptNode 之前量——搬进 #doc 后 fragment 已掏空。
     doc.classList.toggle("cv-off", !keepOffscreenSkipping(shapeOf(ctx.fragment)));
     doc.replaceChildren();
     doc.appendChild(document.adoptNode(ctx.fragment)); // P5 批3：零序列化、零二次 parse
@@ -643,7 +641,10 @@ const workspacePanel = setupWorkspacePanel({
   });
   exportButton = document.getElementById("btn-export") as HTMLButtonElement | null;
   exportButton?.addEventListener("click", () => void onExportClick(tabs));
-  setupRecentMenu((path) => void openPath(tabs, path));
+  setupRecentMenu((path) => void openPath(tabs, path), () => {
+    flashStatus("已清空最近列表", "ok"); // UX-8：清空反馈走状态栏（低风险数据，不弹确认）
+    activeEmptyState?.refresh(); // 欢迎页那份最近列表同批重画
+  });
   setupToggles();
   setupDragDrop(tabs);
   setupProgress();
@@ -679,9 +680,8 @@ const workspacePanel = setupWorkspacePanel({
   }
 }
 
-/** boot 的顶层收场（P1-7）：成功与失败都先摘掉 FOUC 隐藏，失败另画中文说明。
- *  没有这层 catch，boot 里任何一次抛出都会让 `html:not(.app-ready) body`
- *  永久 visibility:hidden —— 窗口一片空白，用户无从下手。 */
+/** boot 的顶层收场（P1-7）：成败都先摘 FOUC 隐藏，失败另画中文说明——没有这层
+ *  catch，boot 抛出会让 `html:not(.app-ready) body` 永久隐藏，窗口一片空白。 */
 async function startApp(): Promise<void> {
   const stopWatchdog = installBootWatchdog(); // 兜底：boot 挂死不 resolve 也放行首帧
   try {

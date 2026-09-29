@@ -14,7 +14,7 @@ import {
   type TabManager,
   type TabManagerDeps,
 } from "../src/app/tabs";
-import { createCloseGuard, resolveCloseAction, shouldGuardClose, type CloseChoice } from "../src/app/close-guard";
+import { closeGuardMessage, createCloseGuard, resolveCloseAction, shouldGuardClose, type CloseChoice } from "../src/app/close-guard";
 import type { RenderResult } from "../src/render/pipeline";
 import { flushed, fragOf } from "./raf";
 
@@ -29,7 +29,10 @@ interface Harness {
   endLoading: ReturnType<typeof vi.fn>;
 }
 
-function setup(confirmResult = true): Harness {
+function setup(
+  confirmResult: TabManagerDeps["confirmClose"] | boolean = true,
+  extra: Partial<TabManagerDeps> = {},
+): Harness {
   document.body.innerHTML =
     '<div id="tabbar" hidden><div id="tab-list"></div><button id="btn-newtab">+</button></div>' +
     '<main id="content"><article id="doc" hidden></article></main>';
@@ -59,6 +62,8 @@ function setup(confirmResult = true): Harness {
   const beginLoading = vi.fn(() => content.classList.add("content-loading"));
   const endLoading = vi.fn(() => content.classList.remove("content-loading"));
   const onEmpty = vi.fn();
+  const confirmClose: TabManagerDeps["confirmClose"] =
+    typeof confirmResult === "function" ? confirmResult : () => confirmResult;
   const deps: TabManagerDeps = {
     render,
     mountDoc,
@@ -66,11 +71,12 @@ function setup(confirmResult = true): Harness {
     beginLoading,
     endLoading,
     getScroll: () => state.scroll,
-    setScroll: (top: number) => {
+    setScroll: (top) => {
       state.scroll = top;
     },
     onEmpty,
-    confirmClose: () => confirmResult,
+    confirmClose,
+    ...extra,
   };
   const manager = createTabManager(
     document.getElementById("tabbar") as HTMLElement,
@@ -265,13 +271,13 @@ describe("dirty 标记（M3 启用，渲染先就绪）", () => {
     refused.manager.setDirty("a.md", true);
     const dot = document.querySelector<HTMLElement>("#tab-list .tab-dirty");
     expect(dot?.hidden).toBe(false); // 圆点随 dirty 显隐
-    refused.manager.closeTab("a.md");
+    await refused.manager.closeTab("a.md");
     expect(refused.manager.count()).toBe(1); // 用户取消，未关闭
 
     const allowed = setup(true);
     await open(allowed, "a.md", "AAA");
     allowed.manager.setDirty("a.md", true);
-    allowed.manager.closeTab("a.md");
+    await allowed.manager.closeTab("a.md");
     expect(allowed.manager.count()).toBe(0);
   });
 
@@ -280,6 +286,130 @@ describe("dirty 标记（M3 启用，渲染先就绪）", () => {
     await open(h, "a.md", "AAA");
     await close(h, "a.md");
     expect(h.manager.count()).toBe(0);
+  });
+});
+
+/* ---- F1（P1-7）：closeTab 异步化 + 三选一浮层防叠层 ---- */
+
+describe("F1：dirty 关闭走异步确认", () => {
+  it("浮层作答前不关，作答「同意」后才移除标签", async () => {
+    let resolveConfirm!: (ok: boolean) => void;
+    const h = setup(() => new Promise<boolean>((resolve) => (resolveConfirm = resolve)));
+    await open(h, "a.md", "AAA");
+    h.manager.setDirty("a.md", true);
+    const closing = h.manager.closeTab("a.md");
+    expect(h.manager.count()).toBe(1); // 问询在飞：标签还在
+    resolveConfirm(true);
+    await closing;
+    expect(h.manager.count()).toBe(0);
+  });
+
+  it("浮层在飞时重复关闭请求被忽略（双击 ✕ / 连按 Ctrl+W 只问一次）", async () => {
+    let resolveConfirm!: (ok: boolean) => void;
+    const confirm = vi.fn(
+      () => new Promise<boolean>((resolve) => (resolveConfirm = resolve)),
+    );
+    const h = setup(confirm);
+    await open(h, "a.md", "AAA");
+    h.manager.setDirty("a.md", true);
+    const first = h.manager.closeTab("a.md");
+    await h.manager.closeTab("a.md"); // 第二发：须被忽略，不得叠第二层浮层
+    expect(confirm).toHaveBeenCalledTimes(1);
+    resolveConfirm(false);
+    await first;
+    expect(h.manager.count()).toBe(1); // 取消：保留
+  });
+
+  it("批量关闭串行确认：一次只开一层浮层，答完一个再问下一个", async () => {
+    const answers: Array<(ok: boolean) => void> = [];
+    const confirm = vi.fn(
+      () => new Promise<boolean>((resolve) => answers.push(resolve)),
+    );
+    const h = setup(confirm);
+    await open(h, "a.md", "AAA");
+    await open(h, "b.md", "BBB");
+    h.manager.setDirty("a.md", true);
+    h.manager.setDirty("b.md", true);
+    const closing = h.manager.closeAll();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(confirm).toHaveBeenCalledTimes(1); // 串行：第一个未答不问第二个
+    answers[0]?.(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(confirm).toHaveBeenCalledTimes(2);
+    answers[1]?.(true);
+    await closing;
+    expect(h.manager.count()).toBe(0);
+  });
+});
+
+/* ---- F2（P2-1）：脏标签同路径重开三选一 ---- */
+
+describe("F2：脏标签同路径重开", () => {
+  it("取消：中止重开——内容、脏位原样保留（不再被磁盘内容静默覆盖）", async () => {
+    const askReopen = vi.fn(async () => "cancel" as const);
+    const h = setup(true, { askReopen });
+    await open(h, "a.md", "AAA");
+    h.manager.setDirty("a.md", true);
+    await h.manager.openTab("a.md", { text: "NEW", encoding: "UTF-8" });
+    expect(askReopen).toHaveBeenCalledTimes(1);
+    expect(h.manager.activeTab()?.source).toBe("AAA");
+    expect(h.manager.activeTab()?.dirty).toBe(true);
+  });
+
+  it("放弃：装载磁盘新内容、回到顶部、脏位复位", async () => {
+    const h = setup(true, { askReopen: vi.fn(async () => "discard" as const) });
+    await open(h, "a.md", "AAA");
+    h.manager.setDirty("a.md", true);
+    h.state.scroll = 555;
+    await open(h, "a.md", "NEW");
+    expect(h.render).toHaveBeenLastCalledWith("NEW");
+    expect(docHtml()).toBe("<p>NEW</p>");
+    expect(h.state.scroll).toBe(0);
+    expect(h.manager.activeTab()?.dirty).toBe(false);
+  });
+
+  it("保存：走 saveTab 落盘、脏位复位，且不重载（保留当前现场）", async () => {
+    const saveTab = vi.fn(async () => true);
+    const h = setup(true, { askReopen: vi.fn(async () => "save" as const), saveTab });
+    await open(h, "a.md", "AAA");
+    h.manager.setDirty("a.md", true);
+    h.state.scroll = 321;
+    await h.manager.openTab("a.md", { text: "NEW", encoding: "UTF-8" });
+    expect(saveTab).toHaveBeenCalledTimes(1);
+    expect(h.render).toHaveBeenLastCalledWith("AAA"); // 未重渲
+    expect(h.manager.activeTab()?.dirty).toBe(false);
+  });
+
+  it("保存失败：中止重开，编辑与脏位保留", async () => {
+    const h = setup(true, {
+      askReopen: vi.fn(async () => "save" as const),
+      saveTab: vi.fn(async () => false),
+    });
+    await open(h, "a.md", "AAA");
+    h.manager.setDirty("a.md", true);
+    await h.manager.openTab("a.md", { text: "NEW", encoding: "UTF-8" });
+    expect(h.manager.activeTab()?.source).toBe("AAA");
+    expect(h.manager.activeTab()?.dirty).toBe(true);
+  });
+
+  it("未接 askReopen 的老调用方：保守中止，不静默丢编辑", async () => {
+    const h = setup(true); // 无 askReopen
+    await open(h, "a.md", "AAA");
+    h.manager.setDirty("a.md", true);
+    await h.manager.openTab("a.md", { text: "NEW", encoding: "UTF-8" });
+    expect(h.manager.activeTab()?.source).toBe("AAA");
+    expect(h.render).not.toHaveBeenCalledWith("NEW");
+  });
+
+  it("干净重开：不弹询问，静默重载（既有语义不变）", async () => {
+    const askReopen = vi.fn();
+    const h = setup(true, { askReopen });
+    await open(h, "a.md", "AAA");
+    await open(h, "a.md", "NEW");
+    expect(askReopen).not.toHaveBeenCalled();
+    expect(docHtml()).toBe("<p>NEW</p>");
   });
 });
 
@@ -328,7 +458,7 @@ describe("D-05 批量关闭（▾ / ⋯ 菜单用）", () => {
     await open(h, "a.md", "AAA");
     await open(h, "b.md", "BBB");
     await open(h, "c.md", "CCC"); // 活动是 c
-    h.manager.closeOthers();
+    await h.manager.closeOthers();
     await flushed();
     expect(h.manager.paths()).toEqual(["c.md"]);
     expect(h.manager.activeTab()?.path).toBe("c.md");
@@ -339,7 +469,7 @@ describe("D-05 批量关闭（▾ / ⋯ 菜单用）", () => {
     const h = setup();
     await open(h, "a.md", "AAA");
     await open(h, "b.md", "BBB");
-    h.manager.closeAll();
+    await h.manager.closeAll();
     await flushed();
     expect(h.manager.count()).toBe(0);
     expect(h.onEmpty).toHaveBeenCalledTimes(1);
@@ -352,7 +482,7 @@ describe("D-05 批量关闭（▾ / ⋯ 菜单用）", () => {
     await open(h, "b.md", "BBB");
     await open(h, "c.md", "CCC");
     h.manager.setDirty("a.md", true); // 非活动且脏
-    h.manager.closeOthers(); // 想关 a、b 两个
+    await h.manager.closeOthers(); // 想关 a、b 两个
     await flushed();
     expect(h.manager.paths()).toEqual(["a.md", "c.md"]); // a 被拒留下，b 关掉
   });
@@ -429,6 +559,7 @@ interface GuardHarness {
 function guardHarness(options: {
   dirty: boolean;
   count?: number;
+  titles?: string[];
   waiters?: Array<(choice: CloseChoice) => void>;
   saveResult?: boolean;
 }): GuardHarness {
@@ -441,6 +572,7 @@ function guardHarness(options: {
   const guard = createCloseGuard({
     hasDirty: () => options.dirty,
     dirtyCount: () => options.count ?? 1,
+    dirtyTitles: () => options.titles ?? ["笔记.md"],
     ask,
     save,
     quit,
@@ -475,6 +607,7 @@ describe("createCloseGuard（P0-7 回归修复：preventDefault 只在该拦的�
     expect(h.ask).toHaveBeenCalledTimes(1);
     const message = String(h.ask.mock.calls[0]?.[0] ?? "");
     expect(message).toContain("1 个文件尚未保存");
+    expect(message).toContain("笔记.md"); // UX-7：只说数量不说文件名的时代过去了
     waiters.forEach((resolve) => resolve("discard"));
     expect(await pending).toBe(true);
     expect(h.quit).toHaveBeenCalledTimes(1);
@@ -547,6 +680,35 @@ describe("createCloseGuard（P0-7 回归修复：preventDefault 只在该拦的�
     expect(h.ask).toHaveBeenCalledTimes(1);
     waiters.forEach((resolve) => resolve("discard"));
     expect(await first).toBe(true);
+  });
+});
+
+/* UX-7（des-5）：关闭确认文案——列前 3 个文件名，>3 个追加「等 N 个」。纯函数锚。 */
+describe("closeGuardMessage（UX-7 文案纯函数）", () => {
+  it("≤3 个：数量 + 全部文件名", () => {
+    expect(closeGuardMessage(["a.md"])).toBe("有 1 个文件尚未保存（a.md），关闭窗口前要保存吗？");
+    expect(closeGuardMessage(["a.md", "b.md", "c.md"])).toBe(
+      "有 3 个文件尚未保存（a.md、b.md、c.md），关闭窗口前要保存吗？",
+    );
+  });
+
+  it(">3 个：只列前 3 个，追加「等 N 个」（第 4 个名字不出现）", () => {
+    const message = closeGuardMessage(["a.md", "b.md", "c.md", "d.md", "e.md"]);
+    expect(message).toBe("有 5 个文件尚未保存（a.md、b.md、c.md 等 5 个），关闭窗口前要保存吗？");
+    expect(message).not.toContain("d.md");
+  });
+
+  it("守卫状态机真把文件名送进问询文案（harness 的 ask 收到 closeGuardMessage 产物）", async () => {
+    const waiters: Array<(c: CloseChoice) => void> = [];
+    const h = guardHarness({ dirty: true, waiters, titles: ["甲.md", "乙.md"] });
+    const pending = h.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(String(h.ask.mock.calls[0]?.[0] ?? "")).toBe(
+      "有 2 个文件尚未保存（甲.md、乙.md），关闭窗口前要保存吗？",
+    );
+    waiters.forEach((resolve) => resolve("cancel"));
+    expect(await pending).toBe(true);
   });
 });
 

@@ -69,6 +69,7 @@ function mountPanel(): void {
       <button id="set-width-dec" type="button">−</button>
       <span id="set-width-val">46</span>
       <button id="set-width-inc" type="button">＋</button>
+      <button id="set-reset-typo" type="button">恢复默认</button>
       <select id="set-font" class="settings-select">${fontSkeleton()}</select>
       <span class="settings-label">实际生效</span>
       <code id="set-font-effective"></code>
@@ -160,7 +161,7 @@ interface Ctx {
  * 每例重取模块，拿一份干净的模块级状态（量器在测试里由 hooks.measure 注入，
  * 不依赖 import 缓存，也不受上一例影响）。
  */
-async function freshSettings(): Promise<Ctx> {
+async function freshSettings(extra?: Partial<SettingsModule.SettingsHooks>): Promise<Ctx> {
   vi.resetModules();
   const settings = await import("../src/ui/settings");
   const theme = await import("../src/ui/theme");
@@ -169,6 +170,7 @@ async function freshSettings(): Promise<Ctx> {
     getDoc: () => document.getElementById("doc"),
     onFontChange,
     measure: fakeMeasure,
+    ...extra,
   });
   return { settings, applyThemePref: theme.applyThemePref, onFontChange };
 }
@@ -181,6 +183,10 @@ function widthVar(): string {
   return document.documentElement.style.getPropertyValue("--me-width");
 }
 
+function wideVar(): string {
+  return document.documentElement.style.getPropertyValue("--measure-wide");
+}
+
 function choose(id: string): void {
   const select = document.getElementById("set-font") as HTMLSelectElement;
   select.value = id;
@@ -191,6 +197,7 @@ beforeEach(() => {
   localStorage.clear();
   document.documentElement.style.removeProperty("--fs-body");
   document.documentElement.style.removeProperty("--me-width");
+  document.documentElement.style.removeProperty("--measure-wide");
   delete document.documentElement.dataset.theme;
   mountPanel();
   seedComputedStyle();
@@ -243,6 +250,28 @@ describe("字号步进（14–20px）", () => {
 });
 
 describe("字体推荐列表（D-02：三组语义分组）", () => {
+  it("UX-5：三组 optgroup 标题都带「当前：」，当前选择所在组显示选项名、其余组显示「默认」", async () => {
+    await freshSettings();
+    const boxes = [...document.querySelectorAll<HTMLOptGroupElement>("#set-font optgroup")];
+    expect(boxes.map((b) => b.label).every((label) => label.includes("当前："))).toBe(true);
+    expect(boxes[0].label).toContain("中文正文"); // 基名保留（序号分组名不丢）
+    expect(boxes[0].label).toContain("当前：HarmonyOS Sans"); // 默认档落在 cjk 组
+    expect(boxes[1].label).toContain("当前：默认");
+    expect(boxes[2].label).toContain("当前：默认");
+  });
+
+  it("UX-5：选择变化时组标题跟随——换组后旧组回落「默认」、新组显示选项名", async () => {
+    await freshSettings();
+    const boxes = () => [...document.querySelectorAll<HTMLOptGroupElement>("#set-font optgroup")];
+    choose("latin-georgia");
+    expect(boxes()[0].label).toContain("当前：默认");
+    expect(boxes()[1].label).toContain("当前：Georgia");
+    choose("cjk-notoserif");
+    expect(boxes()[0].label).toContain("当前：思源宋体");
+    expect(boxes()[1].label).toContain("当前：默认");
+    expect(boxes()[2].label).toContain("当前：默认");
+  });
+
   it("目录按组齐备：中文正文 / 西文 / 代码 各 5 项", async () => {
     await freshSettings();
     const boxes = [...document.querySelectorAll<HTMLOptGroupElement>("#set-font optgroup")];
@@ -555,6 +584,88 @@ describe("行宽步进（40–60em 步进 2，用户反馈批次）", () => {
     localStorage.setItem("modu-width", "abc");
     await freshSettings();
     expect(widthVar()).toBe("46");
+  });
+});
+
+/* ---- F3（P2-2）：--measure-wide 随行宽派生 + 行宽重排钩子 ---- */
+
+describe("行宽派生与重排钩子（F3）", () => {
+  it("--measure-wide = 行宽 + 14em（tokens.css 现状 60−46 的既有档差），随设置联动", async () => {
+    await freshSettings();
+    expect(wideVar()).toBe("calc((46 + 14) * var(--fs-body))"); // 启动恢复即派生
+    document.getElementById("set-width-inc")?.click();
+    expect(widthVar()).toBe("48");
+    expect(wideVar()).toBe("calc((48 + 14) * var(--fs-body))");
+  });
+
+  it("onWidthChange 停顿防抖：连点两次只在停顿后触发一次（refitView 重活不连跑）", async () => {
+    vi.useFakeTimers();
+    try {
+      const onWidthChange = vi.fn();
+      await freshSettings({ onWidthChange });
+      document.getElementById("set-width-inc")?.click();
+      document.getElementById("set-width-inc")?.click();
+      expect(onWidthChange).not.toHaveBeenCalled(); // 停顿未到不跑
+      vi.advanceTimersByTime(200);
+      expect(onWidthChange).toHaveBeenCalledTimes(1); // 两击合并为一次
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/* ---- UX-6（des-5）：数值点击直改（Enter/失焦提交、Esc 取消、越界钳制）+ 恢复默认 ---- */
+
+describe("UX-6 · 数值直改与恢复默认", () => {
+  function editInput(): HTMLInputElement {
+    return document.querySelector("#settings-panel input[type=number]") as HTMLInputElement;
+  }
+
+  it("点击数值变输入框：Enter 提交并按既有范围钳制（99 → 20）", async () => {
+    await freshSettings();
+    document.getElementById("set-fs-val")?.click();
+    const input = editInput();
+    expect(input).not.toBeNull();
+    input.value = "99";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(fsVar()).toBe("20px");
+    expect(document.getElementById("set-fs-val")?.textContent).toBe("20"); // span 已还原并回显
+    expect(localStorage.getItem("modu-fs")).toBe("20");
+  });
+
+  it("Esc 取消：不写任何值，span 原样还原", async () => {
+    await freshSettings();
+    document.getElementById("set-fs-val")?.click();
+    const input = editInput();
+    input.value = "18";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(fsVar()).toBe("16px");
+    expect(document.getElementById("set-fs-val")?.textContent).toBe("16");
+  });
+
+  it("失焦提交：点到别处也算确认；行宽吸附 2 的倍数", async () => {
+    await freshSettings();
+    document.getElementById("set-width-val")?.click();
+    const input = editInput();
+    input.value = "51";
+    input.dispatchEvent(new Event("blur"));
+    expect(widthVar()).toBe("52"); // clampWidth 吸附偶数档
+  });
+
+  it("恢复默认：字号回 16、行宽回 46；主题与配色不动（用户长期选择不被动）", async () => {
+    await freshSettings();
+    document.getElementById("set-fs-inc")?.click();
+    document.getElementById("set-width-inc")?.click();
+    document.getElementById("set-width-inc")?.click();
+    const theme = document.getElementById("set-theme") as HTMLSelectElement;
+    theme.value = "dark";
+    theme.dispatchEvent(new Event("change"));
+    document.getElementById("set-reset-typo")?.click();
+    expect(fsVar()).toBe("16px");
+    expect(widthVar()).toBe("46");
+    expect(localStorage.getItem("modu-fs")).toBe("16");
+    expect(localStorage.getItem("modu-width")).toBe("46");
+    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 });
 

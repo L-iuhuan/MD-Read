@@ -246,3 +246,82 @@ describe("Lane C：导出归一与打印契约锚", () => {
     expect(themeSrc).toMatch(/function syncThemeButton\(/);
   });
 });
+
+/* Lane H 批次（2026-09-29）：导出静默化。暗色导出的暗→亮→暗跳变用「同帧冻结层」消解——
+   export-state.css 只在 @media screen 命中（PrintToPdf 走 print media，零影响）；
+   main.ts 里 add/remove 必须与主题切换落在同一同步块（中间无 await ⇒ 同一次 style recalc）。 */
+describe("Lane H：导出冻结层（静默导出）锚", () => {
+  const exportCss = readFileSync("src/ui/export-state.css", "utf8");
+
+  it("冻结层只挂 screen 媒体：遮 #app + 居中提示，用色仅 token", () => {
+    expect(exportCss).toMatch(/@media\s+screen\s*\{/);
+    expect(exportCss).not.toMatch(/@media\s+print/); // 打印态零命中（静默化不得动 PDF）
+    expect(exportCss).toMatch(/html\.exporting #app\s*\{[^}]*visibility:\s*hidden/);
+    expect(exportCss).toMatch(/html\.exporting body::after\s*\{[^}]*place-items:\s*center/);
+    expect(exportCss).toMatch(/html\.exporting body::after\s*\{[^}]*color:\s*var\(--text\)/);
+    expect(exportCss).toMatch(/background:\s*var\(--bg-canvas\)/);
+  });
+
+  it("同帧时序：add(exporting) 先于亮色归一、finally 先还原主题再揭幕，两段中间无 await", () => {
+    const addAt = main.indexOf('classList.add("exporting")');
+    const lightAt = main.indexOf('document.documentElement.dataset.theme = "light"');
+    const restoreAt = main.indexOf("document.documentElement.dataset.theme = restored");
+    const removeAt = main.indexOf('classList.remove("exporting")');
+    expect(addAt).toBeGreaterThan(-1);
+    expect(lightAt).toBeGreaterThan(addAt); // 先遮屏、后变亮（同一次 recalc 生效）
+    expect(main.slice(addAt, lightAt)).not.toContain("await"); // 同一同步块
+    expect(restoreAt).toBeGreaterThan(-1);
+    expect(removeAt).toBeGreaterThan(restoreAt); // 先还原主题、后揭幕（还原瞬间不闪亮）
+    expect(main.slice(restoreAt, removeAt)).not.toContain("await"); // 还原与揭幕同块
+    expect(main).toMatch(/import "\.\/ui\/export-state\.css"/); // 样式已接线
+  });
+});
+
+/* Lane G 批次（2026-09-29）：视觉修复锚。G1/G4 = 纸列同源基准（findbar 右缘与状态栏
+   两端读数不再贴窗口）；G5/G6 = 纸面护栏（screen-only paint containment + 暗色纸缘）；
+   G8 = `.no-hit` 类名契约（挂/摘归 Lane I）；G2/G7 = 两处 token 值；G9/G10 = 孤儿删除
+   与窗口三钮的皮外移接线。 */
+describe("Lane G：视觉批锚（纸列对齐 / 暗色纸缘 / 无结果计数 / 外移接线）", () => {
+  it("G1/G4：查找条右缘与状态栏两端读数走 --paper-shift 同源基准", () => {
+    expect(app).toMatch(/--paper-shift:\s*var\(--w-outline\)/);
+    expect(app).toMatch(
+      /\.findbar\s*\{[^}]*inset-inline-end:\s*max\(var\(--size-4\),\s*calc\(\(100% - var\(--paper-shift\)/,
+    );
+    const bar = /\.statusbar\s*\{([^}]*)\}/.exec(app)?.[1] ?? "";
+    expect(bar).toMatch(/padding-inline:[\s\S]*?\+ var\(--paper-shift\)/);
+    expect(bar).toMatch(/padding-inline:[\s\S]*?- var\(--paper-shift\)/);
+  });
+
+  it("G5/G6：纸面护栏——screen-only paint containment + 暗色纸缘 1px inset", () => {
+    expect(app).toMatch(/@media screen\s*\{\s*#doc\s*\{\s*contain:\s*paint/);
+    expect(app).toMatch(
+      /\[data-theme="dark"\] #doc\s*\{\s*box-shadow:\s*inset 0 0 0 1px var\(--border-chrome\)/,
+    );
+  });
+
+  it("G8：`.no-hit` 契约——样式只认类名，色走 --amber-11（挂/摘逻辑在 Lane I）", () => {
+    expect(app).toMatch(/\.find-count\.no-hit\s*\{\s*color:\s*var\(--amber-11\)/);
+    expect(tokens).toMatch(/--amber-11:\s*#ab6400/);
+    expect(tokens).toMatch(/--amber-11:\s*#ffca16/);
+  });
+
+  it("G9：--bg-zebra 孤儿 token 已删（注释提及不算声明）", () => {
+    expect(tokens).not.toMatch(/--bg-zebra\s*:/);
+  });
+
+  it("G10：窗口三钮的皮外移到 window-controls.css，并由 index.html <link> 接线", () => {
+    expect(html).toMatch(/<link rel="stylesheet" href="\/src\/app\/window-controls\.css"/);
+    const win = readFileSync("src/app/window-controls.css", "utf8");
+    expect(win).toMatch(
+      /\.topbar > #win-close\s*\{\s*inline-size:\s*calc\(var\(--w-winbtn\) \+ 8px\)/,
+    );
+    expect(app).not.toMatch(/\.topbar > #win-min\s*,/); // 老位置不留残段
+  });
+
+  it("G2/G7：暗色 --bg-subtle 提档（20% chrome）+ 淡出值 .4 → .6", () => {
+    expect(tokens).toMatch(
+      /--bg-subtle:\s*color-mix\(in oklab, var\(--pal-chrome\) 20%, var\(--pal-hair\)\)/,
+    );
+    expect(tokens).toMatch(/--opacity-dim:\s*\.6/);
+  });
+});

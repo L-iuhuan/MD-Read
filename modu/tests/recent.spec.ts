@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
-import { dirName, hydrateRecent, loadRecent, pushRecent, setupRecentMenu } from "../src/app/recent";
+import { clearRecent, dirName, hydrateRecent, loadRecent, pushRecent, removeRecent, setupRecentMenu } from "../src/app/recent";
 
 beforeEach(() => {
   localStorage.clear();
@@ -120,17 +120,18 @@ describe("hydrateRecent（读取时归一）", () => {
   });
 });
 
-describe("recent 菜单", () => {
-  function mountMenu(): { btn: HTMLButtonElement; menu: HTMLElement } {
-    document.body.innerHTML =
-      '<div id="recent-wrap"><button id="btn-recent">最近</button>' +
-      '<div id="recent-menu" hidden></div></div>';
-    return {
-      btn: document.getElementById("btn-recent") as HTMLButtonElement,
-      menu: document.getElementById("recent-menu") as HTMLElement,
-    };
-  }
+/** 菜单夹具（UX-8 组也用）：#recent-wrap + 按钮 + 常驻隐藏菜单 */
+function mountMenu(): { btn: HTMLButtonElement; menu: HTMLElement } {
+  document.body.innerHTML =
+    '<div id="recent-wrap"><button id="btn-recent">最近</button>' +
+    '<div id="recent-menu" hidden></div></div>';
+  return {
+    btn: document.getElementById("btn-recent") as HTMLButtonElement,
+    menu: document.getElementById("recent-menu") as HTMLElement,
+  };
+}
 
+describe("recent 菜单", () => {
   it("点击展开、点项回调 onPick 并收起", () => {
     pushRecent("D:\\docs\\a.md");
     const { btn, menu } = mountMenu();
@@ -151,7 +152,8 @@ describe("recent 菜单", () => {
     const { btn, menu } = mountMenu();
     setupRecentMenu(vi.fn());
     btn.click();
-    const items = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item"));
+    // 只数文件条目（UX-8 后底部多了「清空最近」动作项，按 .is-action 排除）
+    const items = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
     expect(items).toHaveLength(2);
     expect(items[0]?.querySelector(".menu-name")?.textContent).toBe("b.md");
     expect(items[0]?.querySelector(".menu-path")).toBeNull(); // 无目录 → 不渲染第二行
@@ -180,5 +182,49 @@ describe("recent 菜单", () => {
     btn.click();
     const empty = menu.querySelector(".recent-empty") as HTMLElement;
     expect(empty.textContent).toBe("暂无最近文件");
+  });
+});
+
+/* ---- UX-8（des-5）：死条目移除 + 菜单清空入口 ---- */
+
+describe("UX-8 · removeRecent / clearRecent / 菜单清空", () => {
+  it("removeRecent：按 canonical 严格匹配移除并返回 true；无匹配不动存储返回 false", () => {
+    pushRecent("a.md");
+    pushRecent("b.md");
+    expect(removeRecent("不在列表.md")).toBe(false);
+    expect(loadRecent()).toEqual(["b.md", "a.md"]); // 存储未被无匹配调用搅动
+    expect(removeRecent("a.md")).toBe(true);
+    expect(loadRecent()).toEqual(["b.md"]);
+  });
+
+  it("clearRecent：清掉全部条目（删键不留空壳）并返回条数", () => {
+    pushRecent("a.md");
+    pushRecent("b.md");
+    expect(clearRecent()).toBe(2);
+    expect(loadRecent()).toEqual([]);
+    expect(localStorage.getItem("modu-recent")).toBe(null);
+  });
+
+  it("菜单底部「清空最近」：直接执行、收起菜单、onCleared 反馈；清空后再开是空态", () => {
+    pushRecent("D:\\docs\\a.md");
+    const { btn, menu } = mountMenu();
+    const onCleared = vi.fn();
+    setupRecentMenu(vi.fn(), onCleared);
+    btn.click();
+    const clear = menu.querySelector(".menu-item.is-action") as HTMLButtonElement;
+    expect(clear.textContent).toBe("清空最近");
+    clear.click();
+    expect(onCleared).toHaveBeenCalledTimes(1); // 调用方据此闪状态栏「已清空最近列表」
+    expect(menu.hidden).toBe(true);
+    expect(loadRecent()).toEqual([]);
+    btn.click(); // 再开：空态文案，死条目无处可点
+    expect(menu.querySelector(".recent-empty")?.textContent).toBe("暂无最近文件");
+  });
+
+  it("空列表不渲染「清空最近」（没有可清的东西）", () => {
+    const { btn, menu } = mountMenu();
+    setupRecentMenu(vi.fn());
+    btn.click();
+    expect(menu.querySelector(".menu-item.is-action")).toBeNull();
   });
 });

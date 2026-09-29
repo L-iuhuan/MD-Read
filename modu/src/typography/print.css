@@ -111,6 +111,17 @@
     white-space: normal;
   }
 
+  /* P2-15（des-5·UX-9）：超页高单体（大 mermaid / 长图）按比例缩进可印高。
+     `break-inside: avoid` 对超过一页高的单体无效（Chromium 直接硬裁）；导出流程的
+     markPrintBlocks 量块高，超过竖版可印高（PORTRAIT_PRINTABLE_HEIGHT_PX = 986px，
+     即 261mm@96dpi，推导见 render/print-ready.ts）者打 .print-tall 并内联
+     --print-fit（clamp 下限 0.4，再小不可读）。只作用于该类元素，屏显零影响。
+     ⚠ 与 squeeze-page 的「不缩放」裁决不冲突：那条禁的是**表格**压列时偷懒缩放，
+     本条针对无法分页的单体图形。最终 PDF 效果需人工验证（jsdom 无打印排版）。 */
+  .print-tall {
+    zoom: var(--print-fit, 1);
+  }
+
   /* P1-4(b) 修复（2026-09-23 批次 2，真机看图判定后实施）：**pre 也是横向滚动容器**，
      而它不在上方 P0-5 那条 `.table-wrap` 覆盖里 ⇒ 打印时按**当前滚动位置**出图：
      长代码行被截断、滚动外内容完全不可达（实测：PDF 里 180+ 的 `c` 串只剩前 153 字符，

@@ -7,7 +7,8 @@
  *
  * 样式在 app.css §13（F 批由 main.ts 的内联注入迁出）：四个入口（浮层卡片语言
  * 三处 + 本浮层）统一在壳层样式表里读，注入 <style> 会多一份无处可查的 CSS。
- * 运行行为与抽取前逐条一致： #close-guard 遮罩、按钮「保存/放弃/取消」次序、
+ * 运行行为与抽取前逐条一致： #close-guard 遮罩、按钮「保存并关闭/放弃修改/取消」
+ * 次序（UX-7·des-5 文案定稿：按钮名自含后果，不再只写「保存/放弃」）、
  * 首枚带 guard-primary、默认焦点在保存、Esc 与点浮层空白 = 取消、
  * capture 阶段监听 keydown 并 stopImmediatePropagation（不让全局 Esc 顺手关掉底下的浮层）。
  *
@@ -43,8 +44,10 @@ function buildOverlay(
     el.addEventListener("click", () => settle(choice));
     return el;
   };
-  const saveBtn = button("保存", "save", true);
-  row.append(saveBtn, button("放弃", "discard"), button("取消", "cancel"));
+  // UX-7（des-5）：按钮文案自含后果——「保存并关闭 / 放弃修改 / 取消」，
+  // 与关窗浮层、标签级三选一（askReopen/confirmClose）共用同一套词。
+  const saveBtn = button("保存并关闭", "save", true);
+  row.append(saveBtn, button("放弃修改", "discard"), button("取消", "cancel"));
   card.append(text, row);
   overlay.appendChild(card);
   overlay.addEventListener("click", (event) => {
@@ -55,7 +58,7 @@ function buildOverlay(
   return { overlay, primary: saveBtn };
 }
 
-/** 三选一浮层（保存 / 放弃 / 取消）：Esc 或点浮层空白 = 取消，默认焦点在「保存」。 */
+/** 三选一浮层（保存并关闭 / 放弃修改 / 取消）：Esc 或点浮层空白 = 取消，默认焦点在「保存并关闭」。 */
 export function askCloseChoice(message: string): Promise<CloseChoice> {
   return new Promise<CloseChoice>((resolve) => {
     let settled = false;

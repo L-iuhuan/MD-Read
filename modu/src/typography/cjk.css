@@ -228,10 +228,13 @@
               background-color var(--duration-1) var(--ease-1);
 }
 .mdc pre:hover .code-copy, .mdc .code-copy:focus-visible { opacity: 1; }
+/* hover 底改用 --bg-subtle（G2，2026-09-29）：暗色下原 --bg-hover 比代码块底更暗，
+   悬停几乎没有反馈；--bg-subtle 的暗色档已提一档（tokens.css），与代码块底形成
+   明暗反转。描边/图标颜色照旧同换，仍是三重反馈。 */
 .mdc .code-copy:hover {
   color: var(--text);
   border-color: var(--border-strong);
-  background: var(--bg-hover);
+  background: var(--bg-subtle);
 }
 
 /* ==========================================================================

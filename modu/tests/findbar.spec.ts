@@ -65,6 +65,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  document.documentElement.classList.remove("editing"); // UX-1 用例挂的类不外溢
 });
 
 describe("wrap/unwrap 文本一致性（复制保真红线）", () => {
@@ -131,7 +132,7 @@ describe("查找范围与匹配规则", () => {
     findbar.open();
     typeIn("");
     expect(marksInDoc().length).toBe(0);
-    expect(getCount()).toBe("0/0");
+    expect(getCount()).toBe(""); // UX-3：空查询计数显示空（原先与 0 命中同貌 0/0）
   });
 });
 
@@ -348,5 +349,64 @@ describe("C7：输入防抖（仅 input 路径）", () => {
     expect(getCount()).toBe("1/2");
     vi.advanceTimersByTime(500);
     expect(getCount()).toBe("1/2"); // 旧定时器不复活、索引不被重置
+  });
+});
+
+/* des-5 交互批：编辑态 Ctrl+F 让位（UX-1）、计数三态（UX-3）、按钮不抢焦点（UX-4）。
+ * findCountState 是纯函数，此处经真实 setupFindbar 路径断言其落点（文案 + .no-hit 类）。 */
+describe("UX-1/UX-3/UX-4（des-5 交互批）", () => {
+  it("UX-1：编辑态（html.editing）Ctrl+F 不打开阅读态查找条；退出编辑态恢复", () => {
+    const findbar = setupFindbar(() => getDoc());
+    document.documentElement.classList.add("editing"); // 类由 overlay-state.ts 挂，此处直接构造
+    pressKey(document, "f", { ctrl: true });
+    expect(findbar.isOpen()).toBe(false); // 让位 CM 搜索面板：不开、不 preventDefault
+    document.documentElement.classList.remove("editing");
+    pressKey(document, "f", { ctrl: true });
+    expect(findbar.isOpen()).toBe(true);
+  });
+
+  it("UX-3：计数三态——空查询空文案不挂类；非空 0 命中「无结果」+.no-hit；命中恢复 n/N 摘类", () => {
+    const findbar = setupFindbar(() => getDoc());
+    const counter = document.getElementById("find-count") as HTMLElement;
+    expect(counter.getAttribute("aria-live")).toBe("polite"); // 命中变化对读屏可闻
+    findbar.open();
+    typeIn("");
+    expect(getCount()).toBe("");
+    expect(counter.classList.contains("no-hit")).toBe(false);
+    typeIn("语料里不存在的词");
+    expect(getCount()).toBe("无结果");
+    expect(counter.classList.contains("no-hit")).toBe(true);
+    typeIn("repeated");
+    expect(getCount()).toBe("1/2");
+    expect(counter.classList.contains("no-hit")).toBe(false);
+    findbar.close();
+  });
+
+  it("UX-3：重开清残留——上一会话的「无结果」不带到空查询的新会话", () => {
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("语料里不存在的词");
+    expect(getCount()).toBe("无结果");
+    findbar.close();
+    getInput().value = ""; // 模拟用户清空查询后重开
+    findbar.open();
+    expect(getCount()).toBe("");
+  });
+
+  it("UX-4：↑/↓/✕ 三钮 mousedown 被 preventDefault，点击后焦点仍在输入框", () => {
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    expect(document.activeElement).toBe(getInput()); // open 先把焦点放进输入框
+    typeIn("repeated");
+    for (const id of ["find-next", "find-prev"]) {
+      const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+      (document.getElementById(id) as HTMLElement).dispatchEvent(event);
+      expect(event.defaultPrevented, `${id} 的 mousedown 须被拦下`).toBe(true);
+    }
+    (document.getElementById("find-next") as HTMLElement).click();
+    expect(getCount()).toBe("2/2"); // 点击功能不受 mousedown preventDefault 影响
+    expect(document.activeElement).toBe(getInput()); // 焦点没跑到按钮上
+    (document.getElementById("find-close") as HTMLElement).click();
+    expect(findbar.isOpen()).toBe(false);
   });
 });

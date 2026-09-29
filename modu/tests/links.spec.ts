@@ -45,11 +45,20 @@ describe("classifyHref：href 三分类判定", () => {
     expect(classifyHref("#")).toBe("anchor");
   });
 
-  it("其余（含相对路径与非 http 协议）→ 相对（放行默认行为）", () => {
+  it("其余（相对路径）→ 相对（放行默认行为）；单字母盘符不算 scheme", () => {
     expect(classifyHref("./other.md")).toBe("relative");
     expect(classifyHref("img/pic.png")).toBe("relative");
     expect(classifyHref("../up/one.md")).toBe("relative");
-    expect(classifyHref("mailto:user@host")).toBe("relative");
+    expect(classifyHref("c:\\docs\\a.md")).toBe("relative"); // 盘符形态，不是协议
+  });
+
+  it("F4：mailto/tel → 交系统默认应用；其余协议 → 不支持", () => {
+    expect(classifyHref("mailto:user@host")).toBe("mailto");
+    expect(classifyHref("MAILTO:a@b.c")).toBe("mailto"); // scheme 大小写不敏感
+    expect(classifyHref("tel:+8613800000000")).toBe("tel");
+    expect(classifyHref("TEL:+1234")).toBe("tel");
+    expect(classifyHref("ftp://files.example.com/x.zip")).toBe("unsupported");
+    expect(classifyHref("javascript:alert(1)")).toBe("unsupported"); // 陌生 scheme 一律不支持
   });
 });
 
@@ -133,16 +142,40 @@ describe("C3：相对链接接管", () => {
 
   it("非 md 相对链接：preventDefault + 状态栏闪示，绝不导航", () => {
     const notify = vi.fn();
-    const container = mount('<a href="assets/data.xlsx">表</a><a href="mailto:a@b.c">信</a>', {
+    const container = mount('<a href="assets/data.xlsx">表</a>', {
       docPath: () => "C:\\docs\\a.md",
       openMd: vi.fn(),
       notify,
     });
-    const [xlsx, mailto] = Array.from(container.querySelectorAll("a"));
+    const [xlsx] = Array.from(container.querySelectorAll("a"));
     expect(clickOn(xlsx).defaultPrevented).toBe(true);
-    expect(clickOn(mailto).defaultPrevented).toBe(true);
-    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith("该链接指向应用外文件，未打开");
+  });
+
+  it("F4：mailto/tel 点击 → preventDefault 并交 opener（系统默认邮件/电话应用）", () => {
+    const notify = vi.fn();
+    const container = mount(
+      '<a href="mailto:hi@example.com">信</a><a href="tel:+86138">话</a>',
+      { notify },
+    );
+    const [mail, tel] = Array.from(container.querySelectorAll("a"));
+    expect(clickOn(mail).defaultPrevented).toBe(true);
+    expect(clickOn(tel).defaultPrevented).toBe(true);
+    expect(mocks.openUrl).toHaveBeenCalledTimes(2);
+    expect(mocks.openUrl).toHaveBeenCalledWith("mailto:hi@example.com");
+    expect(mocks.openUrl).toHaveBeenCalledWith("tel:+86138");
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("F4：其余协议（ftp: 等）→ preventDefault + 状态栏提示不支持，不经 opener", () => {
+    const notify = vi.fn();
+    const container = mount('<a href="ftp://files.example.com/x.zip">ftp</a>', { notify });
+    const event = clickOn(container.querySelector("a") as Element);
+    expect(event.defaultPrevented).toBe(true);
+    expect(mocks.openUrl).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith("暂不支持 ftp: 链接");
   });
 
   it("handlers 每次接线刷新（重挂容器后基准路径随新文档）", () => {

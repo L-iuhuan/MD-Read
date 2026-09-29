@@ -11,6 +11,7 @@ import { whenPainted } from "./paint-timing";
 import { buildSepEl, buildTabEl, type TabDomDeps } from "./tab-dom";
 import type { OutlineItem, RenderResult } from "../render/pipeline";
 import { createTabMenus, type TabMenus } from "../ui/tabs-menu";
+import type { CloseChoice } from "./close-guard";
 
 /** 标签状态。dirty/bom/crlf 由 M3 编辑器接线启用；editor 为编辑器态存档 */
 export interface Tab {
@@ -56,8 +57,14 @@ export interface TabManagerDeps {
   setScroll(top: number): void;
   /** 最后一个标签关闭后的空态（欢迎提示等） */
   onEmpty(): void;
-  /** dirty 标签关闭前确认，返回 false 放弃关闭 */
-  confirmClose(tab: Tab): boolean;
+  /** dirty 标签关闭前确认（P1-7/F1：实现侧弹三选一浮层并落定「保存」分支），
+   *  false = 放弃关闭。兼容旧同步 boolean（window.confirm 形态）。 */
+  confirmClose(tab: Tab): boolean | Promise<boolean>;
+  /** F2（P2-1）：dirty 标签同路径重开前的三选一（保存/放弃/取消）；
+   *  缺省视为取消——未接线的调用方不得静默丢编辑。 */
+  askReopen?(tab: Tab): Promise<CloseChoice>;
+  /** F2：「保存」分支的单标签落盘（main.ts 复用关窗保存链）；false = 落盘失败 */
+  saveTab?(tab: Tab): Promise<boolean>;
   /** 切走标签前保存编辑器态（null = 编辑器不属当前标签，保留旧档） */
   saveEditorState?(): SavedEditorState | null;
   /** 激活标签后同步编辑器（恢复存量态或装载源文） */
@@ -72,14 +79,16 @@ export interface TabManagerDeps {
 
 export interface TabManager {
   /** activate=false：只上栏不渲染不激活（多文件连开时中间项省掉白做的渲染，P5 批2）；
-   *  默认 true。刷新当前活动标签时强制重挂（防 stale DOM），忽略 false。 */
-  openTab(path: string, file: TabFile, activate?: boolean): void;
+   *  默认 true。刷新当前活动标签时强制重挂（防 stale DOM），忽略 false。
+   *  F2 起 existing+dirty 分支会先弹三选一浮层再定夺重开，故为异步。 */
+  openTab(path: string, file: TabFile, activate?: boolean): Promise<void>;
   activateTab(path: string): void;
-  closeTab(path: string): void;
-  /** 关掉除活动项以外的全部标签（▾ / ⋯ 菜单「关闭其他标签」）。脏标签逐个走确认。 */
-  closeOthers(): void;
-  /** 关掉全部标签（菜单「关闭全部标签」）。脏标签逐个走确认。 */
-  closeAll(): void;
+  /** F1 起异步：dirty 标签先经 confirmClose（三选一浮层）放行后才移除 */
+  closeTab(path: string): Promise<void>;
+  /** 关掉除活动项以外的全部标签（▾ / ⋯ 菜单「关闭其他标签」）。脏标签逐个走确认（串行）。 */
+  closeOthers(): Promise<void>;
+  /** 关掉全部标签（菜单「关闭全部标签」）。脏标签逐个走确认（串行）。 */
+  closeAll(): Promise<void>;
   activeTab(): Tab | null;
   setDirty(path: string, dirty: boolean): void;
   count(): number;
@@ -121,6 +130,9 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
   let renderTicket = 0;
   /** 在途延迟渲染数：loading 灯随最后一个结束才熄（连点不中途闪灭） */
   let pendingLoads = 0;
+  /** 三选一浮层在飞（F1/F2 共用）：忽略重复关闭/重开请求——双击 ✕、连按
+   *  Ctrl+W、重开与关闭交叠都不得叠出第二层浮层（#close-guard 同 id 会串）。 */
+  let confirmInFlight = false;
 
   function find(path: string): Tab | null {
     return tabs.find((tab) => tab.path === path) ?? null;
@@ -384,7 +396,7 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
 
   setupTabDnd();
 
-  function openTab(path: string, file: TabFile, activate = true): void {
+  async function openTab(path: string, file: TabFile, activate = true): Promise<void> {
     const existing = find(path);
     let wasActive = false;
     if (existing === null) {
@@ -403,6 +415,33 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
       });
     } else {
       wasActive = existing.path === activePath;
+      if (existing.dirty) {
+        // F2（P2-1）：脏标签同路径重开不再静默覆盖——先三选一。此前 stashCurrent
+        // 因 current===target 提前返回，loadEditorState(null) 直接拿磁盘内容盖掉
+        // CM 未保存文本且 dirty 不复位，编辑无声丢失。
+        if (confirmInFlight) {
+          return; // 已有浮层在飞：忽略这次重开（防叠层）
+        }
+        confirmInFlight = true;
+        let choice: CloseChoice;
+        try {
+          choice = await (deps.askReopen?.(existing) ?? Promise.resolve<CloseChoice>("cancel"));
+          if (choice === "save" && (await deps.saveTab?.(existing)) !== true) {
+            return; // 未接线/落盘失败：中止重开（失败文案由保存链闪显）
+          }
+        } finally {
+          confirmInFlight = false;
+        }
+        if (choice === "cancel") {
+          return; // 中止重开：内容、脏位、编辑器态全部原样保留
+        }
+        if (choice === "save") {
+          existing.dirty = false; // 已落盘：内容即当前所见（saveTab 链已写回 source）
+          renderBar();
+          return; // 不重载——重载会平白丢掉滚动位置与编辑器现场
+        }
+        // discard：用户已批准放弃编辑，按既有语义装载磁盘新内容
+      }
       existing.source = file.text; // 同路径重开 = 刷新内容并回到顶部（M1 语义）
       existing.encoding = file.encoding;
       existing.scroll = 0;
@@ -410,6 +449,7 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
       existing.crlf = file.crlf === true;
       existing.editor = null; // 内容已刷新，旧编辑器态作废
       existing.cachedFragment = null; // 缓存同步作废（P5 批3 失效条件①：防挂旧文）
+      existing.dirty = false; // F2：重开完成 = 与磁盘同源，脏位复位（防残留）
     }
     if (activate || wasActive) {
       activateTab(path);
@@ -418,14 +458,28 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     }
   }
 
-  function closeTab(path: string): void {
-    const idx = tabs.findIndex((tab) => tab.path === path);
+  async function closeTab(path: string): Promise<void> {
+    let idx = tabs.findIndex((tab) => tab.path === path);
     if (idx < 0) {
       return;
     }
     const tab = tabs[idx];
-    if (tab.dirty && !deps.confirmClose(tab)) {
-      return; // 用户取消，标签保留
+    if (tab.dirty) {
+      if (confirmInFlight) {
+        return; // 浮层已开：忽略重复关闭请求（双击 ✕ / 连按 Ctrl+W）
+      }
+      confirmInFlight = true;
+      try {
+        if (!(await deps.confirmClose(tab))) {
+          return; // 用户取消或「保存」落盘失败：标签保留
+        }
+      } finally {
+        confirmInFlight = false;
+      }
+      idx = tabs.findIndex((t) => t.path === path);
+      if (idx < 0) {
+        return; // 问询期间已被其他路径关闭
+      }
     }
     tabs.splice(idx, 1);
     if (path !== activePath) {
@@ -442,23 +496,24 @@ export function createTabManager(bar: HTMLElement, deps: TabManagerDeps): TabMan
     }
   }
 
-  /** 关闭一批标签（▾ / ⋯ 菜单的批量关闭）。逐个走 closeTab —— dirty 标签照常弹确认，
-   *  用户取消的那一个就留下（批量操作不做「全有或全无」，与单个关闭的语义一致）。
+  /** 关闭一批标签（▾ / ⋯ 菜单的批量关闭）。逐个**串行 await** closeTab —— dirty 标签
+   *  照常弹确认且一次只开一层浮层，用户取消的那一个就留下（批量操作不做
+   *  「全有或全无」，与单个关闭的语义一致）。
    *  ⚠ 快照路径再遍历：closeTab 会改 tabs 数组，直接迭代 live 数组会跳项。 */
-  function closeMany(paths: string[]): void {
+  async function closeMany(paths: string[]): Promise<void> {
     for (const path of [...paths]) {
       if (find(path) !== null) {
-        closeTab(path);
+        await closeTab(path);
       }
     }
   }
 
-  function closeOthers(): void {
-    closeMany(tabs.filter((tab) => tab.path !== activePath).map((tab) => tab.path));
+  function closeOthers(): Promise<void> {
+    return closeMany(tabs.filter((tab) => tab.path !== activePath).map((tab) => tab.path));
   }
 
-  function closeAll(): void {
-    closeMany(tabs.map((tab) => tab.path));
+  function closeAll(): Promise<void> {
+    return closeMany(tabs.map((tab) => tab.path));
   }
 
   return {

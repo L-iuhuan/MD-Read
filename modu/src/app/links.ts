@@ -11,12 +11,16 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { isMarkdownPath } from "./md-ext";
 
-/** 链接分类：外链走系统浏览器；内锚与相对链接保持 WebView 默认行为 */
-export type HrefKind = "external" | "anchor" | "relative";
+/** 链接分类：外链走系统浏览器；mailto/tel 走系统默认应用（F4）；内锚与相对链接
+ *  保持 WebView 默认行为；其余未知协议（ftp: 等）提示不支持 */
+export type HrefKind = "external" | "anchor" | "relative" | "mailto" | "tel" | "unsupported";
 
 /**
  * 纯函数：href 分类判定。
- * http:// 或 https:// 开头（大小写不敏感）→ 外链；# 开头 → 内锚；其余 → 相对。
+ * http:// 或 https:// 开头（大小写不敏感）→ 外链；# 开头 → 内锚；
+ * mailto:/tel:（大小写不敏感）→ 交 opener（capabilities 的 opener:allow-default-urls
+ * 许可清单恰为 http/https/mailto/tel）；其余带 scheme 的 → 不支持（单字母「盘符:」
+ * 形态不算 scheme，仍按相对路径处理）；无 scheme → 相对。
  */
 export function classifyHref(href: string): HrefKind {
   if (/^https?:\/\//i.test(href)) {
@@ -24,6 +28,15 @@ export function classifyHref(href: string): HrefKind {
   }
   if (href.startsWith("#")) {
     return "anchor";
+  }
+  if (/^mailto:/i.test(href)) {
+    return "mailto"; // F4（P2-8）：此前落 relative → nav-guard 取消 → 点击无反应
+  }
+  if (/^tel:/i.test(href)) {
+    return "tel";
+  }
+  if (/^[a-z][a-z0-9+.-]+:/i.test(href)) {
+    return "unsupported"; // ftp: 等其余协议
   }
   return "relative";
 }
@@ -101,12 +114,19 @@ export function setupExternalLinks(
       if (kind === "anchor") {
         return; // 内锚：WebView 内滚动
       }
-      if (kind === "external") {
+      if (kind === "external" || kind === "mailto" || kind === "tel") {
+        // 外链与 mailto:/tel:（F4）：交系统默认应用。放行默认导航会把整窗带走，必须拦。
         event.preventDefault();
         openUrl(href).catch((error: unknown) => {
           // 打开失败不吞不炸：本模块没有状态栏通道，留控制台证据即可
           console.error(`无法在系统浏览器打开链接：${String(error)}`);
         });
+        return;
+      }
+      if (kind === "unsupported") {
+        // 未知协议（ftp: 等，F4）：拦下不导航，状态栏说明
+        event.preventDefault();
+        current.notify?.(`暂不支持 ${href.slice(0, href.indexOf(":"))}: 链接`);
         return;
       }
       // 相对链接（C3）：默认导航会把整窗带走（404），一律拦截

@@ -30,8 +30,14 @@ const BUDGETS: Budget[] = [
   {
     file: "src/app.css",
     soft: 1200,
-    hard: 1455,
-    note: "样式表不参与 400 行铁律 → 曾经从 957 涨到 1437。hard 属**棘轮，只往紧的方向转**：2026-09-27 两次外移 —— ①「D-11b 工作区面板的皮」→ `src/app/workspace-panel.css`（1599→1534 ⇒ hard 1600→1540）；②「设置面板重做的皮」→ `src/app/settings-panel.css`（本批又加到 1601 ✗ ⇒ 搬出后回收 hard 1540→1538；③「侧栏面板页签」→ `src/app/shell-tail.css`（1538→1455）。⚠ 外移必须搬**最后**一段并让新文件紧跟 `./app.css` 导入，且新规则特异性不得低于原规则，才能在层叠上等价。⚠ 本文件是按 `\\n` 切分、末尾换行不额外计一行；用别的口径数会差 1 行 ✗（本批踩过）。继续拆的方向：按 §1…§13 分段物理拆分（Phase 2.5）。",
+    hard: 1452,
+    note: "样式表不参与 400 行铁律 → 曾经从 957 涨到 1437。hard 属**棘轮，只往紧的方向转**：2026-09-27 两次外移 —— ①「D-11b 工作区面板的皮」→ `src/app/workspace-panel.css`（1599→1534 ⇒ hard 1600→1540）；②「设置面板重做的皮」→ `src/app/settings-panel.css`（本批又加到 1601 ✗ ⇒ 搬出后回收 hard 1540→1538；③「侧栏面板页签」→ `src/app/shell-tail.css`（1538→1455）；④ 2026-09-29 Lane G 视觉批：「窗口三钮的皮」→ `src/app/window-controls.css`（先外移 32 行、本批再 +29 ⇒ hard 1455→1452）。⚠ 外移必须搬**最后**一段并让新文件紧跟 `./app.css` 导入，且新规则特异性不得低于原规则，才能在层叠上等价（④ 的特例：main.ts 是并发写域 ⇒ 接线走 `index.html` 的 <link>；该段零测试锚点、全库无第二个 `.topbar > #win-*` 消费者，故顺序无关）。⚠ 本文件是按 `\\n` 切分、末尾换行不额外计一行；用别的口径数会差 1 行 ✗（本批踩过）。继续拆的方向：按 §1…§13 分段物理拆分（Phase 2.5）。",
+  },
+  {
+    file: "src/app/window-controls.css",
+    soft: 60,
+    hard: 100,
+    note: "窗口三钮的皮（2026-09-29 自 app.css 外移，G10 棘轮拆分的产物）。接线在 index.html 的 <link>。若它涨过 100 行，说明又混进了别的段——挪去正确分片，不要抬上限。",
   },
   {
     file: "src/typography/tokens.css",

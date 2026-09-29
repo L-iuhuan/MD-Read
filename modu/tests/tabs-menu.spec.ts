@@ -9,6 +9,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { createTabMenus, dirOf, type TabMenusDeps } from "../src/ui/tabs-menu";
+import { setupFindbar } from "../src/ui/findbar";
 import type { Tab } from "../src/app/tabs";
 
 const MENU_DOM = `
@@ -187,22 +188,43 @@ describe("⋯ 溢出菜单", () => {
     h.el("btn-overflow").click();
     const menu = h.el("overflow-menu");
     const items = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
-    expect(items.map((el) => el.textContent)).toEqual(["最近", "Aa", "◐", "PDF"]);
+    // UX-2（des-5）：「查找」居首（此前零可发现入口），其后仍是四个代理项
+    expect(items.map((el) => el.textContent)).toEqual(["查找", "最近", "Aa", "◐", "PDF"]);
     expect(items.map((el) => el.textContent)).not.toContain("打开");
 
-    // 逐项点一遍：每个代理项各命中一次自己的原按钮，且点完菜单先收起
+    // 逐项点一遍（i=0 是「查找」，非代理项，另有用例）：每个代理项各命中一次自己的原按钮，且点完菜单先收起
     const ids = ["btn-recent", "btn-settings", "btn-theme", "btn-export"] as const;
     for (let i = 0; i < ids.length; i += 1) {
       if (menu.hidden) {
         h.el("btn-overflow").click();
       }
       const again = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
-      realClick(again[i] as HTMLElement);
+      realClick(again[i + 1] as HTMLElement);
       expect(menu.hidden).toBe(true); // 先收菜单，再把点击交给原按钮
     }
     for (const [id, spy] of Object.entries(spies)) {
       expect(spy, `${id} 未被代理点击命中`).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it("UX-2：「查找」项与 Ctrl+F 同源——点它打开阅读态查找条（经 findbar.ts 导出的 openFindbar）", () => {
+    const h = setup([tab("a.md")], "a.md");
+    // setupFindbar 注册模块级实例后 openFindbar 才有东西可开（DOM 须在 setup 之后补，
+    // setup 的 innerHTML 重写会把它冲掉）
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<div id="findbar" hidden><input id="find-input" /><span id="find-count"></span>' +
+        '<button id="find-prev">↑</button><button id="find-next">↓</button>' +
+        '<button id="find-close">✕</button></div><article id="doc"><p>hello</p></article>',
+    );
+    setupFindbar(() => document.getElementById("doc"));
+    h.el("btn-overflow").click();
+    const items = Array.from(
+      h.el("overflow-menu").querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"),
+    );
+    (items[0] as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(h.el("overflow-menu").hidden).toBe(true); // 先收菜单
+    expect(h.el("findbar").hidden).toBe(false); // 查找条开了（不是 dispatch 合成键盘事件的绕法）
   });
 });
 

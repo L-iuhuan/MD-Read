@@ -1,0 +1,45 @@
+/* ==========================================================================
+   窗口三钮的皮（2026-09-29 自 app.css 整段外移，G10 · 棘轮满载拆分）
+
+   为什么外移：app.css 撞上 1455 行棘轮（零余量）⇒ 本批视觉修复无处落行。
+   按既有「外移而非上调」纪律，把这段**最内聚、零测试锚点**的窗口控制钮样式搬出。
+   接线方式：`index.html` 的 <link>（main.ts 引入链的 Lane F 并发写域，本批不可改；
+   任务书允许 index.html 接线）。层叠等价性：本段规则（.topbar > #win-* / #win-close）
+   全库无第二处消费者，与先后顺序无关；选择器特异性按原样逐字保留。
+   ⚠ 改窗口三钮的样式只改本文件，不要搬回 app.css。
+   ========================================================================== */
+
+/* --- 窗口三钮：内联 SVG（10px 线条 / 16×16 视觉盒），三枚同色同尺寸，只有 close 热区更宽。
+   SVG 用 currentColor，hover/按压换色即整枚图标换色，不必写两套图形。
+   ⚠ 选择器用「顶栏直属 id」写法，不用 `.titlebar button`——后者已随 .titlebar 消失，
+   且越窄的选择器越不会误伤动作按钮。 --- */
+.topbar > #win-min,
+.topbar > #win-max,
+.topbar > #win-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  inline-size: var(--w-winbtn);
+  font: inherit;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.topbar > #win-min svg,
+.topbar > #win-max svg,
+.topbar > #win-close svg { display: block; }
+.topbar > #win-min:hover,
+.topbar > #win-max:hover { background: var(--bg-hover); color: var(--text); }
+.topbar > #win-min:active,
+.topbar > #win-max:active { background: var(--bg-active); }
+/* close 热区 +8px（Windows 习惯：关闭总是最宽的一枚），图标仍居中 —— 靠 grid 居中，
+   不补内边距，故三枚图标的视觉重心各自落在自己的按钮里。 */
+.topbar > #win-close { inline-size: calc(var(--w-winbtn) + 8px); }
+/* 关闭钮用语义红（Windows 习惯），不新增色值；按压态用实心反白，反馈明确 */
+#win-close:hover { background: var(--danger-bg); color: var(--danger-text); }
+#win-close:active { background: var(--danger-text); color: var(--bg-app); }

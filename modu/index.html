@@ -8,6 +8,10 @@
          同时消灭无样式闪屏与主题闪错。JS 是应用的运行前提，失败时隐藏可接受。 -->
     <style>html:not(.app-ready) body{visibility:hidden}</style>
     <title>墨读 MoDu</title>
+    <!-- 窗口三钮的皮（2026-09-29 自 app.css 外移，G10 棘轮拆分）。
+         接线走 HTML <link>：main.ts 的引入链是并发写域（本批不可改）；
+         该段与先后顺序无关（全库无第二处 .topbar > #win-* 消费者）。 -->
+    <link rel="stylesheet" href="/src/app/window-controls.css" />
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
@@ -78,7 +82,7 @@
                   <span class="settings-label" id="set-fs-label">字号</span>
                   <div class="settings-fs" role="group" aria-labelledby="set-fs-label">
                     <button id="set-fs-dec" type="button" title="减小字号" aria-label="减小字号">−</button>
-                    <span id="set-fs-val">16</span><span class="settings-unit">px</span>
+                    <span id="set-fs-val" title="点击直接输入字号">16</span><span class="settings-unit">px</span>
                     <button id="set-fs-inc" type="button" title="增大字号" aria-label="增大字号">＋</button>
                   </div>
                 </div>
@@ -86,7 +90,7 @@
                   <span class="settings-label" id="set-width-label">行宽</span>
                   <div class="settings-fs" role="group" aria-labelledby="set-width-label">
                     <button id="set-width-dec" type="button" title="减小行宽" aria-label="减小行宽">−</button>
-                    <span id="set-width-val">46</span><span class="settings-unit">em</span>
+                    <span id="set-width-val" title="点击直接输入行宽">46</span><span class="settings-unit">em</span>
                     <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
                   </div>
                 </div>
@@ -100,6 +104,13 @@
                     <span id="set-zoom-val">100</span><span class="settings-unit">%</span>
                     <button id="set-zoom-inc" type="button" title="增大整体缩放" aria-label="增大整体缩放">＋</button>
                   </div>
+                </div>
+                <!-- UX-6（des-5）：16→20 连点 4 次无直接输入也无复位 ⇒ 复位钮只回字号/行宽
+                     （主题与配色是用户长期选择，不被动）；数值点击直改由 settings.ts 就地接线。 -->
+                <div class="settings-row">
+                  <span class="settings-label">默认值</span>
+                  <button id="set-reset-typo" type="button" class="settings-action"
+                          title="恢复字号 16px 与行宽 46em（主题与配色不动）">恢复默认</button>
                 </div>
               </div>
 
@@ -186,7 +197,7 @@
             </div>
           </div>
           <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
-          <button id="btn-export" type="button" title="导出 PDF" disabled>PDF</button>
+          <button id="btn-export" type="button" title="导出 PDF（Ctrl+P）" disabled>PDF</button>
           <!-- ⋯ 溢出菜单（D-05 新增功能）：**只在拥挤态可见**。本批收口后拥挤态只剩
                「编辑 + ⋯」，其余动作（最近 / Aa / ◐ / PDF）与标签批量操作全收进这里；
                非拥挤态它们是常显按钮，⋯ 整个不出现（含占位，见 app.css §5）。
@@ -226,7 +237,7 @@
       </header>
       <div id="findbar" class="findbar" hidden>
         <input id="find-input" type="text" placeholder="查找…" aria-label="查找内容" />
-        <span id="find-count" class="find-count">0/0</span>
+        <span id="find-count" class="find-count" aria-live="polite"></span>
         <button id="find-prev" type="button" title="上一个（Shift+Enter）">↑</button>
         <button id="find-next" type="button" title="下一个（Enter）">↓</button>
         <button id="find-close" type="button" title="关闭（Esc）">✕</button>
@@ -277,7 +288,8 @@
                 <div id="empty-recent-list" class="empty-recent-list"></div>
               </div>
               <div class="empty-foot">
-                打开文档后按 <code>Ctrl+E</code> 进入编辑，<code>Ctrl+P</code> 导出 PDF
+                <!-- UX-2（des-5）：查找/关标签/缩放此前零可发现入口，脚注一并带出 -->
+                打开文档后按 <code>Ctrl+E</code> 进入编辑，<code>Ctrl+P</code> 导出 PDF，<code>Ctrl+F</code> 查找，<code>Ctrl+W</code> 关标签，<code>Ctrl+滚轮</code> 缩放
               </div>
               <!-- 首次运行引导（2026-09-27 阶段③-②「交付可移植性」）：
                    换到新机器装完后，用户**不知道还要做什么**——尤其第 ③ 步：

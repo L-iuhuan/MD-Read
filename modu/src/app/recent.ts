@@ -60,6 +60,26 @@ export function pushRecent(path: string): string[] {
   return list;
 }
 
+/** UX-8（des-5）：移除一条最近记录（按 canonical 路径严格匹配——openPath 写入前
+ *  已归一，存储里只有 canonical 形态）。返回是否真的移除了；无匹配不动存储。 */
+export function removeRecent(path: string): boolean {
+  const list = loadRecent();
+  const next = list.filter((item) => item !== path);
+  if (next.length === list.length) {
+    return false;
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return true;
+}
+
+/** UX-8（des-5）：清空最近列表（删键而非写空数组——空存储本就回退 []，不留空壳键）。
+ *  返回清掉的条数，供调用方反馈。 */
+export function clearRecent(): number {
+  const count = loadRecent().length;
+  localStorage.removeItem(STORAGE_KEY);
+  return count;
+}
+
 /**
  * 把已存的最近列表收敛到 canonical 形态（本轮修复：历史值里**同一文件两种形态并存**）。
  *
@@ -113,8 +133,13 @@ export function hydrateRecentOnBoot(
   });
 }
 
-/** 工具条「最近」下拉：点击展开/收起，选中回调 onPick；hover 展开由波2 CSS 实现 */
-export function setupRecentMenu(onPick: (path: string) => void): void {
+/** 工具条「最近」下拉：点击展开/收起，选中回调 onPick；hover 展开由波2 CSS 实现。
+ *  UX-8（des-5）：底部加「清空最近」（直接执行，不弹确认——低风险数据，审计未要求），
+ *  onCleared 可选：执行后回调调用方做状态栏反馈与空态重画。 */
+export function setupRecentMenu(
+  onPick: (path: string) => void,
+  onCleared?: () => void,
+): void {
   const btn = req<HTMLButtonElement>("btn-recent");
   const menu = req<HTMLElement>("recent-menu");
 
@@ -158,6 +183,20 @@ export function setupRecentMenu(onPick: (path: string) => void): void {
     for (const path of paths) {
       menu.appendChild(buildItem(path));
     }
+    // UX-8：底部「清空最近」——菜单语言与 ▾/⋯ 的批量操作同构（分隔线 + 弱化动作项）
+    const sep = document.createElement("div");
+    sep.className = "menu-sep";
+    menu.appendChild(sep);
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "menu-item is-action";
+    clear.textContent = "清空最近";
+    clear.addEventListener("click", () => {
+      clearRecent();
+      menu.hidden = true;
+      onCleared?.();
+    });
+    menu.appendChild(clear);
   }
 
   btn.addEventListener("click", () => {

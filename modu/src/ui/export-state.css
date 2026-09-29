@@ -1,0 +1,20 @@
+/* 导出冻结层（Lane H · 2026-09-29 静默导出）：C1 的亮色归一会让屏幕暗→亮→暗跳变。
+   解法 = 媒体查询解耦：PrintToPdf 走 print media，屏幕走 screen media——本文件只在
+   屏幕上遮住归一过程（visibility 不拆布局，markPrintBlocks 量宽不漂移），打印态零命中，
+   C1/C4 的亮色归一照常生效。接线在 main.ts onExportClick：classList.add("exporting")
+   与亮色归一同块同帧；finally 先还原主题再 remove（同块，无 await）。
+   ⚠ 独立文件、绝不并入 app.css（其行数棘轮 1455 满载，且视觉 lane 并发修改中）。 */
+@media screen {
+  html.exporting #app {
+    visibility: hidden;
+  }
+  html.exporting body::after {
+    content: "正在导出 PDF…";
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--text);
+    background: var(--bg-canvas);
+  }
+}

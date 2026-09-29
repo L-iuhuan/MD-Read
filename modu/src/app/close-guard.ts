@@ -38,14 +38,25 @@ export function resolveCloseAction(
 export interface CloseGuardDeps {
   /** 当前是否有未保存改动（问询期间可变化，每次现取不缓存） */
   hasDirty(): boolean;
-  /** 未保存标签数（问询文案用，现取） */
+  /** 未保存标签数（现取） */
   dirtyCount(): number;
+  /** 未保存标签的文件名（UX-7：问询文案列前 3 个用，现取） */
+  dirtyTitles(): string[];
   /** 弹三选一浮层并等答案 */
   ask(message: string): Promise<CloseChoice>;
   /** 逐个落盘；任一失败返回 false（窗口不关） */
   save(): Promise<boolean>;
   /** 真的关窗（Tauri 侧 close()，重入时守卫放行） */
   quit(): Promise<void>;
+}
+
+/** UX-7（des-5）·纯函数：关闭确认文案——只说数量不说文件名时，用户无从判断
+ *  丢的是什么。列前 3 个文件名，超过 3 个追加「等 N 个」。 */
+export function closeGuardMessage(titles: readonly string[]): string {
+  const count = titles.length;
+  const shown = titles.slice(0, 3).join("、");
+  const list = count > 3 ? `${shown} 等 ${count} 个` : shown;
+  return `有 ${count} 个文件尚未保存（${list}），关闭窗口前要保存吗？`;
 }
 
 /** 关窗守卫状态机（P0-7 回归修复）：只有「确实要拦」的那一轮才 preventDefault。
@@ -72,7 +83,7 @@ export function createCloseGuard(deps: CloseGuardDeps) {
     event.preventDefault(); // 从这里开始要异步问人/落盘，窗口必须留住
     asking = true;
     try {
-      const message = `有 ${deps.dirtyCount()} 个文件尚未保存，关闭窗口前要保存吗？`;
+      const message = closeGuardMessage(deps.dirtyTitles()); // UX-7：数量 + 前 3 个文件名
       const planned = resolveCloseAction(true, await deps.ask(message));
       asking = false; // 问询收场：取消/保存失败都从此刻起可再次弹窗
       if (planned === "stay") {

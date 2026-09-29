@@ -13,6 +13,17 @@ export interface Findbar {
   isOpen(): boolean;
 }
 
+/** UX-2（des-5）：⋯ 菜单「查找」项与 Ctrl+F 同源的入口。setupFindbar 注册实例；
+ *  未注册（测试夹具没建查找条）时静默。编辑态不开阅读态查找条（守卫与全局
+ *  Ctrl+F 同一条判据：html.editing 由 overlay-state.ts 挂）。 */
+let activeFindbarInstance: Findbar | null = null;
+export function openFindbar(): void {
+  if (document.documentElement.classList.contains("editing")) {
+    return;
+  }
+  activeFindbarInstance?.open();
+}
+
 /**
  * Esc 统一关浮层（P5 批2）：依序 findbar → 设置面板 → 最近菜单 → 全部标签列表（▾）
  * → 溢出菜单（⋯），一次只关最上层一个（都开着也只关一个）；返回是否关掉了东西。
@@ -214,10 +225,15 @@ function wrapHits(hits: readonly TextHit[]): HTMLElement[] {
   return marks;
 }
 
-/** 全局键位：Ctrl+F 开查找条，Esc 关（开着的条件下） */
+/** 全局键位：Ctrl+F 开查找条，Esc 关（开着的条件下）。
+ *  UX-1（des-5）：编辑态 Ctrl+F 归 CM 搜索面板——不 preventDefault、不开阅读态
+ *  查找条，否则双查找 UI 同屏抢焦点（计数有数、屏幕零高亮）。 */
 function bindGlobalKeys(bar: HTMLElement, open: () => void, close: () => void): void {
   document.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+      if (document.documentElement.classList.contains("editing")) {
+        return;
+      }
       event.preventDefault();
       open();
       return;
@@ -228,10 +244,27 @@ function bindGlobalKeys(bar: HTMLElement, open: () => void, close: () => void): 
   });
 }
 
+/** UX-3（des-5）：计数元素的三态（纯函数，可单测）——空查询 → 空文案不挂类；
+ *  非空 0 命中 → 「无结果」+ .no-hit（皮在 app.css，G 批已就位）；命中 → n/N。 */
+export function findCountState(
+  needle: string,
+  hits: number,
+  index: number,
+): { text: string; noHit: boolean } {
+  if (needle === "") {
+    return { text: "", noHit: false };
+  }
+  if (hits === 0) {
+    return { text: "无结果", noHit: true };
+  }
+  return { text: `${index + 1}/${hits}`, noHit: false };
+}
+
 export function setupFindbar(getRoot: () => Element | null): Findbar {
   const bar = req<HTMLElement>("findbar");
   const input = req<HTMLInputElement>("find-input");
   const counter = req<HTMLElement>("find-count");
+  counter.setAttribute("aria-live", "polite"); // UX-3：命中变化对屏幕阅读器可闻
   let marks: HTMLElement[] = [];
   let index = 0;
   let debounceTimer: number | null = null;
@@ -244,6 +277,13 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
     }
   }
 
+  /** 计数落点（UX-3）：文案与 .no-hit 类只在这一处写，状态迁移经 findCountState */
+  function renderCount(needle: string, hitCount: number, idx: number): void {
+    const state = findCountState(needle, hitCount, idx);
+    counter.textContent = state.text;
+    counter.classList.toggle("no-hit", state.noHit);
+  }
+
   function setCurrent(): void {
     const current = marks[index];
     if (current === undefined) {
@@ -252,7 +292,7 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
     for (const mark of marks) {
       mark.classList.toggle("find-current", mark === current);
     }
-    counter.textContent = `${index + 1}/${marks.length}`;
+    renderCount(input.value, marks.length, index);
     current.scrollIntoView({ block: "center" });
   }
 
@@ -264,9 +304,10 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
     clearFindMarks(root); // 重搜前先清旧 mark
     marks = wrapHits(collectHits(root, needle));
     index = 0;
-    counter.textContent = `${marks.length > 0 ? 1 : 0}/${marks.length}`;
     if (marks.length > 0) {
       setCurrent();
+    } else {
+      renderCount(needle, 0, 0); // UX-3：非空 0 命中 → 「无结果」，与空查询不同貌
     }
   }
 
@@ -290,6 +331,8 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
     input.select();
     if (input.value !== "") {
       search(input.value); // 正文可能已被重渲，重开时重搜一次
+    } else {
+      renderCount("", 0, 0); // UX-3：空查询的计数显示空（清掉上一会话的残留）
     }
   }
 
@@ -322,7 +365,13 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
   req<HTMLElement>("find-prev").addEventListener("click", () => step(-1));
   req<HTMLElement>("find-next").addEventListener("click", () => step(1));
   req<HTMLElement>("find-close").addEventListener("click", () => close());
+  // UX-4（des-5）：↑/↓/✕ 三钮 mousedown 阻止默认——点击仍触发，焦点不离开输入框
+  for (const id of ["find-prev", "find-next", "find-close"]) {
+    req<HTMLElement>(id).addEventListener("mousedown", (event) => event.preventDefault());
+  }
   bindGlobalKeys(bar, open, close);
 
-  return { open, close, isOpen: () => !bar.hidden };
+  const api: Findbar = { open, close, isOpen: () => !bar.hidden };
+  activeFindbarInstance = api; // UX-2：⋯ 菜单「查找」项经 openFindbar() 复用同一实例
+  return api;
 }

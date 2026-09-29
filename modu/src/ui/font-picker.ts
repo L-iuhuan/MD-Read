@@ -140,7 +140,26 @@ export function renderFontPicker(select: HTMLSelectElement, hooks: FontPickerHoo
     el.textContent = option.available === false ? `${option.label} · 未装` : option.label;
     if (option.available === false) el.dataset.unavailable = "true";
   }
+  refreshGroupLabels(select, readFontPref()); // UX-5：组标题随当前选择一并就位
   return options;
+}
+
+/**
+ * UX-5（des-5）：三组 optgroup 的 label 动态带当前值（如「① 中文正文 · 当前：思源宋体」）。
+ * 单个下拉只回显最后一次选择 ⇒ 三组各自的当前值看不见；组标题是唯一不与选项
+ * 抢行的展示位。幂等：原始 label 首次存进 data-base-label，之后总在基名上拼接。
+ * 当前选择（pickId = resolvePick 后的 id）所在组显示其中文名，其余组显示「默认」。
+ */
+export function refreshGroupLabels(select: HTMLSelectElement, pickId: string): void {
+  const picked = readFontCatalog().find((option) => option.id === pickId) ?? null;
+  for (const group of select.querySelectorAll("optgroup")) {
+    if (group.dataset.baseLabel === undefined) {
+      group.dataset.baseLabel = group.label;
+    }
+    const current =
+      picked !== null && picked.group === group.dataset.group ? picked.label : "默认";
+    group.label = `${group.dataset.baseLabel} · 当前：${current}`;
+  }
 }
 
 /** 刷新「实际生效字体」：按当前选择在 400 / 700 两个字重上各探测一次 */
@@ -197,7 +216,10 @@ export function setFontPref(id: string, hooks: FontPickerHooks): void {
   localStorage.setItem(FONT_KEY, pick.id);
   localStorage.removeItem(LEGACY_FACE_KEY); // 双源归一，旧键退役
   const select = document.getElementById("set-font");
-  if (select instanceof HTMLSelectElement) select.value = pick.id;
+  if (select instanceof HTMLSelectElement) {
+    select.value = pick.id;
+    refreshGroupLabels(select, pick.id); // UX-5：组标题的当前值随选择变化
+  }
   refreshEffective(hooks);
   hooks.onFontChange();
 }

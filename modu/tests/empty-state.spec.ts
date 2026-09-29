@@ -4,6 +4,7 @@
  * 判据（body.empty / #empty-hint.hidden）不归本模块管，故这里只测内容与接线。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { setupEmptyState } from "../src/ui/empty-state";
 
 function mount(): void {
@@ -112,5 +113,18 @@ describe("空态：最近打开列表", () => {
     localStorage.setItem("modu-recent", "{不是 JSON");
     expect(() => setupEmptyState(makeDeps())).not.toThrow();
     expect(wrap().hidden).toBe(true);
+  });
+});
+
+/* UX-2（des-5）：空态脚注是查找/关标签/缩放唯一的全局可发现入口——锚在 index.html。 */
+describe("UX-2 · 空态脚注的快捷键提示", () => {
+  it("index.html 的 .empty-foot 带 Ctrl+F / Ctrl+W / Ctrl+滚轮（原先只写 Ctrl+E / Ctrl+P）", () => {
+    const html = readFileSync("index.html", "utf8");
+    const foot = /<div class="empty-foot">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+    expect(foot).toContain("Ctrl+E");
+    expect(foot).toContain("Ctrl+P");
+    expect(foot).toContain("Ctrl+F</code> 查找");
+    expect(foot).toContain("Ctrl+W</code> 关标签");
+    expect(foot).toContain("Ctrl+滚轮</code> 缩放");
   });
 });

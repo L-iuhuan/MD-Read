@@ -68,7 +68,7 @@ export function justifyCandidates(root: ParentNode): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>('p, li, blockquote p')).filter((el) => {
     if (el.closest('.katex') !== null || el.querySelector('.katex') !== null) return false
     if (el.closest('.math-block') !== null || el.querySelector('.mermaid') !== null) return false
-    if (el.closest('.table-wrap, .diagram, .task-list') !== null) return false
+    if (el.closest('.table-wrap, .diagram, .task-list-container') !== null) return false // F5：实际渲染类是 task-list-container（cjk.css 446 行），旧 .task-list 永不命中
     if (el.querySelector('input[type="checkbox"]') !== null) return false
     return (el.textContent ?? '').trim().length > 0
   })

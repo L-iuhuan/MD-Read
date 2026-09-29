@@ -35,6 +35,7 @@ import {
   mountFontPicker,
   readFontPref,
   refreshEffective,
+  refreshGroupLabels,
   setFontPref as applyFontPick,
   type FontPickerHooks,
 } from "./font-picker";
@@ -55,6 +56,9 @@ export interface SettingsHooks {
   getDoc(): HTMLElement | null;
   /** 字体/字号变化后重算排版（壳层接 refitView：字体度量变了，断行与公式缩放要重跑） */
   onFontChange(): void;
+  /** 行宽变化后排版重算（F3/P2-2：断行守卫须随行宽重跑；本模块已做停顿防抖，
+   *  ± 连点只在停顿后触发一次——refitView 逐块量宽，重活不值得连跑） */
+  onWidthChange?(): void;
   /** 测试用的量器注入点（生产不传，走真实 canvas；见 font-picker 的 FontPickerHooks.measure） */
   measure?: FontPickerHooks["measure"];
   /** 状态栏闪信（2026-09-27：「设为默认应用」的结果反馈）；测试可省略 */
@@ -139,12 +143,31 @@ export function readWidthPref(): number {
   return Number.isFinite(n) ? clampWidth(n) : WIDTH_DEFAULT;
 }
 
-/** 应用行宽：写 --me-width（tokens --measure 派生链消费）、回显、持久化 */
+/** 行宽重排的停顿防抖（F3）：连点 ± 只在停顿后触发一次 onWidthChange */
+let widthRefitTimer: number | undefined;
+function scheduleWidthRefit(): void {
+  window.clearTimeout(widthRefitTimer);
+  widthRefitTimer = window.setTimeout(() => {
+    widthRefitTimer = undefined;
+    hooks.onWidthChange?.();
+  }, 200);
+}
+
+/** 应用行宽：写 --me-width（tokens --measure 派生链消费）、回显、持久化。
+ *  F3（P2-2）：--measure-wide（宽表上限）随行宽派生——tokens.css 本体禁改
+ *  （视觉 lane），故在 documentElement 以内联值覆盖 :root 同名声明；
+ *  差值 +14em 取 tokens.css 现状既有语义（--measure 默认 46、--measure-wide 60，
+ *  即「宽表比正文宽一档」的固定档差），行宽拉满 60 时宽表随之到 74em。 */
 function writeWidth(em: number): void {
   const v = clampWidth(em);
   document.documentElement.style.setProperty("--me-width", String(v));
+  document.documentElement.style.setProperty(
+    "--measure-wide",
+    `calc((${v} + 14) * var(--fs-body))`,
+  );
   req<HTMLElement>("set-width-val").textContent = String(v);
   localStorage.setItem(WIDTH_KEY, String(v));
+  scheduleWidthRefit();
 }
 
 /** 当前实际行宽：优先读 --me-width（唯一作用点），未设时回退持久化值 */
@@ -186,6 +209,7 @@ export function syncSettingsPanel(): void {
   const font = document.getElementById("set-font") as HTMLSelectElement | null;
   if (font !== null) {
     font.value = readFontPref();
+    refreshGroupLabels(font, readFontPref()); // UX-5：组标题当前值同批刷新（面板外改过不陈旧）
   }
   refreshEffective(fontHooks()); // 「实际生效字体」与选择同批刷新（换主题/字号都可能改变命中）
   const autosave = document.getElementById("set-autosave") as HTMLInputElement | null;
@@ -203,6 +227,49 @@ function wireFontSize(): void {
   req<HTMLButtonElement>("set-fs-inc").addEventListener("click", () => {
     writeFs(readFsPref() + 1);
     refreshEffective(fontHooks());
+  });
+  // UX-6（des-5）：数值本身可点击直改（16→20 连点 4 次太磨人）
+  wireDirectEdit("set-fs-val", readFsPref, (px) => {
+    writeFs(px);
+    refreshEffective(fontHooks()); // 与 ± 钮同批刷新读数
+  });
+}
+
+/**
+ * UX-6（des-5）：数值回显 span 点击 → 就地变 `input[type=number]`。
+ * Enter / 失焦提交（越界由 writeFs/writeWidth 钳到既有范围），Esc 取消。
+ * 先还原 span 再提交——write 里的回显走 req(id)，节点不在树里会炸。
+ */
+function wireDirectEdit(valId: string, read: () => number, write: (value: number) => void): void {
+  req<HTMLElement>(valId).addEventListener("click", () => {
+    const span = req<HTMLElement>(valId); // 现取：还原路径要放回这个节点
+    const input = document.createElement("input");
+    input.type = "number";
+    input.value = String(read());
+    let settled = false;
+    const done = (apply: boolean): void => {
+      if (settled) {
+        return; // Enter 提交后随后的 blur 不再二次提交
+      }
+      settled = true;
+      input.replaceWith(span);
+      if (apply) {
+        const n = Number.parseInt(input.value, 10);
+        if (Number.isFinite(n)) {
+          write(n);
+        }
+      }
+    };
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === "Escape") {
+        event.preventDefault();
+        done(event.key === "Enter");
+      }
+    });
+    input.addEventListener("blur", () => done(true));
+    span.replaceWith(input);
+    input.focus();
+    input.select();
   });
 }
 
@@ -241,6 +308,18 @@ function wireWidth(): void {
   req<HTMLButtonElement>("set-width-inc").addEventListener("click", () =>
     writeWidth(readWidthPref() + 2),
   );
+  wireDirectEdit("set-width-val", readWidthPref, writeWidth); // UX-6：数值点击直改
+}
+
+/** UX-6（des-5）：恢复默认排版（16px / 46em）。只复位字号与行宽——主题与配色是
+ *  用户长期选择，不被动（审计原文「不要重置主题」）。 */
+function wireResetTypo(): void {
+  req<HTMLButtonElement>("set-reset-typo").addEventListener("click", () => {
+    writeFs(FS_DEFAULT);
+    writeWidth(WIDTH_DEFAULT);
+    refreshEffective(fontHooks());
+    hooks.notify?.("已恢复默认字号与行宽", "ok");
+  });
 }
 
 /** Aa 按钮切换面板显隐；打开时刷新回显（面板外改过的状态不带到面板里） */
@@ -301,6 +380,7 @@ export function setupSettings(deps: SettingsHooks): void {
   hooks = deps;
   wireFontSize();
   wireWidth();
+  wireResetTypo(); // UX-6：恢复默认（只回字号/行宽）
   wireFontSelect();
   wireThemeSelect();
   wirePaletteSelect();

@@ -23,6 +23,7 @@
  * 出现两条实现，是迟早会分叉的那种债。
  */
 import type { Tab } from "../app/tabs";
+import { openFindbar } from "./findbar";
 
 export interface TabMenus {
   /** 标签集合或活动项变化后调用：重填 ▾ 菜单、切换 #tabs-nav 的显隐与 ⋯ 按钮 */
@@ -217,6 +218,15 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
       return;
     }
     overflowMenu.textContent = "";
+    // UX-2（des-5）：查找此前零可发现入口（只藏在 Ctrl+F 里）——与 Ctrl+F 同源，
+    // 直连 findbar.ts 导出的 openFindbar（编辑态守卫在彼处），不 dispatch 合成键盘事件。
+    const findItem = makeItem();
+    findItem.textContent = "查找";
+    findItem.addEventListener("click", () => {
+      close(); // 先收菜单（与代理项同语义：点外部委托不再误判）
+      openFindbar();
+    });
+    overflowMenu.appendChild(findItem);
     for (const [label, id] of PROXY_ITEMS) {
       const item = makeItem();
       item.textContent = label;

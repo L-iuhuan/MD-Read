@@ -157,6 +157,27 @@ export async function awaitPrintReady(
  */
 export const PORTRAIT_PRINTABLE_PX = 658
 export const LANDSCAPE_PRINTABLE_PX = 987
+/**
+ * UX-9（des-5·P2-15）：A4 竖版**可印高**——297mm − 2×18mm = 261mm，按 96dpi
+ * （3.7795px/mm）换算 ≈ 986px。与 LANDSCAPE_PRINTABLE_PX 是同一物理长度 261mm，
+ * 只是那边量的是横版**宽**、这里量的是竖版**高**（纸型与边距均实测/既定，同顶部注释）。
+ */
+export const PORTRAIT_PRINTABLE_HEIGHT_PX = 986
+/** 缩放下限：低于 0.4 字号不足 6.4pt，再小不可读——不如保持原尺寸让截断可见。 */
+export const PRINT_FIT_MIN = 0.4
+
+/**
+ * UX-9（des-5·P2-15）·纯函数：超页高单体的打印缩放比。
+ * `break-inside: avoid` 对**超过一页高**的单体（大 mermaid / 长图）无效——Chromium
+ * 会硬裁。这里按「恰好放满可印高」算缩放比并 clamp 到下限 0.4；不超高返回 null
+ * （不打标记、不缩放）。测量由 markPrintBlocks 负责（jsdom 布局恒 0 ⇒ 天然不触发）。
+ */
+export function printFitScale(height: number, printableHeight: number): number | null {
+  if (height <= printableHeight) {
+    return null
+  }
+  return Math.max(PRINT_FIT_MIN, printableHeight / height)
+}
 
 /**
  * 块的**内容宽**（CSS px，`w` 判据就靠它）：量**表自身的 `min-content` 宽**。
@@ -189,11 +210,17 @@ export function blockContentWidth(container: Element): number {
  * - `wide-page`（`w > 658`）：竖版放不下 → 走 `@page wide` 横排（横版可印宽 987）；
  * - `squeeze-page`（`w > 987`）：连横版都放不下 → 叠加 `table-layout:fixed` 压列换行，
  *   让整表收敛到可印宽内（用户裁决 ④「压列换行」）。
- * 返回计数 `{ landscape, squeeze }` 供对账。
+ * UX-9（des-5·P2-15）追加：`.mermaid svg` 与 `img` 量**块高**，超过竖版可印高（986px）
+ * 的打 `print-tall` 并按比例内联 `--print-fit`（print.css 的 `zoom: var(--print-fit)` 消费，
+ * 比例由 printFitScale 纯函数算出、clamp 下限 0.4）。幂等：变矮后标记与内联变量一并清掉。
+ * 返回计数 `{ landscape, squeeze, tall }` 供对账。最终 PDF 效果需人工验证（jsdom 无打印排版）。
  */
-export function markPrintBlocks(root: ParentNode): { landscape: number; squeeze: number } {
+export function markPrintBlocks(
+  root: ParentNode,
+): { landscape: number; squeeze: number; tall: number } {
   let landscape = 0
   let squeeze = 0
+  let tall = 0
   for (const box of Array.from(root.querySelectorAll<HTMLElement>('.table-wrap'))) {
     const width = blockContentWidth(box)
     const needsLandscape = width > PORTRAIT_PRINTABLE_PX
@@ -207,5 +234,15 @@ export function markPrintBlocks(root: ParentNode): { landscape: number; squeeze:
       squeeze += 1
     }
   }
-  return { landscape, squeeze }
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('.mermaid svg, img'))) {
+    const fit = printFitScale(el.getBoundingClientRect().height, PORTRAIT_PRINTABLE_HEIGHT_PX)
+    el.classList.toggle('print-tall', fit !== null)
+    if (fit === null) {
+      el.style.removeProperty('--print-fit')
+    } else {
+      el.style.setProperty('--print-fit', String(fit))
+      tall += 1
+    }
+  }
+  return { landscape, squeeze, tall }
 }
