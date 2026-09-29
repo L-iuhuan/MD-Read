@@ -49,7 +49,10 @@ function applyZoom(z: number): void {
   //    （教训：这一项走**原生** API，`tsc` 通过**不等于**生效 ✗ —— 上一版就是这么误判的。）
   //    ⇒ 再叠一层 CSS `zoom` 兜底：Chromium 对根元素应用 `zoom` 会**整体等比缩放**
   //      （视口 CSS px 随之收缩 ✓），正是用户要的"像浏览器 Ctrl+加号"效果 ✓。
-  //    两层同给：谁生效都不会比单给更差 ✓（`zoom: 1` 是恒等 ✓）。
+  //    ⚠ 两层并存**并非**「不会更差」：若某环境 ① 真正生效，两层会**叠乘**
+  //      （如 125%×125%≈156%）✗。当前实测 ① 在本机是空操作、效果全由 ② 承担；
+  //      导出 PDF 前 main.ts 会暂时清掉 ②（markPrintBlocks 量宽与打印都不吃缩放），
+  //      导出结束还原（onExportClick 的 finally）。
   document.documentElement.style.zoom = String(z / 100);
 }
 

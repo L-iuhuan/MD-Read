@@ -21,12 +21,19 @@ export function selectMdPaths(paths: string[]): string[] {
   return filterMarkdownPaths(paths);
 }
 
-/** 串行打开全部 Markdown 路径；open(path, activate) 的 activate 仅末项为 true */
+/** 串行打开全部 Markdown 路径；open(path, activate) 的 activate 仅末项为 true。
+ *  C6（2026-09-29）：被忽略的非 Markdown 文件数 > 0 时经 notifyIgnored 回调闪示
+ *  （通道由调用方注入——本模块不背状态栏依赖，测试可桩；缺省则保持旧行为）。 */
 export async function openEachMd(
   paths: string[],
   open: (path: string, activate: boolean) => Promise<void>,
+  notifyIgnored?: (count: number) => void,
 ): Promise<void> {
   const mdPaths = selectMdPaths(paths);
+  const ignored = paths.length - mdPaths.length;
+  if (ignored > 0) {
+    notifyIgnored?.(ignored); // 不静默丢弃：用户看得见有文件没被打开
+  }
   for (let i = 0; i < mdPaths.length; i++) {
     await open(mdPaths[i], i === mdPaths.length - 1);
   }

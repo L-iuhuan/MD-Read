@@ -74,10 +74,7 @@ export function applyPalettePref(pref: PalettePref): void {
   if (select instanceof HTMLSelectElement) {
     select.value = pref;
   }
-  const btn = document.getElementById("btn-theme");
-  if (btn !== null) {
-    btn.title = themeButtonTitle(readThemePref());
-  }
+  syncThemeButton(readThemePref());
   changeHook(resolvedTheme(readThemePref()));
 }
 
@@ -106,6 +103,16 @@ function themeButtonTitle(pref: ThemePref): string {
   return `主题：${PREF_LABELS[pref]} · 配色：${PALETTE_LABELS[readPalettePref()]}（点击切换）`;
 }
 
+/** ◐ 按钮回显（C9）：title 与 aria-label 同源同文案——悬停提示与读屏播报一致 */
+function syncThemeButton(pref: ThemePref): void {
+  const text = themeButtonTitle(pref);
+  const btn = document.getElementById("btn-theme");
+  if (btn !== null) {
+    btn.title = text;
+    btn.setAttribute("aria-label", text);
+  }
+}
+
 /** 应用主题：data-theme=解析值 + 持久化 + 面板下拉/◐ 钮回显 + 钩子 */
 export function applyThemePref(pref: ThemePref): void {
   document.documentElement.dataset.theme = resolvedTheme(pref);
@@ -114,10 +121,7 @@ export function applyThemePref(pref: ThemePref): void {
   if (select instanceof HTMLSelectElement) {
     select.value = pref;
   }
-  const btn = document.getElementById("btn-theme");
-  if (btn !== null) {
-    btn.title = themeButtonTitle(pref);
-  }
+  syncThemeButton(pref);
   changeHook(resolvedTheme(pref));
 }
 

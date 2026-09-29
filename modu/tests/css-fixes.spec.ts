@@ -15,6 +15,8 @@ const cjk = readFileSync("src/typography/cjk.css", "utf8");
 const tokens = readFileSync("src/typography/tokens.css", "utf8");
 const printCss = readFileSync("src/typography/print.css", "utf8");
 const main = readFileSync("src/main.ts", "utf8");
+const themeSrc = readFileSync("src/ui/theme.ts", "utf8");
+const zoomSrc = readFileSync("src/app/zoom.ts", "utf8");
 // ⚠ **锚读"最终形态"，不读文件名** ✗（Phase 2.5 外移教训，2026-09-27）：
 //   标签快捷键已搬到 src/app/tab-hotkeys.ts ⇒ 只读 main.ts 会假红 ✓。
 //   **以后每外移一段 TS，把它加进这个清单，别改断言** ✓。
@@ -181,5 +183,66 @@ describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () 
   it("标签快捷键：Ctrl+W 关标签 + Ctrl+Tab 循环（capture 拦截）", () => {
     expect(main).toMatch(/setupTabHotkeys/);
     expect(mainPlusMovedModules).toMatch(/cycleTab\(getTabs, event\.shiftKey \? -1 : 1\)/);
+  });
+});
+
+/* Lane C 批次（2026-09-29）：C1 暗色导出 / C2 Alert 打印块归位 / C4 缩放污染 /
+   C5 孤寡行 / C8 撒谎注释——沿用本文件「源码文本锚」模式（jsdom 无布局引擎）。 */
+describe("Lane C：导出归一与打印契约锚", () => {
+  it("C1/C4：导出前归一主题与缩放（先于量宽/等渲染），finally 无条件还原", () => {
+    // 归一点必须先于 markPrintBlocks（量宽）与 awaitPrintReady（等渲染）
+    const normalizeAt = main.indexOf('document.documentElement.dataset.theme = "light"');
+    const measureAt = main.indexOf("markPrintBlocks(doc)");
+    const waitAt = main.indexOf("awaitPrintReady(doc)");
+    expect(normalizeAt).toBeGreaterThan(-1);
+    expect(measureAt).toBeGreaterThan(normalizeAt);
+    expect(waitAt).toBeGreaterThan(normalizeAt);
+    // 偏好读 theme.ts 权威来源；还原按原偏好的解析值（auto 跟系统）；zoom 保存/还原成对
+    expect(main).toMatch(/const savedThemePref = readThemePref\(\)/);
+    expect(main).toMatch(
+      /\} finally \{[\s\S]*?resolvedTheme\(savedThemePref\)[\s\S]*?style\.zoom = savedZoom/,
+    );
+  });
+
+  it("C4：zoom.ts 注释不再声称「两层同给不会更差」（叠乘风险已写明）", () => {
+    expect(zoomSrc).not.toMatch(/不会比单给更差/);
+    expect(zoomSrc).toMatch(/叠乘/);
+  });
+
+  it("C2：Alert 打印覆盖规则收进 @media print 块内（媒体块闭合后的顶层不复现）", () => {
+    expect(printCss).toMatch(
+      /\.mdc blockquote\.alert\s*\{[^}]*background:\s*transparent\s*!important/,
+    );
+    expect(printCss).toMatch(
+      /\.mdc blockquote\.alert::before\s*\{[^}]*color:\s*currentColor\s*!important/,
+    );
+    // 位置锚：从 @media print 起点做花括号深度计数（源码文本锚口径，注释里无未配对花括号），
+    // alert 规则必须处于深度 1（媒体块内）；挪回块外顶层（深度 0）即红——哪怕带 !important。
+    const mediaAt = printCss.indexOf("@media print");
+    const alertAt = printCss.indexOf(".mdc blockquote.alert");
+    expect(mediaAt).toBeGreaterThanOrEqual(0);
+    expect(alertAt).toBeGreaterThan(mediaAt);
+    let depth = 0;
+    for (let i = mediaAt; i < alertAt; i += 1) {
+      const ch = printCss[i];
+      if (ch === "{") depth += 1;
+      else if (ch === "}") depth -= 1;
+    }
+    expect(depth).toBe(1);
+  });
+
+  it("C5：标题不孤悬页尾 + 段落/列表项孤寡行控制", () => {
+    expect(printCss).toMatch(/h1,\s*h2,\s*h3,\s*h4,\s*h5,\s*h6\s*\{\s*break-after:\s*avoid/);
+    expect(printCss).toMatch(/\.mdc p,\s*\.mdc li\s*\{[^}]*orphans:\s*2/);
+    expect(printCss).toMatch(/\.mdc p,\s*\.mdc li\s*\{[^}]*widows:\s*2/);
+  });
+
+  it("C8：app.css §8 的「打印没清底色」过时注释已删（print.css 早已清零）", () => {
+    expect(app).not.toMatch(/没清 #content\/#doc 的底色/);
+  });
+
+  it("C9：◐ 按钮 aria-label 与 title 同源同文案（theme.ts syncThemeButton）", () => {
+    expect(themeSrc).toMatch(/setAttribute\("aria-label", text\)/);
+    expect(themeSrc).toMatch(/function syncThemeButton\(/);
   });
 });

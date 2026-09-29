@@ -66,6 +66,10 @@
   align-items: baseline;
 }
 .settings-effective > code { font-size: var(--fs-chrome-sm); }
+/* D6（2026-09-29 视觉减负）：chip 底由 --bg-app（与卡面同色、只剩描边）换 --bg-subtle
+   一档，让「实际生效」这行读数从卡面上立起来；特异性对齐 app.css 的
+   `.settings-panel .settings-effective code`（同 (0,2,1)，靠本文件后加载取胜）。 */
+.settings-panel .settings-effective > code { background: var(--bg-subtle); }
 .settings-effective-hint {
   flex-basis: 100%;
   font-size: var(--fs-chrome-sm);

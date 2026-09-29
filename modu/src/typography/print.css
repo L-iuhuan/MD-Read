@@ -211,15 +211,32 @@
   .mdc .code-copy {
     display: none;
   }
-}
 
-/* B3 · GitHub Alert 打印：**浅底 + 正文色墨**（防"深底浅字印不出"），色条保留（非颜色通道另有中文标签）。
-   ⚠ print.css 仍是**唯一**打印层（禁第三份打印样式）。 */
-.mdc blockquote.alert {
-  background: transparent !important; /* 打印不铺底：最保守，绝不出现深底浅字 */
-  border-inline-start-width: 4px !important;
-  border-inline-start-style: solid !important;
-}
-.mdc blockquote.alert::before {
-  color: currentColor !important; /* 标签用正文色印出（黑/纸色均可读） */
+  /* C5（2026-09-29）打印分页质量：标题不孤悬页尾；段落/列表项不留孤寡行 */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid;
+  }
+  .mdc p,
+  .mdc li {
+    orphans: 2;
+    widows: 2;
+  }
+
+  /* B3 · GitHub Alert 打印：**浅底 + 正文色墨**（防"深底浅字印不出"），色条保留（非颜色通道另有中文标签）。
+     ⚠ print.css 仍是**唯一**打印层（禁第三份打印样式）。
+     C2（2026-09-29）：本组规则原先写在 @media print 块闭合之后的顶层——屏显底色/标签色
+     被 !important 全时灭活；现收进媒体块内（规则文本未动，位置锚在 tests/css-fixes.spec.ts）。 */
+  .mdc blockquote.alert {
+    background: transparent !important; /* 打印不铺底：最保守，绝不出现深底浅字 */
+    border-inline-start-width: 4px !important;
+    border-inline-start-style: solid !important;
+  }
+  .mdc blockquote.alert::before {
+    color: currentColor !important; /* 标签用正文色印出（黑/纸色均可读） */
+  }
 }

@@ -14,7 +14,12 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: mocks.openUrl,
 }));
 
-import { classifyHref, setupExternalLinks } from "../src/app/links";
+import {
+  classifyHref,
+  resolveRelativeHref,
+  setupExternalLinks,
+  type RelativeLinkHandlers,
+} from "../src/app/links";
 
 function clickOn(target: Element): MouseEvent {
   const event = new MouseEvent("click", { bubbles: true, cancelable: true });
@@ -49,11 +54,11 @@ describe("classifyHref：href 三分类判定", () => {
 });
 
 describe("setupExternalLinks：容器级捕获拦截", () => {
-  function mount(html: string): HTMLElement {
+  function mount(html: string, handlers?: RelativeLinkHandlers): HTMLElement {
     const container = document.createElement("div");
     container.innerHTML = html;
     document.body.appendChild(container);
-    setupExternalLinks(container);
+    setupExternalLinks(container, handlers);
     return container;
   }
 
@@ -65,13 +70,11 @@ describe("setupExternalLinks：容器级捕获拦截", () => {
     expect(mocks.openUrl).toHaveBeenCalledWith("https://tauri.app/zh/");
   });
 
-  it("内锚与相对链接：放行默认行为，不经 opener", () => {
-    const container = mount(
-      '<a href="#section-1">内锚</a> | <a href="./sibling.md">相对</a>'
-    );
-    const [anchor, rel] = Array.from(container.querySelectorAll("a"));
+  it("内锚与空 href：放行默认行为，不经 opener（C3 语义：现状不动）", () => {
+    const container = mount('<a href="#section-1">内锚</a> | <a href="">空</a>');
+    const [anchor, empty] = Array.from(container.querySelectorAll("a"));
     expect(clickOn(anchor).defaultPrevented).toBe(false);
-    expect(clickOn(rel).defaultPrevented).toBe(false);
+    expect(clickOn(empty).defaultPrevented).toBe(false);
     expect(mocks.openUrl).not.toHaveBeenCalled();
   });
 
@@ -97,5 +100,84 @@ describe("setupExternalLinks：容器级捕获拦截", () => {
         resolve();
       }, 0);
     });
+  });
+});
+
+/* C3（2026-09-29）：相对链接不再放行默认导航（会把整窗带到 404）——
+   .md 系走「解析为绝对路径 + 注入的 openMd（main.ts 接既有 openPath 链）」，
+   其余闪示「该链接指向应用外文件，未打开」。 */
+describe("C3：相对链接接管", () => {
+  function mount(html: string, handlers: RelativeLinkHandlers): HTMLElement {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    setupExternalLinks(container, handlers);
+    return container;
+  }
+
+  it("相对 .md 链接：preventDefault，解析为基于当前文档目录的绝对路径走 openMd", () => {
+    const openMd = vi.fn();
+    const container = mount(
+      '<a href="./sibling.md">同级</a><a href="../up/note.MDX">上一级</a><a href="sub/deep.markdown">下级</a>',
+      { docPath: () => "C:\\docs\\sub\\cur.md", openMd },
+    );
+    const [sib, up, deep] = Array.from(container.querySelectorAll("a"));
+    expect(clickOn(sib).defaultPrevented).toBe(true);
+    expect(openMd).toHaveBeenCalledWith("C:\\docs\\sub\\sibling.md");
+    expect(clickOn(up).defaultPrevented).toBe(true);
+    expect(openMd).toHaveBeenCalledWith("C:\\docs\\up\\note.MDX");
+    expect(clickOn(deep).defaultPrevented).toBe(true);
+    expect(openMd).toHaveBeenCalledWith("C:\\docs\\sub\\sub\\deep.markdown");
+    expect(mocks.openUrl).not.toHaveBeenCalled();
+  });
+
+  it("非 md 相对链接：preventDefault + 状态栏闪示，绝不导航", () => {
+    const notify = vi.fn();
+    const container = mount('<a href="assets/data.xlsx">表</a><a href="mailto:a@b.c">信</a>', {
+      docPath: () => "C:\\docs\\a.md",
+      openMd: vi.fn(),
+      notify,
+    });
+    const [xlsx, mailto] = Array.from(container.querySelectorAll("a"));
+    expect(clickOn(xlsx).defaultPrevented).toBe(true);
+    expect(clickOn(mailto).defaultPrevented).toBe(true);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenCalledWith("该链接指向应用外文件，未打开");
+  });
+
+  it("handlers 每次接线刷新（重挂容器后基准路径随新文档）", () => {
+    const openMd = vi.fn();
+    const container = mount('<a href="./x.md">相对</a>', {
+      docPath: () => "C:\\old\\a.md",
+      openMd,
+    });
+    setupExternalLinks(container, { docPath: () => "D:\\new\\b.md", openMd });
+    clickOn(container.querySelector("a") as Element);
+    expect(openMd).toHaveBeenCalledWith("D:\\new\\x.md"); // 用的是最新一次注入的基准
+    expect(openMd).toHaveBeenCalledTimes(1); // 监听器没有叠加
+  });
+});
+
+describe("C3：resolveRelativeHref 纯函数（词法解析，归一交给 Rust 链）", () => {
+  it("./ 与子目录拼接；. 与空段忽略", () => {
+    expect(resolveRelativeHref("./x.md", "C:\\docs\\a.md")).toBe("C:\\docs\\x.md");
+    expect(resolveRelativeHref("b/c.md", "C:\\docs\\a.md")).toBe("C:\\docs\\b\\c.md");
+    expect(resolveRelativeHref(".\\x.md", "C:\\docs\\a.md")).toBe("C:\\docs\\x.md");
+  });
+
+  it(".. 逐级上溯，夹到盘符根不越界", () => {
+    expect(resolveRelativeHref("../up.md", "C:\\docs\\sub\\a.md")).toBe("C:\\docs\\up.md");
+    expect(resolveRelativeHref("../../up.md", "C:\\docs\\sub\\a.md")).toBe("C:\\up.md");
+    expect(resolveRelativeHref("../../../../esc.md", "C:\\docs\\sub\\a.md")).toBe("C:\\esc.md");
+  });
+
+  it("百分号解码（markdown-it 转义空格）；裸 % 不抛按原样", () => {
+    expect(resolveRelativeHref("./my%20file.md", "C:\\docs\\a.md")).toBe("C:\\docs\\my file.md");
+    expect(resolveRelativeHref("./100%.md", "C:\\docs\\a.md")).toBe("C:\\docs\\100%.md");
+  });
+
+  it("canonical 前缀（\\\\?\\）与正斜杠分隔符原样兼容", () => {
+    expect(resolveRelativeHref("./x.md", "\\\\?\\c:\\docs\\a.md")).toBe("\\\\?\\c:\\docs\\x.md");
+    expect(resolveRelativeHref("b/x.md", "C:/docs/a.md")).toBe("C:\\docs\\b\\x.md");
   });
 });

@@ -55,15 +55,18 @@ export const PHRASES_ZH: Readonly<Record<string, string>> = {
   go: "跳转",
 };
 
-/** 主题与阅读态同源：全走 tokens.css 的 CSS 变量，亮暗自动跟随 */
+/** 主题与阅读态同源：全走 tokens.css 的 CSS 变量，亮暗自动跟随。
+ *  D3/D4（2026-09-29 视觉减负）：编辑态与阅读态同基准——纸色列（--measure + 2×--pad-page）
+ *  居中、两侧露画布色，切态纸缘不横跳；行号槽贴正文左缘，只差一个 gutter 宽。 */
 const editorTheme = EditorView.theme({
-  "&": { height: "100%", backgroundColor: "var(--bg-app)", color: "var(--text)" },
+  "&": { height: "100%", backgroundColor: "var(--bg-canvas)", color: "var(--text)" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", lineHeight: "1.7" },
-  /* 度量对齐：与 #doc 同限宽同内边距（--measure + --pad-page），左右中轴一致 */
+  /* 纸面列：与 #doc 同限宽/同内边距/同底色；maxWidth 含 --pad-page ⇒ 文字宽 = --measure */
   ".cm-content": {
-    maxWidth: "var(--measure)",
+    maxWidth: "calc(var(--measure) + 2 * var(--pad-page))",
     marginInline: "auto",
     padding: "var(--size-7) var(--pad-page) 25vh",
+    background: "var(--bg-app)",
     caretColor: "var(--text)",
   },
   "&.cm-focused": { outline: "none" },
@@ -71,12 +74,9 @@ const editorTheme = EditorView.theme({
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
     backgroundColor: "var(--bg-active)",
   },
-  ".cm-gutters": {
-    backgroundColor: "var(--bg-app)",
-    color: "var(--text-muted)",
-    border: "none",
-    borderInlineEnd: "1px solid var(--border-chrome)",
-  },
+  /* 行号槽：容器宽 0 + row-reverse ⇒ 行号以正文左缘为锚向左溢出；锚点与正文居中同源 (100% − --measure)/2，窄窗退 --pad-page 不进负区（1px 分界线用负外边距抵消流宽） */
+  ".cm-gutters": { width: 0, flexDirection: "row-reverse", backgroundColor: "transparent", color: "var(--text-muted)", border: "none", borderInlineEnd: "1px solid var(--border-chrome)", marginInlineEnd: "-1px" },
+  ".cm-gutters-before": { left: "max(var(--pad-page), calc((100% - var(--measure)) / 2))" },
   ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--text)" },
 });

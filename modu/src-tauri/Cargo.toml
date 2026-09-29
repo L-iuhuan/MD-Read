@@ -20,8 +20,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# protocol-asset 鏄繀闇€鐗规€э細asset 鍗忚锛堢浉瀵瑰浘 convertFileSrc锛変笌
-# `asset_protocol_scope()` 杩愯鏃舵巿鏉?API 閮借瀹冮棬鎺э紝缂轰簡瀹冩暣鏉″浘鐗囬摼璺棤鏁堛€?
+# protocol-asset 是必需特性：asset 协议（相对图 convertFileSrc）与
+# `asset_protocol_scope()` 运行时授权 API 都由它门控，缺了它整条图片链路无效。
 tauri = { version = "2", features = ["protocol-asset"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

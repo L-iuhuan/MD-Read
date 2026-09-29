@@ -277,5 +277,7 @@ describe('scan-markers 锚 · CLI 冒烟（防"入口被改坏但函数级全绿
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+    // ⚠ 子进程冷启动在慢机上可 >5s（实测 7.5s、重跑 3.6s 过）—— vitest 默认 5000ms 会假红（CI 绿、本机红 ✗）
+    //   ⇒ 显式提到 20000ms：门禁不得因机器速度红（只放宽超时，断言语义不变 ✓）
+  }, 20000);
 });

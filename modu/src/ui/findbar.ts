@@ -62,6 +62,9 @@ const BLOCK_TAGS = new Set([
   "BLOCKQUOTE", "PRE", "DT", "DD", "FIGCAPTION", "CAPTION", "SUMMARY",
 ]);
 
+/** C7：输入防抖窗口（ms）——大文档逐键全量重扫会卡输入；Enter/⟲⟳/重开不受它延迟 */
+const FIND_DEBOUNCE_MS = 150;
+
 function req<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (el === null) {
@@ -231,6 +234,15 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
   const counter = req<HTMLElement>("find-count");
   let marks: HTMLElement[] = [];
   let index = 0;
+  let debounceTimer: number | null = null;
+
+  /** 取消挂起的防抖重搜（关闭/立即执行路径共用；面板生命周期内不泄漏定时器） */
+  function cancelPendingSearch(): void {
+    if (debounceTimer !== null) {
+      window.clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+  }
 
   function setCurrent(): void {
     const current = marks[index];
@@ -259,6 +271,11 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
   }
 
   function step(dir: 1 | -1): void {
+    if (debounceTimer !== null) {
+      // C7：Enter/⟲⟳ 绕过防抖立即执行——先冲挂起的重搜再跳，命中结果必须新鲜
+      cancelPendingSearch();
+      search(input.value);
+    }
     if (marks.length === 0) {
       return;
     }
@@ -267,6 +284,7 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
   }
 
   function open(): void {
+    cancelPendingSearch(); // C7：上一会话可能留着挂起定时器，重开不带入
     bar.hidden = false;
     input.focus();
     input.select();
@@ -276,6 +294,7 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
   }
 
   function close(): void {
+    cancelPendingSearch(); // C7：关面板清掉挂起的防抖定时器
     const root = getRoot();
     if (root !== null) {
       clearFindMarks(root); // unwrap：还原开启前的原文
@@ -283,7 +302,14 @@ export function setupFindbar(getRoot: () => Element | null): Findbar {
     bar.hidden = true;
   }
 
-  input.addEventListener("input", () => search(input.value));
+  // C7：input 走 150ms 防抖（连击只保留末次）；Enter 与 ⟲⟳ 在 step 里立即冲挂起重搜
+  input.addEventListener("input", () => {
+    cancelPendingSearch();
+    debounceTimer = window.setTimeout(() => {
+      debounceTimer = null;
+      search(input.value);
+    }, FIND_DEBOUNCE_MS);
+  });
   input.addEventListener("keydown", (event) => {
     if (event.isComposing) {
       return; // 中文输入法组词中的 Enter 不触发查找

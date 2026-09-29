@@ -89,3 +89,25 @@ describe("openEachMd（串行逐开）", () => {
     expect(order).toEqual(["start:a.md", "end:a.md", "start:b.md", "end:b.md"]);
   });
 });
+
+/* C6（2026-09-29）：拖放混入的非 Markdown 文件不再静默丢弃——
+   忽略数 > 0 时经注入的 notifyIgnored 闪示（main.ts 接 flashStatus「已忽略 N 个非 Markdown 文件」）。 */
+describe("C6：被忽略的非 Markdown 文件闪示", () => {
+  it("忽略数 > 0 → notifyIgnored 恰好一次、收到精确计数（先于任何 open）", async () => {
+    const open = vi.fn().mockResolvedValue(undefined);
+    const notifyIgnored = vi.fn();
+    await openEachMd(["a.md", "b.txt", "c.png", "d.MD"], open, notifyIgnored);
+    expect(notifyIgnored).toHaveBeenCalledTimes(1);
+    expect(notifyIgnored).toHaveBeenCalledWith(2);
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it("忽略数 = 0 → 不通知；未注入回调时保持旧行为不抛", async () => {
+    const notifyIgnored = vi.fn();
+    await openEachMd(["a.md", "b.md"], vi.fn().mockResolvedValue(undefined), notifyIgnored);
+    expect(notifyIgnored).not.toHaveBeenCalled();
+    const open2 = vi.fn().mockResolvedValue(undefined);
+    await expect(openEachMd(["x.txt", "y.zip"], open2)).resolves.toBeUndefined();
+    expect(open2).not.toHaveBeenCalled();
+  });
+});

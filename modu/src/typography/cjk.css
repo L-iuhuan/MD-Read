@@ -285,7 +285,9 @@
 .mdc tr { break-inside: avoid; }
 .mdc thead th { background: var(--bg-code); font-weight: 600; color: var(--text); }
 .mdc th.num, .mdc td.num { text-align: end; font-family: var(--font-mono); }
-.mdc tbody tr:nth-child(even) { background: var(--bg-zebra); }
+/* 斑马纹已删（2026-09-29 视觉减负 D2）：外框/表头填充/斑马/行底线四件套叠出正文里最重的
+   色块，与「减少正文内块状底色干扰」自抵。分区改由外框 + 表头填充 + 行底线承担，
+   hover 行反馈保留（交互必需）。勿把 --bg-zebra 偶数行规则加回。 */
 .mdc tbody tr:hover { background: var(--bg-hover); }
 /* 末行下边线保留（波4 归位，原 app.css §9 临时规则的反向修法）。
    此前这里写的是 `border-bottom: 0`，指望 .table-wrap 的外框补位——
@@ -378,7 +380,10 @@
 .mdc .mermaid[data-rendered="1"] {
   color: inherit;
   font-size: 1em;
-  overflow-x: visible;
+  /* 2026-09-29（P2-13 的 cjk 部分）：可见溢出会越出纸面、在特定滚动位遮住工具栏
+     ⇒ 收回为容器内滚动（内容确实超宽时可横拖读完，禁止用 clip 裁掉内容）。
+     svg 自带 max-width 时本容器不出滚动条，行为与改前一致。 */
+  overflow-x: auto;
   border: none;
   background: transparent;
   padding-block-end: .4em;
@@ -437,15 +442,18 @@
 /* --- 列表 / 任务列表 --- */
 .mdc ul, .mdc ol { margin-block: 0 1.05em; padding-inline-start: 1.5em; }
 .mdc li { margin-block-end: .35em; }
-.mdc ul.task-list { list-style: none; padding-inline-start: .1em; }
-.mdc ul.task-list li { display: flex; align-items: flex-start; gap: var(--size-2); text-align: start; }
+/* 任务清单（2026-09-29 视觉减负 D1）：类名来自 @mdit/plugin-tasklist 的实际渲染 ——
+   容器 task-list-container 挂在 ul/ol、项 task-list-item、标签 task-list-item-label。
+   此前写的 `.mdc ul.task-list` 永不命中，圆点与「• ☑」双标记因此一直存在。 */
+.mdc .task-list-container { list-style: none; padding-inline-start: .1em; }
+.mdc .task-list-item { display: flex; align-items: flex-start; gap: var(--size-2); text-align: start; }
 .mdc input[type="checkbox"] {
   flex: none;
   accent-color: var(--accent-solid);  /* 主题化勾选框 */
   inline-size: 1em; block-size: 1em;
   margin-block-start: .55em;
 }
-.mdc .task-list label { cursor: pointer; }
+.mdc .task-list-item-label { cursor: pointer; }
 
 /* --- 脚注（§2.1 F2 markdown-it-footnote）--- */
 .mdc .fn-ref a { font-size: .72em; vertical-align: .35em; text-decoration: none; padding-inline: .1em; }

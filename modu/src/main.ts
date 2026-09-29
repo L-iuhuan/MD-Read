@@ -45,6 +45,7 @@ import {
   nextThemePref,
   readPalettePref,
   readThemePref,
+  resolvedTheme,
   setupThemeEngine,
   watchSystemTheme,
 } from "./ui/theme";
@@ -89,10 +90,8 @@ const $ = req;
  *  D-05 起中间那个「与标签重复的文件名」已从顶栏删除，故这里不再需要复位标题；
  *  当前文档名改由窗口标题承担（见 mountRendered）。 */
 function showError(error: unknown): void {
-  // ⚠ 别用 `String(error)`：JS 的 Error 会变成「Error: 具体消息」✗ ——
-  // 状态栏是**面向使用者**的通道，多一个 "Error:" 前缀就是行话 ✓
-  //（Rust 侧的错误经 invoke 拒绝时是**字符串** ⇒ String(error) 恰好等于消息本身 ✓，两路都对 ✓）
-  // 2026-09-27 阶段④-② 实测修正。
+  // ⚠ 别用 `String(error)`：JS 的 Error 会带「Error: 」前缀 ✗（状态栏面向使用者，
+  //  2026-09-27 实测修正）；Rust 侧 invoke 拒绝的是字符串 ⇒ String(error) 恰为消息本身 ✓。
   const text = error instanceof Error ? error.message : String(error);
   flashStatus(`打开失败：${text}`, "error");
 }
@@ -125,12 +124,9 @@ function mountOutline(items: OutlineItem[]): void {
 
 /* ---- 大纲滚动跟随（F4）· X2（2026-09-23 第二批）----
    旧实现用 IntersectionObserver 观察**全部** h1–h6（本机 2MB 语料实测 4,715 个），
-   Blink 每帧为它们重算相交矩形：`computeIntersections` 占滚动墙钟 26.3%~33.6%，
-   单它就超过 13.3ms 的 vsync 预算（性能实验 §3.2）。
-   现在改成每帧一次**实时二分**（log₂n ≈ 13 次 getBoundingClientRect），语义与旧逐条
-   比较逐点等价 —— 推导与边界写在 app/outline-follow.ts 顶部注释里，那里也解释了为什么
-   不用「渲染期预算偏移表」（content-visibility 估高会让偏移失真、必须反复重建）。
-   rAF 节流（scheduleFollow）保持不变：M10「滚动节流开关」已判不做。 */
+   computeIntersections 占滚动墙钟 26.3%~33.6%（单它超过 vsync 预算）；现改成每帧一次
+   **实时二分**（log₂n ≈ 13 次 getBoundingClientRect），语义与旧逐条比较逐点等价——
+   推导与边界写在 app/outline-follow.ts 顶部注释。rAF 节流不变：M10 已判不做。 */
 
 /** 大纲跟随实例：deps 惰性取 DOM，模块级创建不碰 DOM；正文换/回空态时 reset。 */
 const outlineFollow = createOutlineFollow({
@@ -236,11 +232,9 @@ function createTabs(session: EditSession, mountRendered: (ctx: MountContext) => 
 /** activate=false：多文件连开的中间项——只开标签不挂载（P5 批2，见 drop.ts） */
 async function openPath(tabs: TabManager, path: string, activate = true): Promise<void> {
   try {
-    // **路径形态归一（本轮修复）**：标签身份就是路径字符串（`tabs.ts` 的 `find` 按 `===` 比），
-    // 同一文件以两种形态（对话框/目录树给的 canonical vs 拖放/recent 给的原始串）进来就会
-    // 开出两个同名标签 ✗。归一实现在 Rust（`fs.rs::normalize_path`，全仓唯一一份），
-    // 此处只是**渲染层唯一边界**：进 `read_file` 与 `pushRecent` 的串就此收敛，
-    // 于是 `tab.path` / `modu-recent` / 受信登记三处形态同源。
+    // 路径形态归一：标签身份就是路径串（tabs.ts 的 find 按 === 比），原始串与 canonical
+    // 混进来会开出两个同名标签。归一唯一实现是 Rust fs.rs::normalize_path，此处是渲染层
+    // 唯一边界——read_file 与 pushRecent 的串就此收敛，tab.path/modu-recent/受信登记同源。
     const canonical = await normalizePath(path);
     const file = await invoke<LoadedFile>("read_file", { path: canonical });
     tabs.openTab(canonical, file, activate);
@@ -287,52 +281,65 @@ async function onExportClick(tabs: TabManager): Promise<void> {
   if (doc === null) {
     return;
   }
-  const failed = doc.querySelectorAll(".mermaid[data-mmd-error]").length;
-  if (failed > 0) {
-    flashStatus(`有 ${failed} 张图渲染失败，将按占位导出`, "warn"); // 告警不阻断（P5 批2）
-  }
-  const ready = await awaitPrintReady(doc);
-  if (ready.timedOut) {
-    flashStatus("部分图表未渲染完成，将按当前版式导出", "warn");
-  }
-  // P1-4 补：字体/图片没在时限内就绪时提示（此前只有 mermaid 有等待与提示）
-  if (ready.fontsTimedOut) {
-    flashStatus("字体加载超时，部分字形可能按回退字体导出", "warn");
-  } else if (ready.imageFailures.length > 0) {
-    flashStatus(`有 ${ready.imageFailures.length} 张图片未就绪，将按当前版式导出`, "warn");
-  }
-  // P1-4(b)+宽表：竖版放不下的表自动横排；连横版都放不下的再压列换行（用户裁决 ④）。
-  // 「可能被截」提醒已于 2026-09-23 撤除：压列后表格不丢列、图片有 max-inline-size:100%、
-  // pre 会换行 ⇒ 已无会静默丢内容的类别，留着就是会撒谎的提示。
-  markPrintBlocks(doc);
-  // 票据制（P0 安全修复 B1）：pick_save_path 返回 {path, ticket}，export_pdf 只认 ticket。
-  // 渲染层不再向 export_pdf 传路径 ⇒ 被攻陷的渲染层无法指定任意写入路径。
-  interface SaveResult { path: string | null; ticket: number | null }
-  let saveResult: SaveResult;
+  // C1+C4（2026-09-29）导出版式归一：暗色主题在白纸上印出近白浅灰字（不可读）、根 zoom
+  // 让 markPrintBlocks 量宽漂移 ⇒ 先存偏好与 zoom、临时切亮色并让 mermaid 重渲（UI 短暂
+  // 变亮可接受），finally 无条件按原偏好还原（取消/失败路径也还原）。
+  const savedThemePref = readThemePref(); // 权威来源（theme.ts），不自己摸 localStorage
+  const savedZoom = document.documentElement.style.zoom;
+  document.documentElement.style.zoom = "";
+  document.documentElement.dataset.theme = "light"; // 不落盘：崩溃后偏好不被改成亮色
+  refreshMermaidTheme("light");
   try {
-    saveResult = await invoke<SaveResult>("pick_save_path", {
-      defaultName: defaultPdfName(tab.path),
-    });
-  } catch (error) {
-    flashStatus(`导出失败：${String(error)}`, "error");
-    return;
-  }
-  if (saveResult.path === null || saveResult.path === "" || saveResult.ticket === null) {
-    return; // 用户取消：静默结束
-  }
-  try {
-    // 页眉已按平台限制取舍清空（用户反馈批次：PDF 只要页码不要页眉，print.rs 查证注释）
-    flashStatus(await invoke<string>("export_pdf", { ticket: saveResult.ticket }), "ok");
-  } catch (error) {
-    flashStatus(`导出失败：${String(error)}`, "error");
+    const failed = doc.querySelectorAll(".mermaid[data-mmd-error]").length;
+    if (failed > 0) {
+      flashStatus(`有 ${failed} 张图渲染失败，将按占位导出`, "warn"); // 告警不阻断（P5 批2）
+    }
+    const ready = await awaitPrintReady(doc);
+    if (ready.timedOut) {
+      flashStatus("部分图表未渲染完成，将按当前版式导出", "warn");
+    }
+    // P1-4 补：字体/图片没在时限内就绪时提示（此前只有 mermaid 有等待与提示）
+    if (ready.fontsTimedOut) {
+      flashStatus("字体加载超时，部分字形可能按回退字体导出", "warn");
+    } else if (ready.imageFailures.length > 0) {
+      flashStatus(`有 ${ready.imageFailures.length} 张图片未就绪，将按当前版式导出`, "warn");
+    }
+    // P1-4(b)+宽表：竖版放不下的表自动横排；连横版都放不下的再压列换行（用户裁决 ④）。
+    // 「可能被截」提醒已于 2026-09-23 撤除：压列后表格不丢列、图片有 max-inline-size:100%、
+    // pre 会换行 ⇒ 已无会静默丢内容的类别，留着就是会撒谎的提示。
+    markPrintBlocks(doc);
+    // 票据制（P0 安全修复 B1）：pick_save_path 返回 {path, ticket}，export_pdf 只认 ticket。
+    // 渲染层不再向 export_pdf 传路径 ⇒ 被攻陷的渲染层无法指定任意写入路径。
+    interface SaveResult { path: string | null; ticket: number | null }
+    let saveResult: SaveResult;
+    try {
+      saveResult = await invoke<SaveResult>("pick_save_path", {
+        defaultName: defaultPdfName(tab.path),
+      });
+    } catch (error) {
+      flashStatus(`导出失败：${String(error)}`, "error");
+      return;
+    }
+    if (saveResult.path === null || saveResult.path === "" || saveResult.ticket === null) {
+      return; // 用户取消：静默结束
+    }
+    try {
+      // 页眉已按平台限制取舍清空（用户反馈批次：PDF 只要页码不要页眉，print.rs 查证注释）
+      flashStatus(await invoke<string>("export_pdf", { ticket: saveResult.ticket }), "ok");
+    } catch (error) {
+      flashStatus(`导出失败：${String(error)}`, "error");
+    }
+  } finally {
+    const restored = resolvedTheme(savedThemePref); // auto 档解析回系统值
+    document.documentElement.dataset.theme = restored;
+    refreshMermaidTheme(restored);
+    document.documentElement.style.zoom = savedZoom;
   }
 }
 
-/* ---- 全局键位（P5 批2）：Ctrl+P 绑导出（阅读/编辑两态都触发，
- *      preventDefault 阻浏览器打印对话框）；Esc 依序关浮层
- *      findbar → 设置面板 → 最近菜单（一次只关一个）。
- *      ⚠ 须先于 setupFindbar 注册：统一 Esc 要抢在 findbar 自有 Esc 之前定夺，
- *      否则一次 Esc 会连关两层。 ---- */
+/* ---- 全局键位（P5 批2）：Ctrl+P 绑导出（阅读/编辑两态都触发，preventDefault 阻
+ *      浏览器打印对话框）；Esc 依序关浮层（一次只关一个）。⚠ 须先于 setupFindbar
+ *      注册：统一 Esc 要抢在 findbar 自有 Esc 之前定夺，否则一次 Esc 连关两层。 ---- */
 function setupGlobalKeys(): void {
   document.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
@@ -354,16 +361,18 @@ function setupGlobalKeys(): void {
  *      有绑定的 Tab 缩进被 preventDefault 接管）。 ---- */
 
 /** 循环切换：delta=1 下一个（Ctrl+Tab），-1 上一个（Ctrl+Shift+Tab），环回 */
+/** C6：非 Markdown 文件不静默丢弃——状态栏闪示被忽略数（通道复用 flashStatus） */
+function notifyIgnoredDrops(count: number): void {
+  flashStatus(`已忽略 ${count} 个非 Markdown 文件`, "warn");
+}
+
 function setupDragDrop(tabs: TabManager): void {
   void getCurrentWebview().onDragDropEvent((event) => {
     if (event.payload.type === "drop") {
-      // 多文件拖放（M2 波3 反馈①）：全部 Markdown（md/markdown/mdx，共用清单见 app/md-ext.ts）
-      // 逐个开标签；仅末项渲染（P5 批2）
-      // ⚠ 路径形态：OS 拖放给的是**原始串**（不经对话框也不经 argv ⇒ 没被 `md_paths` 归一过），
-      //   所以这里先把它们收敛到 canonical 再交给 `openEachMd`/`openPath`。
-      //   归一只有一份实现（Rust `fs.rs::normalize_path`），此处与 `openPath` 调的是同一条命令。
+      // 多文件拖放：全部 Markdown 逐个开标签、仅末项渲染（P5 批2，清单见 app/md-ext.ts）；
+      // OS 拖放给的是原始串（没被归一过）⇒ 先 normalizePaths 收敛再交给 openEachMd/openPath。
       void normalizePaths(event.payload.paths).then((paths) =>
-        openEachMd(paths, (path, activate) => openPath(tabs, path, activate)),
+        openEachMd(paths, (path, activate) => openPath(tabs, path, activate), notifyIgnoredDrops),
       );
     }
   });
@@ -420,25 +429,13 @@ async function saveDirtyTabs(tabs: TabManager): Promise<boolean> {
 }
 
 /** 关闭请求处理（P0-7）：Alt+F4 与标题栏 ✕ 在 Tauri 2 上是同一条 close-requested
- *  事件（tao 的 WM_CLOSE → CloseRequested → 前端事件），故只此一处入口，不另设键位。
- *
- *  【P0-7 回归修复·2026-09-23 实机测量】旧版此处开头无条件 event.preventDefault()，
- *  再由本函数自己调 win.destroy() 收尾，结果窗口再也关不掉。真正原因不是 destroy()
- *  本身没效果，而是**没权限**：
- *    1. `window.__TAURI__.window.getCurrentWindow().destroy()` 实测抛
- *       `window.destroy not allowed. Permissions associated with this command:
- *        core:window:allow-destroy`（capabilities 此前只授了 allow-close 等）；
- *    2. @tauri-apps/api 2.11.1 的 onCloseRequested 是「先 await handler，再看
- *       event.isPreventDefault()；没 prevent 就自己调一次 destroy()」——旧版无条件
- *       prevent 把它这条自动收尾也一并掐掉了，于是两道 destroy 全废。
- *  修法：守卫状态机搬进 app/close-guard.ts 的 createCloseGuard（纯依赖注入，可单测）；
- *  这里只接线。preventDefault 只在真要被拦的那一轮调，放行的一轮交给自动 destroy；
- *  用户选「保存/放弃」后用 close() 重入一次（close 有 core:window:allow-close 权限）。
- *  另注：capabilities/default.json 已补 core:window:allow-destroy —— 自动收尾走的正是
- *  destroy，没这条权限干净态仍然关不掉；旧版把它一起挡住，所以先前只看到「destroy()
- *  点了没用」，而非「destroy() 是坏 API」。 */
+ *  事件（tao 的 WM_CLOSE → CloseRequested → 前端事件），只此一处入口，不另设键位。
+ *  回归教训（2026-09-23 实测）：旧版无条件 preventDefault 再自己 destroy()，但彼时
+ *  capabilities 缺 core:window:allow-destroy；且 onCloseRequested 在未被 prevent 时会
+ *  **自动 destroy 收尾**（被旧版一并掐掉）⇒ 两道 destroy 全废、窗口关不掉。
+ *  修法：preventDefault 只在真要拦的那一轮调，放行的一轮交给自动 destroy；用户选
+ *  「保存/放弃」后用 close() 重入一次。状态机在 app/close-guard.ts，此处只接线。 */
 const closeGuard = createCloseGuard({
-  // 关窗守卫接线：状态机在 app/close-guard.ts 的 createCloseGuard（纯依赖注入，可单测）
   hasDirty: () => activeTabs?.hasDirty() ?? false,
   dirtyCount: () => activeTabs?.dirtyTabs().length ?? 0,
   ask: (message) => askCloseChoice(message),
@@ -535,9 +532,8 @@ async function boot(): Promise<void> {
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
   setupZoom(); // 页面整体缩放（用户反馈 2026-09-27）：启动回填 + 面板 ± 两键 ✓
-  // 关闭守卫（P0-7）：标题栏 ✕ 的 close() 与 Alt+F4 都发 close-requested，同一入口。
-  // 2026-09-27：窗口控件整段搬到 app/window-controls.ts，守卫留在本文件（它依赖本文件的
-  // closeGuard 实例），故在此显式挂上——搬移时**不可漏**，否则"未保存改动"提示静默失效 ✗。
+  // 关闭守卫：✕ 的 close() 与 Alt+F4 都发 close-requested（同一入口）。控件已外移
+  // window-controls.ts，守卫依赖本文件的 closeGuard 实例故留在此——搬移不可漏。
   void getCurrentWindow().onCloseRequested((event) => closeGuard(event));
   setupShellOverflow(); // D-05：顶栏拥挤态（标签装不下 → 收成「编辑 + ⋯」，判据见函数处注释）
 
@@ -572,15 +568,20 @@ const workspacePanel = setupWorkspacePanel({
     doc.classList.toggle("cv-off", !keepOffscreenSkipping(shapeOf(ctx.fragment)));
     doc.replaceChildren();
     doc.appendChild(document.adoptNode(ctx.fragment)); // P5 批3：零序列化、零二次 parse
-    setupExternalLinks(doc); // P5 批1 接线：外链交系统浏览器（幂等，data 标记防重注册）
+    // P5 批1 外链交系统浏览器（幂等，data 标记防重注册）；C3：相对 .md 链接按当前文档
+    // 目录解析为绝对路径后走既有 openPath 链（归一/受信校验/开标签全复用）。
+    setupExternalLinks(doc, {
+      docPath: () => ctx.tab.path,
+      openMd: (path) => void (activeTabs !== null && openPath(activeTabs, path)),
+      notify: (message) => flashStatus(message, "warn"),
+    });
     doc.hidden = false;
     $("empty-hint").hidden = true;
     document.body.classList.remove("empty"); // 有文档了：大纲与 ☰ 回来
     mountOutline(ctx.outline);
     outlineFollow.reset(); // X2：正文已换 —— 重建标题元素列表（只查 DOM，不读几何）
-    // X2 补（2026-09-23，P1 批次回归检查发现）：**开箱即高亮**。
-    // 旧 IO 版在 observe 后会有一次初始回调；X2 的高亮只发生在滚动帧节流里，
-    // 于是"打开文档不动"时大纲一条都不亮（实测：H1 可见却 active=null）。
+    // X2 补（2026-09-23 回归检查发现）：**开箱即高亮**——高亮只发生在滚动帧节流里，
+    // 不现算一次则"打开文档不动"时大纲一条都不亮（实测 H1 可见却 active=null）。
     outlineFollow.update();
     enhanceView(doc); // 增强幂等：缓存直挂与重渲两路径都走（mermaid 懒观察在此重挂）
   // A5：**空闲**时预校验 mermaid 语法（不阻塞首屏）。改前实测：坏图在折叠线以下时完全静默 ✗
@@ -648,27 +649,25 @@ const workspacePanel = setupWorkspacePanel({
   setupProgress();
   // 二次实例转发：载荷是筛过的 Markdown 路径列表（Rust 侧 md_paths），逐个开标签、仅末项渲染
   await listen<string[]>("second-instance", (event) => {
-    void openEachMd(event.payload, (path, activate) => openPath(tabs, path, activate));
+    void openEachMd(
+      event.payload,
+      (path, activate) => openPath(tabs, path, activate),
+      notifyIgnoredDrops,
+    );
   });
   // 启动参数携带的待开文件（P0-6：列表——多文件启动每个都开，不再只开第一个）
   const pending = await invoke<string[]>("take_pending_files");
   if (pending.length > 0) {
-    await openEachMd(pending, (path, activate) => openPath(tabs, path, activate));
+    await openEachMd(pending, (path, activate) => openPath(tabs, path, activate), notifyIgnoredDrops);
   }
-  // 最近列表的历史双形态收敛（本轮修复）：存储里同一个文件可能并存 canonical 与"原始串"
-  // 两条（早期 argv 通道写入的）。归一 + "只在值真变了才写回" + 空态重画都在 recent.ts
-  // （`hydrateRecentOnBoot`），此处只做接线 —— main.ts 已顶到行数棘轮硬上限，不再长代码。
-  // ⚠ 放在 `pending` 打开之后：带文件启动时 `pushRecent` 已把最新项写进去，这里收敛的是全表，
-  // 顺序不会被打乱（`hydrateRecent` 保留原序）。
+  // 最近列表双形态收敛：归一/只在值变才写回/空态重画都在 recent.ts，此处只接线。
+  // ⚠ 放在 pending 打开之后：pushRecent 已写最新项，这里收敛全表且保留原序。
   void hydrateRecentOnBoot(() => activeEmptyState?.refresh()).catch((error: unknown) => {
     console.warn("最近列表归一失败", error); // 不阻断启动：沿用原值
   });
-  // 开发期真机探针入口（D-05 多标签验收用）。为什么不复用既有入口：
-  // 开第二个及以后的标签必须**真的走 read_file**（受控语料的自动保存会写回原文件），
-  // 所以不能靠上次的渲染缓存或拖放伪造；而磁盘上的草稿副本只能经这条真实读文件链进来。
-  // 本批新增 syncMenus：顶栏拥挤态的手工翻转实测（探针切 .overflow 类后要重算 ⋯ 显隐，
-  // 而 hidden 的**语义来源**是 tabs-menu.ts 的 sync，不是那个类本身——不调它就测不到
-  // 真实收藏行为）。同样只在 vite dev 挂载，生产构建里恒 undefined。
+  // 开发期真机探针入口（D-05 多标签验收）：开第二个标签必须真的走 read_file（受控语料的
+  // 自动保存会写回原文件），不能靠渲染缓存或拖放伪造；syncMenus 供拥挤态手工翻转实测
+  // （hidden 的语义来源是 tabs-menu.ts 的 sync）。只在 vite dev 挂载，生产恒 undefined。
   if (import.meta.env.DEV) {
     window.__moduDev = {
       openFile: (path: string) => openPath(tabs, path),

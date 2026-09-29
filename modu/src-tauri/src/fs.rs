@@ -6,6 +6,9 @@
 //! 注册只能由 OS/用户动作触发（Rust 侧对话框 / 拖放 / argv / 持久化清单），
 //! **没有任何渲染层可调的注册命令** —— 否则攻陷页面可以自证授权。
 
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use encoding_rs::Encoding;
 use serde::Serialize;
@@ -261,6 +264,11 @@ fn bom_bytes_for(encoding: &Encoding) -> &'static [u8] {
 /// 编码名必须来自读取时的检测结果；未知编码名直接报错，绝不回退 UTF-8。
 /// bom=true 时写回前补原 BOM（UTF-8 → EF BB BF，UTF-16LE/BE → 各自魔数）；
 /// GB18030 无 BOM 概念，bom=true 时忽略并按无 BOM 写（仍返回成功）。
+///
+/// 落盘**不**直接 `std::fs::write` 目标——那等于先截断再写：自动保存默认每 2s 一次，
+/// 「截断到写完」之间的窗口里进程崩溃/断电/被强杀 ⇒ 用户的 .md 只剩半截且无备份。
+/// 改为「同目录临时文件 → `commit_save` 原子替换」（同 print.rs 导出链的思路），
+/// 任何失败路径只清理自己的临时产物，目标文件保持原内容逐字节不变。
 pub fn save_file_at(path: &str, text: &str, encoding: &str, bom: bool) -> Result<(), String> {
     let encoding = Encoding::for_label(encoding.as_bytes())
         .ok_or_else(|| format!("无法识别的编码名称：{encoding}"))?;
@@ -269,7 +277,88 @@ pub fn save_file_at(path: &str, text: &str, encoding: &str, bom: bool) -> Result
     let mut out = Vec::with_capacity(bom_prefix.len() + encoded.len());
     out.extend_from_slice(bom_prefix);
     out.extend_from_slice(encoded.as_ref());
-    std::fs::write(path, out).map_err(|e| format!("无法保存文件：{path}（{}）", io_reason(&e)))
+    let dest = Path::new(path);
+    // 只读目标 ⇒ 直接拒绝（与旧 std::fs::write 路径同判：写只读文件必被拒）。
+    // 若放行，下面的改名三步会成功、只读标记被顺带丢掉——崩溃安全改造不得顺带改保存策略。
+    // 文案「没有访问权限」与 io_reason 的 PermissionDenied 分支同源。
+    if std::fs::metadata(dest).map(|m| m.permissions().readonly()).unwrap_or(false) {
+        return Err(format!("无法保存文件：{path}（没有访问权限）"));
+    }
+    let temp = temp_save_path(dest);
+    if let Err(e) = std::fs::write(&temp, &out) {
+        cleanup_temp(&temp);
+        return Err(format!("无法保存文件：{path}（{}）", io_reason(&e)));
+    }
+    commit_save(&temp, dest).map_err(|e| format!("无法保存文件：{path}（{}）", io_reason(&e)))
+}
+
+/// 保存链的去重序号：同进程内并发/连续保存的临时、备份名互不覆盖（同 print.rs 的 TEMP_SEQ）。
+static SAVE_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// 保存链的中转文件路径（`tmp`/`bak` 两用）：与目标**同目录**（同卷 ⇒ 收尾的改名才是
+/// 原子替换，不跨卷复制）。命名沿用 print.rs::temp_export_path 的风格：
+/// `<主名>.<marker>-<pid>-<纳秒>-<序号>.<扩展名>`——每次调用都不同（2s 一次的自动保存
+/// 也不互相覆盖），扩展名沿用目标扩展名（缺省 md）。
+fn staged_save_path(dest: &Path, marker: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let seq = SAVE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let stem = dest
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "save".to_string());
+    let ext = dest
+        .extension()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "md".to_string());
+    let name = format!("{stem}.{marker}-{}-{nanos}-{seq}.{ext}", std::process::id());
+    dest.with_file_name(name)
+}
+
+/// 保存的临时文件：新内容先完整落在这里，目标文件此期间保持原内容。
+fn temp_save_path(dest: &Path) -> PathBuf {
+    staged_save_path(dest, "tmp")
+}
+
+/// 替换期间的备份：原内容暂存处；提交后删除，失败时改回原名。
+fn backup_save_path(dest: &Path) -> PathBuf {
+    staged_save_path(dest, "bak")
+}
+
+/// 清掉保存链自己的中转产物（失败路径只删自己造的文件，目标一个字节都不动）。
+fn cleanup_temp(staged: &Path) {
+    let _ = std::fs::remove_file(staged);
+}
+
+/// 保存收尾（Windows 覆盖语义三步走，思路同 print.rs 的原子导出链）：
+/// ① 原文件改名让位（内容仍在同目录备份里）→ ② 临时文件原子改名到位 → ③ 删除备份。
+/// 任一步失败 ⇒ 清理临时产物、把备份改回原名——目标要么是完整旧内容、要么是完整新内容，
+/// 绝无「半截文件」形态。目标不存在（新文件）时直接改名到位；异常目标（目录等）让改名
+/// 自然失败、原样保留，不做任何搬动。
+fn commit_save(temp: &Path, dest: &Path) -> Result<(), std::io::Error> {
+    if !dest.is_file() {
+        return std::fs::rename(temp, dest).map_err(|e| {
+            cleanup_temp(temp);
+            e
+        });
+    }
+    let backup = backup_save_path(dest);
+    // ① 原文件 → 备份：让出目标名，原内容仍在盘上；失败 ⇒ 目标未动，只清临时产物
+    if let Err(e) = std::fs::rename(dest, &backup) {
+        cleanup_temp(temp);
+        return Err(e);
+    }
+    // ② 临时文件 → 目标：同目录改名即原子生效，此后本次保存视为已提交
+    if let Err(e) = std::fs::rename(temp, dest) {
+        let _ = std::fs::rename(&backup, dest); // 回滚：备份改回原名，恢复原文件（同卷改名，正常必成）
+        cleanup_temp(temp);
+        return Err(e);
+    }
+    // ③ 删除备份（此刻保存已成功；删不掉也只是残留一个备份文件，不损数据）
+    cleanup_temp(&backup);
+    Ok(())
 }
 
 /// 写入口：**先过受信校验**（未受信的文件一个字节都不写），再落盘。

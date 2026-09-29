@@ -136,6 +136,24 @@ describe("配色（D-01：5 套主题，与 data-theme 正交）", () => {
     expect(title).toContain("浅色");
     expect(title).toContain("宣纸");
   });
+
+  /* C9（2026-09-29）：aria-label 原先不随档位更新（只写 title）——读屏永远播初始文案 */
+  it("C9：applyThemePref 同步刷新 aria-label，且与 title 同文案随档位换新", () => {
+    const btn = document.getElementById("btn-theme") as HTMLElement;
+    applyThemePref("dark");
+    expect(btn.title).toContain("深色");
+    expect(btn.getAttribute("aria-label")).toBe(btn.title);
+    applyThemePref("auto");
+    expect(btn.title).toContain("自动");
+    expect(btn.getAttribute("aria-label")).toBe(btn.title);
+  });
+
+  it("C9：applyPalettePref 换配色同样同步 aria-label（两维度同一回显点）", () => {
+    const btn = document.getElementById("btn-theme") as HTMLElement;
+    applyPalettePref("shimo");
+    expect(btn.title).toContain("石墨");
+    expect(btn.getAttribute("aria-label")).toBe(btn.title);
+  });
 });
 
 describe("watchSystemTheme（系统变化即时跟随，仅自动档）", () => {

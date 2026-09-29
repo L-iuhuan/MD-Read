@@ -18,8 +18,10 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    // 只审手写 TS：构建产物、Rust 侧、依赖目录不进 lint
-    ignores: ["dist/**", "node_modules/**", "src-tauri/**"],
+    // 只审手写 TS：构建产物、Rust 侧、依赖目录、本机验证工作台不进 lint。
+    // .verify/** 是 gitignore 的本机验证垃圾（探针/临时重定向），曾出现受限 ACL
+    // 导致 eslint scandir EPERM 直接掀翻门禁（CI 冷克隆无此目录故不红）——必须在 ignore 里免疫。
+    ignores: ["dist/**", "node_modules/**", "src-tauri/**", ".verify/**"],
   },
   {
     files: ["src/**/*.ts", "tests/**/*.ts"],

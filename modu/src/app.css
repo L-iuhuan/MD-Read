@@ -1045,8 +1045,8 @@ html.settings-open #btn-settings {
    纸宽 = --measure + 2×--pad-page，正文（--measure）居中落在纸面内，与 cjk.css
    的 `.mdc > *` 限宽规则同源，两边不会打架；min-block-size: 100% 让短文档也铺满
    视高，纸边不出现「纸的下沿」。
-   ⚠ 打印：print.css 目前只清了 #doc 的限宽/内边距，没清 #content/#doc 的底色 ——
-     纸面现在是纯白（无墨），但画布那层会随 print-color-adjust: exact 印出来。
+    打印：底色与限宽已由 print.css 统一清零（根链 #content/#doc 全覆盖，
+    tests/css-fixes.spec.ts 有反向锚），本节不写任何打印侧规则。
    ========================================================================== */
 .body-row { display: flex; flex: 1; min-height: 0; }
 

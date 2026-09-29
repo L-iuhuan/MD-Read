@@ -18,6 +18,8 @@
 | **导出** | 导出 PDF：**无页眉**、页脚仅居中页码（「— 3 —」） |
 | **外观** | **5 套主题 × 亮/暗**（靛蓝 · 宣纸 · 石墨 · 紫黛 · 青墨）；字号与行宽可调；字体面板可切换并**显示"实际生效的字体"** |
 | **编码** | 读：UTF-8 优先、GB18030 回退检测；写：**保持原编码**，不静默转 UTF-8 |
+| **缩放** | **整体缩放**（整个界面等比缩放，≠字号/行宽）：90 / 100 / 110 / 125 / 150% 档位；面板 `±`、`Ctrl+滚轮`、`Ctrl+=` / `Ctrl+-` / `Ctrl+0`（复位 100%）三条入口；档位持久化 |
+| **无障碍** | 全部控件键盘可达（有实测审计工具 `modu/tests/tools/kbd-audit.mjs` ✓）；`focus-visible` 统一焦点环；交互控件带 `aria-` 状态（label / expanded / pressed / selected 等） |
 
 ---
 
@@ -67,13 +69,17 @@ MSI 是 per-machine ⇒ 需要管理员 ✓
 
 本应用为**常规文档**（典型几十页）优化，性能预算（见 `modu/AGENTS.md`）：
 
-| 指标 | 预算 | 实测（本机） |
-|---|---|---|
-| 冷开 ≤ 10 页 | ≤ 80 ms | **46 ms** |
-| 冷开 ≤ 30 页 | ≤ 100 ms | **61 ms** |
-| 冷开 ≤ 100 页 | ≤ 200 ms | **67 ms** |
-| 冷开 ≤ 200 页 | ≤ 300 ms | **92 ms** |
-| 滚动（确定性下行） | ≥ 55 FPS | ⭐ **74.97**（＝ 75Hz vsync 上限 ✓） |
+| 指标 | 预算 |
+|---|---|
+| 冷开 ≤ 10 页 | ≤ 80 ms |
+| 冷开 ≤ 30 页 | ≤ 100 ms |
+| 冷开 ≤ 100 页 | ≤ 200 ms |
+| 冷开 ≤ 200 页 | ≤ 300 ms |
+| 滚动（确定性下行） | ≥ 55 FPS |
+
+实测读数**不写进本文档**（换台机器就过期 ✗）：性能复跑口径与最近一轮结果见
+`docs/tasks/2026-09-27-换机交付与验收报告.md` 第七节（CDP 真机探针 + 标准语料；
+2026-09-27 那轮五档全达标 ✓）；安装包体积读数跑 `node modu/tests/tools/check-portability.mjs`。
 
 **远超这个规模（数千页 / 数十 MB）不在设计范围内**，也不必为它加特判 —— 阅读区虚拟化是另一个量级的改造。
 
@@ -134,12 +140,7 @@ modu/
   src/
     main.ts             接线与启动
     app/                业务模块（tabs / recent / drop / outline-follow / md-ext / **zoom** / **tab-hotkeys** …）
-    app/*.css           面板样式（workspace-panel / settings-panel / shell-tail —— 为守住 app.css 的**行数棘轮**而外移 ✓）' },
-  @{ old = '| **编码** | 读：UTF-8 优先、GB18030 回退检测；写：**保持原编码**，不静默转 UTF-8 |';
-     new = @'
-| **编码** | 读：UTF-8 优先、GB18030 回退检测；写：**保持原编码**，不静默转 UTF-8 |
-| **缩放** | 面板 `±`、`Ctrl+滚轮`、`Ctrl+=` `Ctrl+-` `Ctrl+0`（100% 复位）—— 三档入口都作用在正文层 |
-| **无障碍** | 全部控件键盘可达（有实测审计工具 `modu/tests/tools/kbd-audit.mjs` ✓）；焦点态统一 |
+    app/*.css           面板样式（workspace-panel / settings-panel / shell-tail —— 为守住 app.css 的**行数棘轮**而外移 ✓）
     ui/                 界面模块（findbar / settings / theme / font-* / close-confirm / empty-state …）
     render/             渲染管线（markdown-it 插件、KaTeX、Mermaid、打印就绪、离屏策略）
     typography/         tokens.css（**色值与刻度的唯一落点**）/ cjk.css / hljs.css / print.css

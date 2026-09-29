@@ -140,6 +140,11 @@ jobs:
           fetch-depth: 0
       # 词条清单 scripts/.sensitive-extra.txt 是 gitignored 的，CI 里必然缺失：
       # 脚本会降级成"只跑通用模式"并给出 WARNING，但**仍然返回 0**（不能因为没有词条就不跑）。
-      - name: 运行门禁（非零即失败）
+      # ⚠ 因此本步骤是**降级模式**：仅通用 7 条模式；扩展词条文件不在库（身份载体）—— 不是全量防护。
+      #   标注写进步骤名（CI 日志按 UTF-8 渲染 ✓）＋ 下方 ASCII echo（cmd 按 OEM 码页解析 run 脚本，
+      #   必须保持 ASCII-only —— 与 scripts/check-sensitive.cmd 同一条纪律，中文进 run 块会乱码 ✗）。
+      - name: 运行门禁（非零即失败）⚠ 降级模式：仅通用 7 条模式；扩展词条文件不在库（身份载体）
         shell: cmd
-        run: scripts\check-sensitive.cmd
+        run: |
+          echo [DEGRADED MODE] only the 7 generic patterns run here - scripts/.sensitive-extra.txt is NOT in the repo (it carries real identities). This step is NOT full protection.
+          scripts\check-sensitive.cmd

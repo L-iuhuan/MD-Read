@@ -1,4 +1,4 @@
-# 墨读 · 体积门禁（**手动触发**，不进每次 push 的主流程）
+# 墨读 · 体积门禁（**手动触发 + tag push 自动触发**；上限**写死 8MB，不接受任何输入覆盖**）
 #
 # 为什么单独放：`tauri build` 会从 GitHub 下载 WiX/NSIS（首次几百 MB、几分钟），
 # 而且 MSI 体积门禁（≤8MB）只在"准备发布"时才有意义。主 CI 里只保证代码门禁与单测。
@@ -10,12 +10,10 @@
 name: MSI size gate
 
 on:
+  # tag push（v*）自动触发：发布时刻正是体积门禁最有意义的时刻（2026-09-29 补 ✓）
+  push:
+    tags: ['v*']
   workflow_dispatch:
-    inputs:
-      max_mb:
-        description: 'MSI 体积上限（MB）'
-        required: false
-        default: '8'
 
 permissions:
   contents: read
@@ -45,10 +43,11 @@ jobs:
       - name: 构建安装包（WiX/NSIS 首次会从 GitHub 下载）
         working-directory: modu
         run: pnpm tauri build
-      - name: MSI ≤ 上限？
+      - name: MSI ≤ 8MB？（宪法硬门禁：上限写死，不接受任何输入覆盖）
         shell: pwsh
         run: |
-          $max = [double]${{ github.event.inputs.max_mb }}
+          # ⚠ 上限写死 8：原先取 dispatch 输入（可被手填 999 绕过 ✗）⇒ 宪法「≤8MB 硬门禁」名不副实，已改常量
+          $max = 8
           $msi = Get-ChildItem -Path 'modu/src-tauri/target/release/bundle/msi/*.msi' -ErrorAction Stop
           $mb = [math]::Round($msi.Length / 1MB, 2)
           Write-Host "MSI: $($msi.Name) = $mb MB（上限 $max MB）"

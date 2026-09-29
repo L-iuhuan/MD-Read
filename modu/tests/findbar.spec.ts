@@ -3,8 +3,9 @@
  * 关闭与重搜后 #doc 的 textContent 必须与开启前逐字节一致（M1 复制保真红线），
  * 语料含中文与金额串 $1,000。另覆盖：大小写不敏感、跳过 .katex/script、
  * Enter/Shift+Enter 环绕、Ctrl+F/Esc、输入法组词中的 Enter 不翻页。
+ * C7（2026-09-29）：input 走 150ms 防抖——本文件全程假时钟，typeIn 默认冲满窗口。
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupFindbar } from "../src/ui/findbar";
 
 const CORPUS = [
@@ -30,10 +31,14 @@ function marksInDoc(): HTMLElement[] {
 function currentMark(): HTMLElement | null {
   return getDoc().querySelector<HTMLElement>("mark.find-current");
 }
-function typeIn(value: string): void {
+/** typeIn 默认冲满防抖窗口（既有用例语义不变）；flush=false 只派发 input 不冲（测 C7） */
+function typeIn(value: string, opts?: { flush?: boolean }): void {
   const input = getInput();
   input.value = value;
   input.dispatchEvent(new Event("input", { bubbles: true }));
+  if (opts?.flush !== false) {
+    vi.advanceTimersByTime(150);
+  }
 }
 function pressKey(target: EventTarget, key: string, opts?: { shift?: boolean; ctrl?: boolean; composing?: boolean }): void {
   target.dispatchEvent(
@@ -48,6 +53,7 @@ function pressKey(target: EventTarget, key: string, opts?: { shift?: boolean; ct
 }
 
 beforeEach(() => {
+  vi.useFakeTimers(); // C7：input 有 150ms 防抖，用例须自己推进时钟
   document.body.innerHTML =
     '<div id="findbar" hidden><input id="find-input" /><span id="find-count">0/0</span>' +
     '<button id="find-prev">↑</button><button id="find-next">↓</button>' +
@@ -55,6 +61,10 @@ beforeEach(() => {
     '<article id="doc"></article>';
   getDoc().innerHTML = CORPUS;
   Element.prototype.scrollIntoView = (): void => {}; // jsdom 未实现，替换为空操作
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("wrap/unwrap 文本一致性（复制保真红线）", () => {
@@ -281,5 +291,62 @@ describe("P0-4 跨节点匹配（pangu 空 span / tok-break / strong-em）", () 
     expect(marksInDoc().length).toBe(1);
     findbar.close();
     expect(getDoc().textContent).toBe(before);
+  });
+});
+
+/* C7（2026-09-29）：input 直连 search() 在大文档上逐键全量重扫 ⇒ 150ms 防抖。
+ *   语义写死：仅 input 路径防抖；Enter 与 ⟲⟳ 按钮立即执行（先冲挂起重搜再跳）；
+ *   关闭/重开清理挂起定时器，不泄漏。 */
+describe("C7：输入防抖（仅 input 路径）", () => {
+  it("150ms 内不重扫，到点搜一次；连续击键只保留末次查询", () => {
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("rep", { flush: false });
+    typeIn("eate", { flush: false }); // 连击：前一次的定时器被取消，只剩本次（"repeate"）
+    expect(marksInDoc().length).toBe(0);
+    vi.advanceTimersByTime(149);
+    expect(marksInDoc().length).toBe(0);
+    vi.advanceTimersByTime(1);
+    expect(marksInDoc().length).toBe(2); // 语料两处 repeated 都含 "repeate"
+    expect(getCount()).toBe("1/2");
+  });
+
+  it("Enter 绕过防抖：input 后立刻 Enter，同步冲挂起重搜并下跳", () => {
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("repeated", { flush: false });
+    expect(marksInDoc().length).toBe(0); // 还在防抖窗口内
+    pressKey(getInput(), "Enter");
+    expect(marksInDoc().length).toBe(2); // 挂起重搜已被立即执行
+    expect(getCount()).toBe("2/2"); // 且 Enter 的「下一个」用的是新鲜结果
+  });
+
+  it("↑/↓ 按钮绕过防抖：立即按新结果跳", () => {
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("repeated", { flush: false });
+    (document.getElementById("find-next") as HTMLElement).click();
+    expect(getCount()).toBe("2/2");
+  });
+
+  it("关闭清掉挂起定时器：关了再走到点也不重搜（不泄漏）", () => {
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("repeated", { flush: false });
+    findbar.close();
+    expect(marksInDoc().length).toBe(0); // close 已 unwrap
+    vi.advanceTimersByTime(500);
+    expect(marksInDoc().length).toBe(0); // 挂起的重搜没复活 ⇒ 定时器已被清理
+  });
+
+  it("重新打开不带入旧会话的挂起定时器（open 时清理 + 立刻重搜）", () => {
+    const findbar = setupFindbar(() => getDoc());
+    findbar.open();
+    typeIn("repeated", { flush: false });
+    findbar.close();
+    findbar.open(); // input.value 仍在 ⇒ 立刻重搜（既有行为）
+    expect(getCount()).toBe("1/2");
+    vi.advanceTimersByTime(500);
+    expect(getCount()).toBe("1/2"); // 旧定时器不复活、索引不被重置
   });
 });
