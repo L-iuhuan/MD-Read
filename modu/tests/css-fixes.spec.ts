@@ -176,7 +176,9 @@ describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () 
   it("代码块复制钮：hover 浮现 + 打印退场 + pre 锚点化", () => {
     expect(cjk).toMatch(/\.mdc pre\[data-lang\]\s*\{\s*position:\s*relative/);
     expect(cjk).toMatch(/\.mdc \.code-copy\s*\{[^}]*opacity:\s*0/);
-    expect(cjk).toMatch(/\.mdc pre:hover \.code-copy/);
+    expect(cjk).toMatch(/\.mdc \.code-wrap:hover \.code-copy/);
+  // 反向锚：P2Q-34 后钮不在 pre 内，`pre:hover .code-copy` 是死选择器（2026-09-30 主人实测回归），禁止回归
+  expect(cjk).not.toMatch(/pre:hover \.code-copy/);
     expect(printCss).toMatch(/\.mdc \.code-copy\s*\{[^}]*display:\s*none/);
   });
 

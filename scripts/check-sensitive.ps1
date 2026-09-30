@@ -37,8 +37,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = (git rev-parse --show-toplevel).Trim()
-Set-Location $repoRoot
+# 仓库根定位（2026-09-30 E 盘中文路径实测两次翻车后定稿）：
+# git rev-parse 的输出是 UTF-8 字节，PS 5.1 按控制台 OEM(GBK) 码页解码中文 ⇒ 路径
+# 字符串真实损坏（Set-Location ItemNotFound，且 core.quotepath 修法无效——问题在解码
+# 不在 git）。本脚本物理上必然位于 <repo>\scripts\ ⇒ 用 $PSScriptRoot 上取一级，
+# 零编码风险、任意克隆位置皆成立。
+$repoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location -LiteralPath $repoRoot
 
 # ── 1) 通用模式（内联安全：不含任何具体身份信息）────────────────
 $generic = [ordered]@{

@@ -242,7 +242,10 @@
               border-color var(--duration-1) var(--ease-1),
               background-color var(--duration-1) var(--ease-1);
 }
-.mdc pre:hover .code-copy, .mdc .code-copy:focus-visible { opacity: 1; }
+/* P2Q-34 把钮挪出 pre 挂到 .code-wrap 后，旧的「pre 悬停 + 后代钮」选择器永不匹配
+   （钮已是 pre 的兄弟而非后代）⇒ 钮永久隐身（2026-09-30 主人实测「无复制按钮」）。
+   改挂 wrap 的 hover：pre 占满 wrap，语义等价且真的能命中。 */
+.mdc .code-wrap:hover .code-copy, .mdc .code-copy:focus-visible { opacity: 1; }
 /* hover 底改用 --bg-subtle（G2，2026-09-29）：暗色下原 --bg-hover 比代码块底更暗，
    悬停几乎没有反馈；--bg-subtle 的暗色档已提一档（tokens.css），与代码块底形成
    明暗反转。描边/图标颜色照旧同换，仍是三重反馈。
