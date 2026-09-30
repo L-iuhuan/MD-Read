@@ -78,10 +78,9 @@ describe("D-01 ② 10 组调色板齐全", () => {
     "--pal-soft",
     "--pal-on",
     "--pal-quote",
-    "--pal-th",
   ];
 
-  it("每组 15 个原色各出现 10 次（5 套 × 亮暗）", () => {
+  it("每组 14 个原色各出现 10 次（5 套 × 亮暗；--pal-th 已随 O1 退役删除）", () => {
     for (const name of REQUIRED) {
       const hits = tokens.match(new RegExp(`${name}\\s*:`, "g")) ?? [];
       expect(hits.length, `${name} 应声明 10 次`).toBe(10);

@@ -176,23 +176,31 @@ describe("P6 已定义未接线的 token 归位", () => {
     expect(cjk).toMatch(/\.mdc \.code-copy\s*\{[^}]*box-shadow:\s*var\(--shadow-ctl\)/);
   });
 
-  it("--bg-th 按注释明确留给「正文排版」批（本批不动正文消费方）", () => {
-    expect(tokens).toMatch(/--bg-th:\s*var\(--pal-th\)/);
-    expect(tokens).toContain("本批（面板/控件）故意不接线");
-    expect(cjk).toMatch(/\.mdc thead th\s*\{[^}]*background:\s*var\(--bg-code\)/);
+  it("O1 连锚裁决：--bg-th 正式接线（表头淡 accent 底），不再是「留待批次」状态", () => {
+    // 2026-09-30 Lane O（FB-13）：旧锚锚的是「--bg-th = var(--pal-th) 且不接线 +
+    // thead th 走 --bg-code 中性灰」；L 批遗留①「淡 accent 底」在本批落地 ⇒ 锚按新语义重写：
+    // 表头底 = 纸面 × accent 系 10%（亮 ink / 暗 solid 分叉，与 --tint-quote 亮暗分工同族；
+    // 表头文字对底 8.8~13.9:1，≥4.5 十组）。
+    expect(tokens).toMatch(
+      /--bg-th:\s*color-mix\(in oklab, var\(--bg-paper\) 90%, var\(--accent-ink\)\)/,
+    );
+    expect(tokens).toMatch(
+      /--bg-th:\s*color-mix\(in oklab, var\(--bg-paper\) 90%, var\(--accent-solid\)\)/,
+    );
+    expect(cjk).toMatch(/\.mdc thead th\s*\{[^}]*background:\s*var\(--bg-th\)/);
+    // 反向锚①：不得回退 --bg-code（旧中性灰路线）；②不得回留 --pal-th（已退役删除）
+    expect(cjk).not.toMatch(/\.mdc thead th\s*\{[^}]*background:\s*var\(--bg-code\)/);
+    expect(tokens).not.toMatch(/--bg-th:\s*var\(--pal-th\)/);
   });
 
-  it("--bg-th 的批次 3-5 结论已记账：不接线（改观感+基线）且不删除（否则 --pal-th 悬空）", () => {
-    // 结论必须**写在注释里**（"已定义未接线"的 token 不许悬空、也不许无说明 —— P6 的判据）
-    expect(tokens).toContain("批次 3-5 复核");
-    expect(tokens).toContain("仍不接线、不删除");
-    // 注释必须写明"留待哪个批"（否则后人无法判断该不该动）
-    expect(tokens, "注释必须写明留待「正文排版」批").toContain("正文排版」批");
-    // ⚠ 反向锚：--pal-th 只被 --bg-th 消费 ⇒ 删掉 --bg-th 会让 --pal-th 变成悬空 token（P6 禁止）
-    const palThDecls = tokensBody.match(/--pal-th:/g) ?? [];
-    expect(palThDecls.length, "--pal-th 应在多套调色板里都有定义").toBeGreaterThan(1);
-    expect(tokens, "--pal-th 必须仍被 --bg-th 消费（否则它自己成了悬空 token）").toMatch(/--bg-th:\s*var\(--pal-th\)/);
-    expect(tokens, "注释必须写明删除的后果（会让 --pal-th 悬空）").toContain("悬空 token");
+  it("O1 连锚裁决：--pal-th 退役删除（与 --pal-soft 十组逐值重复；弃用即删防悬空）", () => {
+    // 旧锚的反向断言（「不能删，否则 --pal-th 悬空」）随语义翻转：--bg-th 改自派生配方后
+    // 不再消费 --pal-th ⇒ 留下它自己才是悬空 token（P6 判据）。实测 --pal-th 与 --pal-soft
+    // 在 5 套 × 亮暗十组逐值全等（数据见 tokens.css 注释）⇒ 删除无观感损失。
+    expect(tokens).not.toMatch(/--pal-th\s*:/);
+    expect(tokens).not.toMatch(/var\(--pal-th\)/); // 声明与消费两处都不许残留（注释留档不算）
+    expect(tokens, "注释必须写明退役理由（逐值重复）").toContain("逐值重复");
+    expect(tokens, "注释必须写明弃用即删的 P6 理由（悬空）").toContain("悬空");
   });
 });
 

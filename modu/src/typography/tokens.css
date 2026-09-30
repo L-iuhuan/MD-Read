@@ -15,7 +15,7 @@
    - 宪法强规 4「主题色值只从 Radix 阶数取」已被 D-01 用户裁决覆盖（新 5 套调色板
      不属 Radix 体系，且 #1d4ed8 不在任何 Radix 阶数里）——本条须随报告入评审台账；
      红绿黄状态色未换体系，仍取 Radix 阶数。
-   - 派生量（tint 悬停/描边、强调文字悬停、hover/active 面、强描边、代码底）
+   - 派生量（tint 悬停/描边、强调文字悬停、hover/active 面、强描边、代码底、表头底）
      一律写成本文件内的 color-mix，**不新造字面色值**；同档位亮暗配方同族、
      方向随亮暗自适应（混入 --pal-fg / --pal-line-2：亮色变深、暗色变浅）；
      亮暗分叉处均有 K3/K4 注释记录（例：暗色 hover，见下方调色板区）。
@@ -254,7 +254,7 @@
   --pal-hover: #f2f4f7;   /* D-01 给定的悬停面 */
   --pal-fg: #1f2328;      --pal-muted: #69707a;   --pal-dim: #98a1ac;
   --pal-accent: #1d4ed8;  --pal-soft: #eef3fd;    --pal-on: #14428f;
-  --pal-quote: #f4f7fd;   --pal-th: #eef3fd;
+  --pal-quote: #f4f7fd;
 }
 
 /* --- 宣纸 · 亮 --- */
@@ -264,7 +264,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #262119;      --pal-muted: #7a7266;   --pal-dim: #a8a196;
   --pal-accent: #8a7550;  --pal-soft: #f4f1e8;    --pal-on: #6d5c33;
-  --pal-quote: #faf8f3;   --pal-th: #f4f1e8;
+  --pal-quote: #faf8f3;
 }
 
 /* --- 石墨 · 亮 --- */
@@ -274,7 +274,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #1c1f22;      --pal-muted: #6b7278;   --pal-dim: #9aa1a7;
   --pal-accent: #5b6672;  --pal-soft: #eef0f2;    --pal-on: #414b56;
-  --pal-quote: #f6f7f8;   --pal-th: #eef0f2;
+  --pal-quote: #f6f7f8;
 }
 
 /* --- 紫黛 · 亮 --- */
@@ -284,7 +284,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #1e1f2e;      --pal-muted: #696c86;   --pal-dim: #9a9db6;
   --pal-accent: #3b4fa8;  --pal-soft: #ebeafa;    --pal-on: #2f3f8f;
-  --pal-quote: #f4f4fc;   --pal-th: #ebeafa;
+  --pal-quote: #f4f4fc;
 }
 
 /* --- 青墨 · 亮 --- */
@@ -294,7 +294,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
   --pal-fg: #1b2321;      --pal-muted: #64716f;   --pal-dim: #96a3a1;
   --pal-accent: #2f7d78;  --pal-soft: #e4f1ef;    --pal-on: #25605c;
-  --pal-quote: #f3f8f7;   --pal-th: #e4f1ef;
+  --pal-quote: #f3f8f7;
 }
 
 /* ⚠ K3（2026-09-29，主人实测反馈③）：五组暗色 --pal-paper 由 D-01 原值提档——
@@ -311,7 +311,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #e6e9ee;      --pal-muted: #98a0ad;   --pal-dim: #6b7480;
   --pal-accent: #4da3ff;  --pal-soft: #16283c;    --pal-on: #9dc9ff;
-  --pal-quote: #1a2130;   --pal-th: #16283c;
+  --pal-quote: #1a2130;
 }
 
 /* --- 宣纸 · 暗（暖碳）--- */
@@ -321,7 +321,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #eae8e2;      --pal-muted: #a5a096;   --pal-dim: #78746b;
   --pal-accent: #d9a353;  --pal-soft: #302819;    --pal-on: #ecc98d;
-  --pal-quote: #1f1d18;   --pal-th: #302819;
+  --pal-quote: #1f1d18;
 }
 
 /* --- 石墨 · 暗 --- */
@@ -331,7 +331,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #e8eaec;      --pal-muted: #9aa1a7;   --pal-dim: #6f767c;
   --pal-accent: #a8b4c0;  --pal-soft: #242a30;    --pal-on: #c8d3de;
-  --pal-quote: #1e2225;   --pal-th: #242a30;
+  --pal-quote: #1e2225;
 }
 
 /* --- 紫黛 · 暗 --- */
@@ -341,7 +341,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #e7e7f0;      --pal-muted: #9a9ab5;   --pal-dim: #6f6f85;
   --pal-accent: #8f9ce8;  --pal-soft: #262a42;    --pal-on: #bcc5f5;
-  --pal-quote: #1e1e2c;   --pal-th: #262a42;
+  --pal-quote: #1e1e2c;
 }
 
 /* --- 青墨 · 暗 --- */
@@ -351,7 +351,7 @@
   --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #e5ebe9;      --pal-muted: #95a39f;   --pal-dim: #6b7874;
   --pal-accent: #5fc0b4;  --pal-soft: #1a2b28;    --pal-on: #a5ded5;
-  --pal-quote: #172220;   --pal-th: #1a2b28;
+  --pal-quote: #172220;
 }
 
 /* ==========================================================================
@@ -370,20 +370,30 @@
   --bg-canvas: color-mix(in oklab, var(--pal-chrome) 50%, var(--pal-hair));
                                      /* 纸面之外那一圈（亮色比壳层深半档；暗色见 dark 块）*/
   --bg-subtle: color-mix(in oklab, var(--pal-chrome) 45%, var(--pal-hair));
-                                     /* 行内代码 / 公式降级底（中性，不抢强调色）*/
-  --bg-code: color-mix(in oklab, var(--pal-chrome) 45%, var(--pal-hair));
-                                     /* 代码块底（与 --bg-subtle 同族，hljs.css 消费）*/
+                                     /* 复制钮 hover 底（控件 hover 语义；暗色档见文件末）。
+                                        O2（2026-09-30）起行内代码底改走 --bg-code-inline，
+                                        本名不再是「代码系」底料。 */
+  /* O2（FB-13，2026-09-30）：代码底改 accent 派生淡 tint —— 原「45% chrome × hair」
+     中性灰路线退役（主人「代码块底是灰的」根因）。同族配方：亮色一律混墨档
+     --accent-ink；暗色块底因**对比下界**（代码字对底 ≥ 改前实测，逐组逐 token）取
+     「比纸面更暗」的 tint 档（solid/ink 暗档偏亮，混入会拉亮底 ⇒ 对比下降，实测 Δ<0），
+     暗色下芯片与表头同走实心档（块/芯片明暗反转保留，暗色分叉见文件末）。「极淡」阈值
+     （本批口径）：对纸面亮度比 ≤1.45:1（低于现状行内底 1.516~1.558 的合成深度）；实测随行。 */
+  --bg-code: color-mix(in oklab, var(--bg-paper) 90%, var(--accent-ink));
+                                     /* 代码块底（hljs.css pre 消费）：对纸面 1.169~1.204:1；
+                                        代码字（--text + hljs 五色）minΔ +0.10（改后 ≥ 改前）*/
+  --bg-code-inline: color-mix(in oklab, var(--bg-paper) 94%, var(--accent-ink));
+                                     /* 行内代码芯片底（cjk.css 消费）：对纸面 1.097~1.119:1，
+                                        比块底淡一档；芯片字 minΔ +0.50 */
   --bg-quote: var(--pal-quote);      /* 引用块底 */
-  --bg-th: var(--pal-th);            /* 表头底。**本批（面板/控件）故意不接线**：
-                                        唯一消费方是 cjk.css 的 `.mdc thead th`（正文排版层，
-                                        不是面板/控件），换底会改动纸面正文的观感与截图基线，
-                                        故留到「正文排版」批随表格节一起切（见面板统一报告 §P6）。
-                                        ⚠ 批次 3-5 复核（2026-09-23）结论：**仍不接线、不删除** ——
-                                        · 接线：`.mdc thead th` 今天用 `--bg-code`，换成 `--bg-th` 是**观感变更**
-                                          （改纸面正文 + 截图基线）⇒ 属「正文排版」批且需设计裁决，本批不动；
-                                        · 删除：`--pal-th` 在 **10 套调色板**里都已定义、且**只被本 token 消费**
-                                          ⇒ 删掉它会让 `--pal-th` 变成**悬空 token**（正是 P6 要防的）。
-                                        锚：tests/panel-unify.spec.ts P6（含"必须写明留待批次"的反向断言）。 */
+  --bg-th: color-mix(in oklab, var(--bg-paper) 90%, var(--accent-ink));
+                                     /* O1（FB-13，2026-09-30）表头淡 accent 底 —— L 批遗留①
+                                        正式接线（连 tests/panel-unify.spec.ts P6 锚裁决）。
+                                        历史处置：--pal-th 与 --pal-soft **十组逐值重复**（实测
+                                        5 套 × 亮暗全等），弃用后即**删除** —— 留下会让它成为
+                                        悬空 token（正是 P6 要防的）。消费方：cjk.css .mdc thead th
+                                        （表头文字 --text 对底 13.2~13.9:1；暗色分叉见文件末
+                                        8.8~9.2:1，均 ≥4.5 十组）。 */
   /* --bg-zebra 已删（2026-09-29 G9）：斑马纹随 D2 视觉减负砍掉后无消费方，
      留一个「已定义未接线」的 token 违反 P6 ⇒ 摘除（禁止再以任何规则消费本名）。 */
   --bg-hover: var(--pal-hover);      /* 悬停面（D-01：#f2f4f7）*/
@@ -434,7 +444,7 @@
                                              对画布 3.80~6.67 —— 均 ≥3:1，非文本对比度达标）*/
 
   /* --- 纸面文字着色专用 accent 墨档（M2 · FB-11，2026-09-30）---
-     消费方：cjk.css 的 H2-H4 / 脚注引用上标 / 代码块语言标签。
+     消费方：cjk.css 的 H2-H4 / 脚注引用上标 / 代码块语言标签 / 链接（N1 起）。
      为什么不直接用 --accent-text（=pal-on）：pal-on 是「软底上的深墨」档，暗色组是
      低彩度浅灰系（紫黛暗 #bcc5f5 C=0.068、青墨暗 #a5ded5 C=0.060），纸面着色发灰
      （主人实测 FB-11「除了宣纸，其他的填色都是比较灰灰的」）；亮色组虽不灰，彩度
@@ -448,12 +458,20 @@
      ≈ 现状 #6d5c33（对比 6.72 ≥ 现状 6.45）。 */
   --accent-ink: oklch(from var(--pal-accent) calc(l - 0.1) c h);
 
-  /* --- 纸面主题色（L1 · FB-8，2026-09-30）：引用块底 tint ---
+  /* N1（FB-12，2026-09-30）：墨档悬停档 —— 配方与 --accent-text-hover 同族
+     （基色 78% × --pal-fg 22%，亮暗自适应），消费方 = cjk.css 的 .mdc a:hover
+     （十组对纸面实测 6.68~12.31:1，≥4.5 正文级）。 */
+  --accent-ink-hover: color-mix(in oklab, var(--accent-ink) 78%, var(--pal-fg));
+
+  /* --- 纸面主题色（L1 · FB-8，2026-09-30 → N1 提彩）：引用块底 tint ---
      引用块 = 左 accent 实心边条（cjk.css 消费 --accent-solid）+ 本 tint。
-     亮色配方 = 7% accent 墨（--accent-text）混入 --bg-quote：十组实测对纸面
-     1.166~1.232:1（阈值 ≥1.15 可辨即可；6% 时宣纸·亮只剩 1.149，故取 7%）。
+     L1 亮色配方曾 = 7% --accent-text（低彩墨）；N1（FB-12「引用 tint 仍灰」）
+     换混色基为纸面墨档 --accent-ink（色相/彩度守恒，与标题/链接同墨）——十组实测对
+     纸面 1.167~1.243:1（旧配方 1.162~1.229；阈值 ≥1.15 不变；6% 时宣纸·亮 1.149
+     跌破阈值 ⇒ 比例维持 7%）。彩度提升：靛蓝 +30%、青墨 +11%、紫黛 +1%、
+     宣纸/石墨不降；正文对其对比 13.06~13.73:1 不降。
      暗色分叉见文件末 dark 块（纸面比引用底亮，混入浅色系会把底提向纸面）。 */
-  --tint-quote: color-mix(in oklab, var(--bg-quote) 93%, var(--accent-text));
+  --tint-quote: color-mix(in oklab, var(--bg-quote) 93%, var(--accent-ink));
 
   /* --- 大纲活动态（D-05 定稿：浅主色底圆角矩形 + 主色文字 + 600 字重，
          不再用左侧硬色条，也不再需要「比壳层亮一档的纸面底」专用色）--- */
@@ -503,7 +521,8 @@
      卡片居间（纸面/卡片 1.18~1.21:1，仍分层）。
      靛蓝·暗现例：canvas/chrome #191d24 < card #1f242c < paper #2d323a。 */
 
-  /* G2（P2-30，2026-09-29）→ L2（2026-09-30）：--bg-subtle（行内代码底/复制钮 hover）
+  /* G2（P2-30，2026-09-29）→ L2（2026-09-30）：--bg-subtle（复制钮 hover；行内代码底
+     2026-09-30 O2 起改走 --bg-code-inline）
      的暗色配方三段史（旧值只记在注释里、不留在代码里）：
        ① pre-G2：45% chrome 混色 —— 对纸面 1.36~1.42:1（且与 --bg-code 完全相同）；
        ② G2：20% chrome —— K3 提亮纸面**前**对纸面 1.55~1.62:1（对代码块底 1.16:1，明暗反转）；
@@ -524,8 +543,18 @@
   /* L1（2026-09-30）：--tint-quote 暗色分叉 —— 暗色纸面比引用底**亮**，混入 accent-text
      这种浅色系会把引用底提向纸面（text 系 6~7% 时对纸面只剩 1.10~1.17:1）⇒ 改用饱和度
      更高的 --accent-solid 且比例最小化（5%）：对纸面实测 1.164~1.209:1（阈值 ≥1.15）；
-     亮色配方（7% accent-text）相反、不变。 */
+     亮色配方（7% --accent-ink，N1 提彩）相反、不变；N1 复评暗色侧维持本配方
+     （ink 暗档 l+0.05 偏亮 ⇒ 对纸面 cr 更低、彩度无增益，紫黛实测 1.113<1.168）。 */
   --tint-quote: color-mix(in oklab, var(--bg-quote) 95%, var(--accent-solid));
+
+  /* O1/O2（FB-13，2026-09-30）暗色分叉：暗色纸面比 tint 档亮 ⇒
+     块底「沉一档」= 40% 纸面 + 60% tint 档（对纸面 1.039~1.104:1；代码字 minΔ +0.14）；
+     表头/芯片「浮一档」= 90% 纸面 + 10% / 82% + 18% 实心档（表头对纸面 1.164~1.183:1、
+     文字 8.8~9.2:1；芯片对纸面 ≤1.375:1、字 minΔ +0.49）——芯片与块底的
+     明暗反转保持；「极淡」上限 ≤1.45:1（低于现状行内底 1.516~1.558）。 */
+  --bg-th: color-mix(in oklab, var(--bg-paper) 90%, var(--accent-solid));
+  --bg-code: color-mix(in oklab, var(--bg-paper) 40%, var(--accent-tint));
+  --bg-code-inline: color-mix(in oklab, var(--bg-paper) 82%, var(--accent-solid));
 
   /* M2（FB-11）：--accent-ink 暗色分叉 —— 提亮 l+0.05（色相/彩度守恒；亮态是 l−0.1，
      语义见语义层同 token 注释）。十组对纸面实测 5.75~7.06:1；彩度保持 accent 原值

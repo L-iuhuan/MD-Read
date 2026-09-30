@@ -104,7 +104,8 @@ describe("P0-5 宽表/大图：纸面宽度红线锚", () => {
     expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border-radius:\s*var\(--radius-2\)/);
     // L1（Lane L）→ M1（FB-11 返修，2026-09-30）：表格顶 accent 细线（2px --accent-solid）
     // 从 wrap 顶边框**移到 thead th 顶边框**——线宽随表格本体（打印宽表横页才横贯全部列）。
-    // 语义不放宽：外框三边/圆角仍 1px --border（顶边让位归零），表头底/行底线不动。
+    // 语义不放宽：外框三边/圆角仍 1px --border（顶边让位归零），行底线不动
+    // （表头底按 O1/FB-13 改走 --bg-th，见文件末 Lane O 组）。
     expect(cjk).toMatch(
       /\.mdc thead th\s*\{[^}]*border-block-start:\s*2px solid var\(--accent-solid\)/,
     );
@@ -415,9 +416,10 @@ describe("Lane L：纸面主题色（FB-8）与尾巴锚", () => {
       /\.mdc blockquote\s*\{[^}]*border-inline-start:\s*4px solid var\(--accent-solid\)/,
     );
     expect(cjk).toMatch(/\.mdc blockquote\s*\{[^}]*background:\s*var\(--tint-quote\)/);
-    // tint 双子（亮 7% accent-text / 暗 5% accent-solid，实测对纸面 1.164~1.232:1）
+    // tint 双子（N1 起：亮 7% --accent-ink / 暗 5% --accent-solid 不变；
+    // 对纸面实测 1.167~1.243:1 ≥ 阈值 1.15——jsdom 不数数值，配方见 tokens 注释）
     expect(tokens).toMatch(
-      /--tint-quote:\s*color-mix\(in oklab, var\(--bg-quote\) 93%, var\(--accent-text\)\)/,
+      /--tint-quote:\s*color-mix\(in oklab, var\(--bg-quote\) 93%, var\(--accent-ink\)\)/,
     );
     expect(tokens).toMatch(
       /--tint-quote:\s*color-mix\(in oklab, var\(--bg-quote\) 95%, var\(--accent-solid\)\)/,
@@ -481,5 +483,115 @@ describe("Lane L：纸面主题色（FB-8）与尾巴锚", () => {
     expect(app).toMatch(
       /\.settings-panel \.settings-font \.settings-label\s*\{\s*white-space:\s*nowrap/,
     );
+  });
+});
+
+/* Lane N 批次（2026-09-30 第五轮返修 · FB-12「文档其他着色仍灰」）：链接与引用 tint
+   的混色基从旧档（--accent-text = pal-on 低彩墨）换到纸面墨档 --accent-ink。
+   实测数（Edge 探针十组；jsdom 无布局引擎、只钉规则存在/不复现，不对数值做断言）：
+   链接对纸面 5.74~11.25:1（旧 6.45~9.52）、hover 6.68~12.31:1；
+   tint 对纸面 1.167~1.243（暗色侧维持 5% solid 不动，1.162~1.206）。 */
+describe("Lane N：残余灰源（FB-12）——链接/tint 走 --accent-ink", () => {
+  const cjkBody = cjk.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("N1a：链接与 hover 走纸面墨档；--accent-ink-hover 落地（78/22 同族配方）", () => {
+    expect(cjk).toMatch(/\.mdc a\s*\{\s*color:\s*var\(--accent-ink\)/);
+    expect(cjk).toMatch(/\.mdc a:hover\s*\{\s*color:\s*var\(--accent-ink-hover\)/);
+    expect(tokens).toMatch(
+      /--accent-ink-hover:\s*color-mix\(in oklab, var\(--accent-ink\) 78%, var\(--pal-fg\)\)/,
+    );
+    // 反向锚：.mdc a / .mdc a:hover 两式不得再出现旧档（accent-text 系）
+    expect(cjkBody).not.toMatch(/\.mdc a(?::hover)?\s*\{[^}]*var\(--accent-text/);
+  });
+
+  it("N1b：纸面层对旧档零消费（--accent-text 在 cjk 正文规则中清零；tint 旧基不回归）", () => {
+    expect(cjkBody).not.toMatch(/var\(--accent-text/);
+    expect(tokens).not.toMatch(/--tint-quote:[^;]*var\(--accent-text/);
+  });
+});
+
+/* Lane O 批次（2026-09-30 第六轮 · FB-13「代码块、表格等着色也都是灰的」）：
+   O1 表头淡 accent 底接线（--bg-th；连 panel-unify P6 锚）；O2 代码块/行内代码底
+   accent 化 tint（--bg-code / --bg-code-inline，原中性灰 --bg-subtle 系退役）；
+   O3 hljs 关键词提彩（受限单裁，**主人 2026-09-30 授权解冻饱和度**：仅关键词
+   彩度 ×1.3，色相/明度不动）。
+   实测数（复算探针，与真机像素探针同口径；jsdom 无布局引擎、只钉规则存在/不复现）：
+   表头文字对 --bg-th 8.8~13.9:1（≥4.5 十组）；代码字对 --bg-code 改后 ≥ 改前
+   （minΔ 亮 +0.10 / 暗 +0.14）；行内字对 --bg-code-inline minΔ 亮 +0.50 / 暗 +0.49；
+   关键词彩度比（对 --accent-ink）0.59~0.74 → 0.70~1.33。 */
+describe("Lane O：表头/代码底 accent 化（FB-13）与 hljs 关键词提彩", () => {
+  const cjkBody = cjk.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("O1：表头底走 --bg-th，表格骨架（顶线/行底线/圆角）不动", () => {
+    expect(cjk).toMatch(/\.mdc thead th\s*\{[^}]*background:\s*var\(--bg-th\)/);
+    expect(cjk).toMatch(/\.mdc thead th\s*\{[^}]*color:\s*var\(--text\)/);
+    // 反向锚：不得回退旧中性灰路线（--bg-code 是代码块的料，不再上表头）
+    expect(cjkBody).not.toMatch(/\.mdc thead th\s*\{[^}]*background:\s*var\(--bg-code\)/);
+    // 顶 accent 线（M1 落点）仍在
+    expect(cjk).toMatch(
+      /\.mdc thead th\s*\{[^}]*border-block-start:\s*2px solid var\(--accent-solid\)/,
+    );
+    // 末行线抑制不得复现（与 P0-5 组同口径）
+    expect(cjk).not.toMatch(/tbody tr:last-child[^{]*\{[^}]*border-bottom:\s*0/);
+  });
+
+  it("O1/O2：tokens 双态配方（亮 ink / 暗 solid+tint；十组同族派生）", () => {
+    expect(tokens).toMatch(
+      /--bg-code:\s*color-mix\(in oklab, var\(--bg-paper\) 90%, var\(--accent-ink\)\)/,
+    );
+    expect(tokens).toMatch(
+      /--bg-code-inline:\s*color-mix\(in oklab, var\(--bg-paper\) 94%, var\(--accent-ink\)\)/,
+    );
+    expect(tokens).toMatch(
+      /--bg-th:\s*color-mix\(in oklab, var\(--bg-paper\) 90%, var\(--accent-ink\)\)/,
+    );
+    expect(tokens).toMatch(
+      /--bg-code:\s*color-mix\(in oklab, var\(--bg-paper\) 40%, var\(--accent-tint\)\)/,
+    );
+    expect(tokens).toMatch(
+      /--bg-code-inline:\s*color-mix\(in oklab, var\(--bg-paper\) 82%, var\(--accent-solid\)\)/,
+    );
+    expect(tokens).toMatch(
+      /--bg-th:\s*color-mix\(in oklab, var\(--bg-paper\) 90%, var\(--accent-solid\)\)/,
+    );
+    // 反向锚：旧「45% chrome × hair」中性灰配方不得回归到这三个名上
+    expect(tokens).not.toMatch(/--bg-(code|code-inline|th):\s*color-mix\(in oklab, var\(--pal-chrome\)/);
+  });
+
+  it("O2：行内芯片走 --bg-code-inline；--bg-subtle 仍留真实消费方（复制钮 hover）", () => {
+    expect(cjk).toMatch(
+      /\.mdc :not\(pre\) > code\s*\{[^}]*background:\s*var\(--bg-code-inline\)/,
+    );
+    // 反向锚：芯片规则不得再出现 --bg-subtle（旧料退役）
+    expect(cjkBody).not.toMatch(/\.mdc :not\(pre\) > code\s*\{[^}]*var\(--bg-subtle\)/);
+    // P6 口径：--bg-subtle 不得悬空 —— G2/L2 校准的消费方（复制钮 hover）保持
+    expect(cjk).toMatch(/\.mdc \.code-copy:hover\s*\{[^}]*background:\s*var\(--bg-subtle\)/);
+  });
+
+  it("O2：代码块底仍由 hljs.css 铺 --bg-code（行内/块底同族不同档）", () => {
+    expect(hljs).toMatch(
+      /\.mdc pre:has\(> code\.hljs\)\s*\{[^}]*background:\s*var\(--bg-code\)/,
+    );
+  });
+
+  it("O3：hljs 关键词提彩 ×1.3（授权解冻；色相/明度不动、非逐调色板变体）", () => {
+    // 公式：oklch 相对色只乘彩度 c，l 与 h 原样透传（色相 = 原色相，零改写）
+    expect(hljs).toMatch(
+      /--hljs-keyword:\s*oklch\(from color-mix\(in oklab, var\(--blue-11\) 70%, var\(--blue-12\)\) l calc\(c \* 1\.3\) h\)/,
+    );
+    expect(hljs).toMatch(/--hljs-keyword:\s*oklch\(from var\(--blue-11\) l calc\(c \* 1\.3\) h\)/);
+    expect(hljs.match(/--hljs-keyword\s*:/g)?.length, "只许亮/暗两块各一条").toBe(2);
+    expect(hljs, "授权说明必须随锚留档").toContain("授权解冻饱和度");
+    // 其余语法色不动（抽样 --hljs-name，与 panel-unify P7 同口径不回归）
+    expect(hljs).toMatch(/--hljs-name:\s*color-mix\(in oklab, var\(--red-11\) 70%, var\(--red-12\)\)/);
+  });
+
+  it("中性红线未破（反向锚复核）：正文/金额/纸底零 accent 消费", () => {
+    expect(cjkBody).not.toMatch(/\.mdc p\b[^{]*\{[^}]*color:\s*var\(--accent/);
+    expect(cjkBody).not.toMatch(/\.mdc (td|th)\b[^{]*\{[^}]*color:\s*var\(--accent/);
+    // 金额所在 td 不得获得任何底色（表头是本批唯一被 tint 的表格面）
+    expect(cjkBody).not.toMatch(/\.mdc td[\s,{][^{]*\{[^}]*background/);
+    // 纸底映射不动
+    expect(tokens).toMatch(/--bg-app:\s*var\(--pal-paper\)/);
   });
 });

@@ -4,16 +4,18 @@
    管什么：fence 代码块的**全部** hljs 语义类配色（正文区 .mdc 内），一处写死。
    不管什么：代码块的字体/字号/行高/内边距/滚动（那是 cjk.css §3 的排版职责），
    本文件只负责「底色 + 语法配色」。
-   与行内代码的关系（读 cjk.css §3 后对齐）：行内 code 用 --bg-subtle 底 + --border
-   描边 + radius-1；代码块沿用同一族料，只升一档（--bg-code 底 + --border 描边 +
-   radius-2），两者亮暗都同色系，读者不会以为来自两个应用。
+   与行内代码的关系（读 cjk.css §3 后对齐）：行内 code 用 --bg-code-inline 底 + --border
+   描边 + radius-1；代码块用 --bg-code 底 + --border 描边 + radius-2（O2/FB-13 起两者
+   同为「纸面 × accent 系」淡 tint，块底深一档；配方与实测见 tokens.css），
+   读者不会以为来自两个应用。
 
    纪律（与 tokens.css 同源）：
    1. 不出现新的字面色值：所有颜色要么引用 tokens.css 的 Radix 阶数变量，
-      要么是这些变量的 color-mix 派生（混合比例随行注明）。
+      要么是这些变量的 color-mix / oklch 相对色派生（混合比例与参数随行注明）。
    2. 亮暗成对：token 在下方 :root / :root[data-theme="dark"] 两块成对声明。
    3. 每个 token 对**代码底**的对比度 ≥4.5:1（数字按 WCAG 公式算，随行标注）；
-      代码底 = --bg-code，亮 slate.3 #f0f0f3 / 暗 slate.dark.4 #272a2d。
+      代码底 = --bg-code（O2/FB-13 起为 accent 派生 tint，值随调色板 —— 改底必须
+      用探针重测全部 token，禁止沿用旧数字）。
    4. 动效：本文件只改颜色，不引入任何 transition（无需 ≤250ms 约束）。
    5. 打印友好：全部是 color 声明，配合 print.css 的 print-color-adjust: exact
       与 pre 的 box-decoration-break: clone —— 跨页代码块两段都保色保框，无需本文件另写打印规则。
@@ -27,29 +29,36 @@
 
 /* --- hljs 专用 token（本文件唯一允许新增变量的地方）----------------------- */
 :root {
-  --hljs-keyword: color-mix(in oklab, var(--blue-11) 70%, var(--blue-12));
-  /* 关键词/标签/字面量：blue.11 × blue.12 = 7:3（对代码底 5.65:1 ✔）*/
+  --hljs-keyword: oklch(from color-mix(in oklab, var(--blue-11) 70%, var(--blue-12)) l calc(c * 1.3) h);
+  /* 关键词/标签/字面量：blue.11 × blue.12 = 7:3，再 ×1.3 提彩。
+     O3（FB-13，2026-09-30，**主人授权解冻饱和度**）：关键词是唯一 accent 族派生
+     语法色，探针实测彩度仅达同组 --accent-ink 档的 0.59~0.74（靛蓝亮 0.59 /
+     靛蓝暗 0.65 / 紫黛暗 0.61 / 青墨暗 0.64 判为「差过大」，判据 <0.70）⇒ 一套调整：
+     色相 h 与明度 l 一字不动、彩度 ×1.3 ⇒ 十组 0.70~1.33（靛蓝暗受 sRGB 高亮区
+     彩度上限约束止步 0.70）。禁逐调色板变体、禁改色相。
+     对代码底 5.89~8.42:1（亮）、8.06~9.37:1（暗）。 */
   --hljs-string: color-mix(in oklab, var(--green-11) 70%, var(--green-12));
-  /* 字符串/正则/属性名：green.11 × green.12 = 7:3（5.58:1 ✔）*/
+  /* 字符串/正则/属性名：green.11 × green.12 = 7:3（对代码底 5.27~5.40:1 ✔）*/
   --hljs-const: var(--amber-12);
-  /* 数字/常量/变量/内建：amber.12 #4f3422（10.00:1 ✔，暖档不刺眼）*/
+  /* 数字/常量/变量/内建：amber.12 #4f3422（9.44~9.67:1 ✔，暖档不刺眼）*/
   --hljs-name: color-mix(in oklab, var(--red-11) 70%, var(--red-12));
-  /* 函数名/类名/标题：red.11 × red.12 = 7:3。
+  /* 函数名/类名/标题：red.11 × red.12 = 7:3（对代码底 5.64~5.77:1 ✔）。
      为什么亮色也要混（P2 面板统一批修正）：原先直接用 red.11，实测在**代码底随
      调色板变暖/变浅**之后，宣纸·亮只剩 4.42:1、紫黛·亮 4.47:1 —— 都差一点点不到
      本文件的 4.5:1 硬线（靛蓝 4.64 / 石墨 4.56 / 青墨 4.54 只是勉强过线）。
-     混入 12 阶后同一组实测 5.76~6.04:1，五套亮色全部有余量；
+     混入 12 阶后（当时口径）同一组实测 5.76~6.04:1，五套亮色全部有余量；
      暗色的 red.11 在深底上本就有 6.59~6.99:1，故下块仍用 11 阶原值、不混。 */
   --hljs-comment: var(--slate-11);
-  /* 注释/引用：slate.11 #60646c（5.22:1 ✔）+ 斜体，弱而不虚 */
+  /* 注释/引用：slate.11（对代码底 5.35~5.64:1 ✔）+ 斜体，弱而不虚 */
 }
 
 :root[data-theme="dark"] {
-  --hljs-keyword: var(--blue-11);    /* blue.dark.11 #70b8ff（6.86:1 ✔）*/
-  --hljs-string: var(--green-11);    /* green.dark.11 #3dd68c（7.69:1 ✔）*/
-  --hljs-const: var(--amber-12);     /* amber.dark.12 #ffe7b3（11.91:1 ✔）*/
-  --hljs-name: var(--red-11);        /* red.dark.11 #ff9592（6.85:1 ✔）*/
-  --hljs-comment: var(--slate-11);   /* slate.dark.11 #b0b4ba（6.93:1 ✔）*/
+  --hljs-keyword: oklch(from var(--blue-11) l calc(c * 1.3) h);
+  /* blue.dark.11 ×1.3 提彩（O3 同一套调整：色相/明度不动；对代码底 8.06~9.37:1 ✔）*/
+  --hljs-string: var(--green-11);    /* green.dark.11 #3dd68c（7.30~7.54:1 ✔）*/
+  --hljs-const: var(--amber-12);     /* amber.dark.12 #ffe7b3（11.31~11.67:1 ✔）*/
+  --hljs-name: var(--red-11);        /* red.dark.11 #ff9592（6.50~6.71:1 ✔）*/
+  --hljs-comment: var(--slate-11);   /* slate.dark.11 #b0b4ba（6.04~6.48:1 ✔）*/
 }
 
 /* --- 1. 容器与代码块底 ----------------------------------------------------
@@ -60,7 +69,7 @@
    这层底就不能缺席，补在这里：:has(> code.hljs) 只命中真正的代码块，
    不给将来可能出现的其它 pre 添乱。
    ⚠ 若日后管线改成输出 .code-block 容器，本规则与下面的语言标签要同批删除。 */
-.mdc .hljs { color: var(--text); }   /* 未命中任何 token 的普通代码：正文色（14.41:1 / 12.43:1 ✔）*/
+.mdc .hljs { color: var(--text); }   /* 未命中任何 token 的普通代码：正文色（13.2~13.9:1 亮 / 11.2~11.6:1 暗 ✔）*/
 .mdc pre:has(> code.hljs) {
   background: var(--bg-code);
   border: 1px solid var(--border);

@@ -159,21 +159,29 @@
   max-inline-size: 40%;
 }
 
-/* --- 链接 --- */
+/* --- 链接 ---
+   N1（FB-12，2026-09-30）：链接与 hover 是旧档 --accent-text 在纸面的最后消费方
+   （主人验收「文档其他着色还是灰色的」）——换与 H2-H4/脚注引用/语言标签同族的纸面
+   墨档 --accent-ink（十组对纸面实测 5.74~11.25:1，≥4.5 正文级；旧档 6.45~9.52；
+   暗色组彩度 +11~64%，修正「灰灰的」）。hover 走 --accent-ink-hover
+   （同 --accent-text-hover 的 78/22 配方，实测 6.68~12.31:1）。 */
 .mdc a {
-  color: var(--accent-text);
+  color: var(--accent-ink);
   text-decoration-line: underline;
   text-decoration-thickness: .055em;
   text-underline-offset: .18em;
   transition: color var(--duration-1) var(--ease-1);
 }
-.mdc a:hover { color: var(--accent-text-hover); text-decoration-thickness: .11em; }
+.mdc a:hover { color: var(--accent-ink-hover); text-decoration-thickness: .11em; }
 
-/* --- 行内代码 --- */
+/* --- 行内代码 ---
+   O2（FB-13，2026-09-30）：芯片底从 --bg-subtle（中性灰）改 accent 派生淡 tint
+   --bg-code-inline（对纸面 1.097~1.119:1，比块底淡一档；配方与「极淡」阈值见
+   tokens.css；芯片字 --text 对底 14.2~14.9:1，改后 ≥ 改前 minΔ +0.50）。 */
 .mdc :not(pre) > code {
   font-family: var(--font-mono);
   font-size: .85em;
-  background: var(--bg-subtle);
+  background: var(--bg-code-inline);
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
   padding: .1em .35em;
@@ -237,7 +245,9 @@
 .mdc pre:hover .code-copy, .mdc .code-copy:focus-visible { opacity: 1; }
 /* hover 底改用 --bg-subtle（G2，2026-09-29）：暗色下原 --bg-hover 比代码块底更暗，
    悬停几乎没有反馈；--bg-subtle 的暗色档已提一档（tokens.css），与代码块底形成
-   明暗反转。描边/图标颜色照旧同换，仍是三重反馈。 */
+   明暗反转。描边/图标颜色照旧同换，仍是三重反馈。
+   O2（2026-09-30）后代码块底改 tint：本钮仍走控件 hover 语义、不随块底换料
+   （自铺卡面/悬停底，与块底无合成依赖；对比与联动评估见 O 批探针）。 */
 .mdc .code-copy:hover {
   color: var(--text);
   border-color: var(--border-strong);
@@ -247,7 +257,7 @@
 /* L1（FB-8，2026-09-30）：代码块语言标签改 accent 小字（字号/字重/内边距/底带不动）。
    hljs.css 是冻结层（禁改）且标签墨色写死在其中（--text-muted）⇒ 唯一合法通道 =
    本文件同款选择器 + 一档特异度（.mdc.mdc）定向覆盖。标签底 = 45% 卡面叠代码块底，
-   墨色 M2 起走专用墨档 --accent-ink（对底实测 5.91~9.87:1，≥4.5 小字级；十组探针复测）。
+   墨色 M2 起走专用墨档 --accent-ink（对底实测 6.20~10.14:1，≥4.5 小字级；十组探针复测）。
    未来若解冻 hljs.css，把这条挪回去。 */
 .mdc.mdc pre[data-lang]:not(:has(.code-lang))::before { color: var(--accent-ink); }
 
@@ -310,10 +320,12 @@
    print.css 里 wrap 还原 overflow:visible 后表格可越出 wrap）都横贯全部列；
    实测：wrap 414px 时表 900px，本线 900px（修复前线随 wrap 只有 414px）。
    2px --accent-solid（与引用边条/勾选框同源）；线色对纸面 4.39~7.32:1（≥1.15 可辨线）。
-   ⚠ 选线而非「淡 accent 表头底」：表头底走 --bg-code，受 tests/panel-unify.spec.ts
-   P6 锚保护（--bg-th 接线留待后续批次），本批不动表头底。 */
+   O1（FB-13，2026-09-30）：表头底正式接线 --bg-th（淡 accent tint）——L 批「选线而非
+   淡 accent 表头底」的过渡状态结束：线保留、底同切。表头文字（--text）对底
+   13.2~13.9:1（亮）/ 8.8~9.2:1（暗），≥4.5 十组；配方/--pal-th 退役裁决见 tokens.css
+   与 tests/panel-unify.spec.ts P6。表格体系其余（外框圆角/行底线/tabular-nums/wrap）未动。 */
 .mdc thead th {
-  background: var(--bg-code);
+  background: var(--bg-th);
   font-weight: 600;
   color: var(--text);
   border-block-start: 2px solid var(--accent-solid);
