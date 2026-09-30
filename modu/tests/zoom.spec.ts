@@ -1,41 +1,55 @@
 /**
- * 页面整体缩放（2026-09-27 新功能）的锚。
+ * 纸面缩放（2026-09-27 首版；2026-09-30 J2 改为只缩放纸面）的锚。
  *
- * 为什么必须有锚：这一项走**原生** `Webview.setZoom`（不是 CSS），
- * 出错表现是"面板显示 125% 而实际没缩放"——**肉眼很难发现** ✗ ⇒ 用单测钉住三件事：
- *   ① 档位表合法且夹取不越界  ② 持久化键的读写与脏数据防御  ③ **启动回填**（面板值 == 实际缩放）
- *
- * ⚠ Tauri API 必须 mock（jsdom 里没有原生 webview）⇒ 用 `vi.hoisted` 提升 spy，
- *   否则 `vi.mock` 的工厂（会被提升到文件顶部）拿不到它 ✗。
+ * J2（用户实测原话：「放大成了应用内所有都放大，应该只放大中间的纸面区域」）：
+ * 缩放目标 = 阅读态 #doc、编辑态 .cm-editor；**documentElement 一律不碰** ⇒
+ * 顶栏/标签/状态栏/大纲/设置面板不缩放。出错表现是"根元素又被写了 zoom"——
+ * 肉眼很难发现 ✗ ⇒ 用单测钉住：
+ *   ① 档位表合法且夹取不越界  ② 持久化键的读写与脏数据防御  ③ **启动回填**
+ *   ④ 纸面元素拿到内联 zoom 且根元素为空  ⑤ clear/restore 三步（导出联动用）
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ setZoom: vi.fn(() => Promise.resolve()) }));
-vi.mock("@tauri-apps/api/webview", () => ({
-  getCurrentWebview: () => ({ setZoom: h.setZoom }),
-}));
+import {
+  applyPaperZoom,
+  clearPaperZoom,
+  readZoomPref,
+  restorePaperZoom,
+  setupZoom,
+  ZOOM_STEPS,
+} from "../src/app/zoom";
 
-import { readZoomPref, setupZoom, ZOOM_STEPS } from "../src/app/zoom";
-
-/** 只造面板里缩放那一行的最小 DOM（与 index.html 的 id 一致 ✓） */
+/** 只造缩放相关的最小 DOM（与 index.html 的 id 一致 ✓）：面板行 + 阅读态纸面 */
 function mount(): void {
   document.body.innerHTML = `
     <button id="set-zoom-dec" type="button"></button>
     <span id="set-zoom-val">100</span>
-    <button id="set-zoom-inc" type="button"></button>`;
+    <button id="set-zoom-inc" type="button"></button>
+    <article id="doc"></article>`;
+}
+
+/** 造编辑态纸面（.cm-editor 懒建：首测没有、本函数补上，模拟进编辑态后） */
+function mountEditor(): HTMLElement {
+  const cm = document.createElement("div");
+  cm.className = "cm-editor";
+  document.getElementById("doc")?.after(cm);
+  return cm;
 }
 
 const val = (): string | null => document.getElementById("set-zoom-val")?.textContent ?? null;
 const dec = (): HTMLButtonElement => document.getElementById("set-zoom-dec") as HTMLButtonElement;
 const inc = (): HTMLButtonElement => document.getElementById("set-zoom-inc") as HTMLButtonElement;
+const doc = (): HTMLElement => document.getElementById("doc") as HTMLElement;
+const rootZoom = (): string => document.documentElement.style.zoom;
 
 beforeEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = "";
+  document.documentElement.style.removeProperty("zoom");
   window.localStorage.clear();
-  h.setZoom.mockClear();
 });
 
-describe("页面整体缩放（Webview.setZoom）", () => {
+describe("纸面缩放（#doc / .cm-editor 内联 zoom）", () => {
   it("档位表是 90 / 100 / 110 / 125 / 150", () => {
     expect([...ZOOM_STEPS]).toEqual([90, 100, 110, 125, 150]);
   });
@@ -53,18 +67,18 @@ describe("页面整体缩放（Webview.setZoom）", () => {
     expect(readZoomPref()).toBe(100);
   });
 
-  it("⭐ 启动回填：面板显示值必须与实际缩放一致（否则重启回 100% 而面板显示旧值 ✗）", () => {
+  it("⭐ 启动回填：面板显示值必须与纸面实际缩放一致（否则重启回 100% 而面板显示旧值 ✗）", () => {
     mount();
     window.localStorage.setItem("modu-zoom", "125");
     setupZoom();
     expect(val()).toBe("125");
-    expect(h.setZoom).toHaveBeenCalledWith(1.25);
+    expect(doc().style.zoom).toBe("1.25");
   });
 
   it("± 键按档位走，且两端夹住（不越界 ✗）", () => {
     mount();
     setupZoom();
-    expect(h.setZoom).toHaveBeenLastCalledWith(1); // 启动即回填 100% ✓
+    expect(doc().style.zoom).toBe("1"); // 启动即回填 100% ✓
     inc().click();
     expect(readZoomPref()).toBe(110);
     inc().click();
@@ -84,23 +98,46 @@ describe("页面整体缩放（Webview.setZoom）", () => {
     expect(readZoomPref()).toBe(90);
   });
 
-  it("每次变更都真的调用原生 setZoom（不是只写 localStorage ✗）", () => {
-    mount();
-    setupZoom();
-    h.setZoom.mockClear();
-    inc().click();
-    expect(h.setZoom).toHaveBeenCalledTimes(1);
-    expect(h.setZoom).toHaveBeenCalledWith(1.1);
-  });
-
-  it("⭐ 同时落到 CSS `zoom`（原生那层在本机实测是空操作 ✗，必须两层都给）", () => {
+  it("⭐ J2：缩放只落纸面元素——documentElement.style.zoom 恒为空（顶栏/标签不缩放）", () => {
     mount();
     window.localStorage.setItem("modu-zoom", "150");
     setupZoom();
-    expect(document.documentElement.style.zoom).toBe("1.5");
+    expect(doc().style.zoom).toBe("1.5");
+    expect(rootZoom()).toBe(""); // 根元素不碰 —— 写它就是 J2 要修的回归 ✗
     dec().click();
-    expect(document.documentElement.style.zoom).toBe("1.25");
-    expect(h.setZoom).toHaveBeenLastCalledWith(1.25);
+    expect(doc().style.zoom).toBe("1.25");
+    expect(rootZoom()).toBe("");
+  });
+
+  it("编辑态纸面：restorePaperZoom 把档位补投到新建的 .cm-editor（懒建后不漏）", () => {
+    mount();
+    setupZoom();
+    inc().click(); // 110
+    const cm = mountEditor(); // 模拟首次进编辑态：CM 编辑器此刻才出现
+    expect(cm.style.zoom).toBe(""); // 新建的还没有
+    restorePaperZoom(); // main.ts 在 onModeChange 里调的那一步
+    expect(cm.style.zoom).toBe("1.1");
+    expect(doc().style.zoom).toBe("1.1"); // 阅读态目标同批保持
+  });
+
+  it("clear / restore 三步（导出联动）：清空回基准，还原按持久化档位重投", () => {
+    mount();
+    setupZoom();
+    inc().click();
+    inc().click(); // 125
+    clearPaperZoom(); // 导出前：量宽回基准
+    expect(doc().style.zoom).toBe("");
+    expect(readZoomPref()).toBe(125); // 持久化档位不动（=「保存值」）
+    restorePaperZoom(); // finally：还原
+    expect(doc().style.zoom).toBe("1.25");
+  });
+
+  it("applyPaperZoom 直投也钳制并持久化（面板外入口同源）", () => {
+    mount();
+    applyPaperZoom(137);
+    expect(readZoomPref()).toBe(125);
+    expect(doc().style.zoom).toBe("1.25");
+    expect(val()).toBe("125");
   });
 });
 describe("阶段④-③ Ctrl+滚轮 与快捷键（三条入口同源）", () => {

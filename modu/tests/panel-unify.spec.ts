@@ -147,15 +147,17 @@ describe("P4 关窗浮层主按钮不再实心强调填充", () => {
   });
 });
 
-describe("P5 两态查找工具：注释如实说明位置差异", () => {
+describe("P5→K1 两态查找工具：位置契约（2026-09-29 主人裁决：都放顶部）", () => {
   it("不再声称与 findbar「同角落、同一件东西」", () => {
     expect(app).not.toContain("编辑/阅读两态的查找工具看起来是同一件东西");
     expect(app).not.toMatch(/与 findbar 同角落/);
   });
 
-  it("如实写明：编辑态在 .cm-panels-bottom，阅读态在内容区右上", () => {
-    expect(app).toContain(".cm-panels-bottom");
-    expect(app).toMatch(/故意不同/);
+  it("K1 新契约：CM 查找卡上提编辑器顶部（search({ top: true })）", () => {
+    // 旧契约「编辑态在 .cm-panels-bottom（底部）/ 故意不同」被主人实测推翻 ⇒ 锚同步换新
+    expect(readFileSync("src/editor/editor.ts", "utf8")).toMatch(/search\(\{\s*top:\s*true\s*\}\)/);
+    expect(app).toContain("search({ top: true })");
+    expect(app).not.toMatch(/上\/下沿/);
   });
 });
 

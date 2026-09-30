@@ -1,32 +1,66 @@
 /**
- * 字体面板（D-02 第二步）：① 推荐列表（中文正文 / 西文拉丁 / 代码三组）
- * + ③ 常显「实际生效字体」。
+ * 字体面板（2026-09-30 J1 重做）：**三个独立下拉**（中文正文 / 西文与数字 / 代码），
+ * 各自读写各自的持久化键（modu-font-cn / modu-font-latin / modu-font-code）。
  *
- * 本文件同样**不含任何字体族名**：选项文案与栈都来自 index.html 骨架 + tokens.css 目录。
+ * 为什么拆三个（用户实测原话）：单下拉装三组 optgroup，「选了哪个生效？」逻辑直觉
+ * 有问题——选了到底改哪组只能靠 optgroup 归属猜 ✗；且短名文案把「Times New Roman」
+ * 截成「Times New R.」✗。三 select 方案下选项文案一律完整字体名，旧的 optgroup
+ * 组标题回显 hack（UX-5 refreshGroupLabels）不再需要，已删。
  *
- * 常显读数为什么必须存在：CSS 字体栈是**静默回退**——字体缺失不报错、不警告、
- * 控制台无痕。没有这一行，「选了 A 实际渲染 B」永远无人发现（本会话就是这么
- * 埋了 `Noto Sans SC`：注册表/GDI 都能枚举，400 字重却一直悄悄回退）。
- * 探测判据见 font-detect.ts（拉丁串 + 双字重 + 双假名基线）。
+ * 应用语义（三组互不影响）：
+ *   · 正文栈 = 西文链（去尾通用族）+ 中文章 —— 西文在前：拉丁字形命中西文体，
+ *     CJK 字形落到中文体；若不去掉西文链**中间**的通用族收尾，`serif`/`sans-serif`
+ *     会先于中文章命中，CJK 全被浏览器默认体吃掉 ✗（CSS 栈匹配是顺序短路）。
+ *   · 代码栈 = 覆写 #doc 上的 `--font-mono`（自定义属性沿子树继承，cjk.css / hljs.css
+ *     的 pre/code 规则照常消费）⇒ 不必改任何 CSS 文件 ✓。
+ *
+ * 本文件仍**不含任何字体族名**：目录与栈都来自 index.html 骨架 + tokens.css（经
+ * font-catalog 的 CSSOM 读取）；「实际生效」探测判据见 font-detect.ts。
  */
-import { firstFamilyOf, readFontCatalog, readStackVar, stackVarRef, type FontPickOption } from "./font-catalog";
+import {
+  firstFamilyOf,
+  genericOf,
+  readStackVar,
+  type FontPickGroup,
+  type FontPickOption,
+} from "./font-catalog";
 import { describeResolved, makeMeasurer, markAvailability, resolveFamilies, type MeasureText } from "./font-detect";
 
-/** 持久化键；**与旧值兼容**：sans/serif/kai/hei 会被 resolveFontId 迁到对应新选项 */
-const FONT_KEY = "modu-font";
-/** M2 波2 起的旧键 modu-face=serif：只在 modu-font 缺失时作为存量回退，写入新值后退役 */
+/** 分组键转发出口（settings.ts 的对外签名要用；定义在 font-catalog） */
+export type { FontPickGroup } from "./font-catalog";
+
+/** 三组各自的持久化键（J1 起拆三键） */
+const FONT_KEYS: Readonly<Record<FontPickGroup, string>> = {
+  cjk: "modu-font-cn",
+  latin: "modu-font-latin",
+  mono: "modu-font-code",
+};
+/** 旧单键（三组共用一个下拉时代的值）与更早的 modu-face：只在三新键齐缺时迁移一次 */
+const LEGACY_FONT_KEY = "modu-font";
 const LEGACY_FACE_KEY = "modu-face";
 
-/** 「旧 modu-font 值 → 新目录 id」迁移表；sans 仍指默认栈（不是某个具体预设） */
+/** 各组默认项 = tokens.css 全局栈的首选（--font-sans / --font-mono 的头名） */
+const DEFAULT_IDS: Readonly<Record<FontPickGroup, string>> = {
+  cjk: "cjk-harmonyos",
+  latin: "latin-segoe",
+  mono: "mono-maple-nf",
+};
+
+/** 旧 modu-font 四预设值 → 新目录项（sans 仍指默认栈，不是某个具体预设） */
 const LEGACY_IDS: Readonly<Record<string, string>> = {
-  sans: "sans",
   serif: "cjk-notoserif",
   kai: "cjk-lxgw",
   hei: "cjk-yahei",
 };
 
-/** 缺省选中项：默认无衬线栈的首选（HarmonyOS Sans SC） */
-const DEFAULT_ID = "cjk-harmonyos";
+const GROUPS: readonly FontPickGroup[] = ["cjk", "latin", "mono"];
+
+/** 组 → 面板里的 select id（index.html 三下拉骨架） */
+const SELECT_IDS: Readonly<Record<FontPickGroup, string>> = {
+  cjk: "set-font-cn",
+  latin: "set-font-latin",
+  mono: "set-font-code",
+};
 
 /** 面板钩子：壳层提供 #doc 与排版重算 */
 export interface FontPickerHooks {
@@ -55,114 +89,140 @@ function getMeasurer(hooks: FontPickerHooks): MeasureText | null {
   return measurer;
 }
 
-/** 当前选择解析出的目录项；无法解析时返回默认项的兜底对象 */
-interface ResolvedPick {
-  id: string;
-  /** 要内联给 #doc 的字体栈值；`sans` 表示清内联、回 tokens.css 的 --font-sans */
-  stackVar: string | null;
-  /** true = 走 #doc[data-face="serif"] 既有契约（cjk.css 的 --font-serif） */
-  serif: boolean;
-  label: string;
-}
-
-/** 该选项是否该走 `#doc[data-face="serif"]` 契约（首选族 == --font-serif 的首选族） */
-function usesSerifFace(option: FontPickOption): boolean {
-  return option.generic === "serif" && option.family === firstFamilyOf(readStackVar("--font-serif"));
-}
-
 /**
- * 把任意持久化值解析成可应用的选择。
- *
- * 衬线档契约（`#doc[data-face="serif"]` → cjk.css 的 --font-serif）只在
- * **选项自己的首选族就是 --font-serif 的首选**时才用，否则内联该选项自己的链。
- * 为什么不能只看「通用族是不是 serif」：`霞鹜文楷` / `Georgia` / `Times` 也是
- * serif 收尾，但它们各自链的**首选**不是 Noto Serif SC——套用全局衬线栈会把它们
- * 渲染成 Noto Serif SC（「选了 A 实际是 B」，正是本面板要消灭的东西）。
- * 旧 modu-face=serif 的存量迁移必须落到 --font-serif 的首要选择上（LEGACY_IDS
- * 把它映射到 cjk-notoserif），所以那条路径仍然命中契约。
- *
- * @param raw localStorage 里的原值（可能缺失 / 旧值 / 脏值）
+ * 目录：三个 select 骨架（data-group 声明分组）+ tokens.css 的栈变量。
+ * （font-catalog.readFontCatalog 认旧单下拉 #set-font，J1 起骨架换了 ⇒ 本文件自查；
+ *   栈变量读取 / 首选族 / 通用族等纯函数仍复用 font-catalog ✓。）
+ * @throws 骨架缺失或某个 `--font-pick-*` 读不到值——目录是本面板的唯一事实源，
+ *         坏了必须在控制台立刻可见，不做静默降级
  */
-export function resolvePick(raw: string | null): ResolvedPick {
-  const options = readFontCatalog();
-  const viaLegacy = raw === null ? (localStorage.getItem(LEGACY_FACE_KEY) === "serif" ? "serif" : null) : raw;
-  const id = viaLegacy === null ? DEFAULT_ID : (LEGACY_IDS[viaLegacy] ?? viaLegacy);
-  if (id === "sans") {
-    return { id, stackVar: null, serif: false, label: "默认（随主题）" };
+export function readCatalog(): FontPickOption[] {
+  const options: FontPickOption[] = [];
+  for (const group of GROUPS) {
+    const select = document.getElementById(SELECT_IDS[group]);
+    if (!(select instanceof HTMLSelectElement)) {
+      throw new Error("字体设置未就绪，请重启墨读");
+    }
+    for (const option of select.querySelectorAll("option")) {
+      const stackVar = option.dataset.stackVar ?? "";
+      if (!stackVar.startsWith("--font-pick-")) {
+        throw new Error(`字体选项 ${option.value} 缺少栈变量声明`);
+      }
+      const stack = readStackVar(stackVar);
+      const family = firstFamilyOf(stack);
+      if (stack === "" || family === null) {
+        throw new Error(`字体栈变量读不到值：${stackVar}（tokens.css 是否漏了这条声明？）`);
+      }
+      options.push({
+        id: option.value,
+        group,
+        label: (option.dataset.label ?? option.textContent ?? option.value).trim(),
+        stackVar,
+        family,
+        generic: genericOf(stack),
+        available: null,
+      });
+    }
   }
-  const option = options.find((item) => item.id === id) ?? options.find((item) => item.id === DEFAULT_ID) ?? options[0];
-  return {
-    id: option.id,
-    stackVar: stackVarRef(option),
-    serif: usesSerifFace(option),
-    label: option.label,
-  };
-}
-
-/** 读持久化选择（含旧值迁移；坏值回退默认项） */
-export function readFontPref(): string {
-  return resolvePick(localStorage.getItem(FONT_KEY)).id;
-}
-
-/** 应用选择到 #doc：衬线档走 data-face 契约，其余落内联 var(--font-pick-*) */
-export function applyFontPref(id: string, hooks: FontPickerHooks): void {
-  const doc = hooks.getDoc();
-  if (doc === null) return;
-  const pick = resolvePick(id);
-  if (pick.stackVar === null) {
-    delete doc.dataset.face;
-    doc.style.removeProperty("font-family");
-    return;
+  if (options.length === 0) {
+    throw new Error("字体列表为空，请重启墨读");
   }
-  if (pick.serif) {
-    doc.style.removeProperty("font-family");
-    doc.dataset.face = "serif";
-    return;
-  }
-  delete doc.dataset.face;
-  doc.style.fontFamily = pick.stackVar;
-}
-
-/** 目录 + 可用性 → 在下拉骨架上标注（保留 index.html 的 optgroup / option 结构，
- *  只写回文案与「本机未安装」标记，重复渲染安全） */
-export function renderFontPicker(select: HTMLSelectElement, hooks: FontPickerHooks): FontPickOption[] {
-  const measure = getMeasurer(hooks);
-  const plain = readFontCatalog();
-  const options = measure === null ? plain : markAvailability(plain, measure);
-  const byId = new Map(options.map((option) => [option.id, option]));
-  for (const el of select.querySelectorAll("option")) {
-    const option = byId.get(el.value);
-    if (option === undefined) continue;
-    el.dataset.label = option.label; // 原始中文名留档，重渲染不会叠加标注
-    el.dataset.generic = option.generic; // 通用族（衬线档契约据此判定）
-    // 未安装标注走**短后缀**（2026-09-27 用户反馈「字体名字特别长，你又不去限制」✗）：
-    // 原先「（本机未安装）」把选项撑得老长、卡片显乱；全名已由 index.html 的 title 承载 ✓
-    el.textContent = option.available === false ? `${option.label} · 未装` : option.label;
-    if (option.available === false) el.dataset.unavailable = "true";
-  }
-  refreshGroupLabels(select, readFontPref()); // UX-5：组标题随当前选择一并就位
   return options;
 }
 
 /**
- * UX-5（des-5）：三组 optgroup 的 label 动态带当前值（如「① 中文正文 · 当前：思源宋体」）。
- * 单个下拉只回显最后一次选择 ⇒ 三组各自的当前值看不见；组标题是唯一不与选项
- * 抢行的展示位。幂等：原始 label 首次存进 data-base-label，之后总在基名上拼接。
- * 当前选择（pickId = resolvePick 后的 id）所在组显示其中文名，其余组显示「默认」。
+ * 旧键迁移（一次性）：三新键齐缺而旧键在 ⇒ 旧值按其所属组写入对应新键，
+ * 其余两组用默认值；随后旧键（modu-font / modu-face）退役，双源归一。
  */
-export function refreshGroupLabels(select: HTMLSelectElement, pickId: string): void {
-  const picked = readFontCatalog().find((option) => option.id === pickId) ?? null;
-  for (const group of select.querySelectorAll("optgroup")) {
-    if (group.dataset.baseLabel === undefined) {
-      group.dataset.baseLabel = group.label;
+function migrateLegacyPicks(): void {
+  const hasNew = GROUPS.some((g) => localStorage.getItem(FONT_KEYS[g]) !== null);
+  const rawFont = localStorage.getItem(LEGACY_FONT_KEY);
+  const rawFace = localStorage.getItem(LEGACY_FACE_KEY);
+  if (!hasNew && rawFont === null && rawFace === null) {
+    return; // 全新装机：无旧可迁
+  }
+  let hit: FontPickOption | undefined;
+  if (!hasNew) {
+    // modu-face=serif 只在 modu-font 缺失时作存量回退（与旧实现同口径）
+    const raw = rawFont ?? (rawFace === "serif" ? "serif" : null);
+    const id = raw === null ? null : (LEGACY_IDS[raw] ?? raw);
+    hit = id === null ? undefined : readCatalog().find((o) => o.id === id);
+  }
+  for (const g of GROUPS) {
+    if (localStorage.getItem(FONT_KEYS[g]) === null) {
+      localStorage.setItem(FONT_KEYS[g], hit !== undefined && hit.group === g ? hit.id : DEFAULT_IDS[g]);
     }
-    const current =
-      picked !== null && picked.group === group.dataset.group ? picked.label : "默认";
-    group.label = `${group.dataset.baseLabel} · 当前：${current}`;
+  }
+  localStorage.removeItem(LEGACY_FONT_KEY);
+  localStorage.removeItem(LEGACY_FACE_KEY);
+}
+
+/** 读某组的持久化选择（含旧键一次性迁移；坏值/跨组脏值回退该组默认项） */
+export function readFontPref(group: FontPickGroup): string {
+  migrateLegacyPicks();
+  const raw = localStorage.getItem(FONT_KEYS[group]);
+  const hit = raw === null ? undefined : readCatalog().find((o) => o.group === group && o.id === raw);
+  return hit === undefined ? DEFAULT_IDS[group] : hit.id;
+}
+
+function optionOf(group: FontPickGroup, id: string): FontPickOption {
+  const catalog = readCatalog();
+  const fallback = catalog.find((o) => o.id === DEFAULT_IDS[group]) ?? catalog[0];
+  return catalog.find((o) => o.group === group && o.id === id) ?? fallback;
+}
+
+/** 去掉链尾的通用族（组合正文栈时西文链必须让路给中文章，见文件头注释） */
+function stripTrailingGeneric(stack: string): string {
+  return stack.replace(/\s*,\s*(?:sans-serif|serif|monospace)\s*$/i, "");
+}
+
+/** 应用三组选择到 #doc：正文栈 = 西文链(去尾) + 中文章；代码栈覆写 --font-mono */
+export function applyFontPrefs(hooks: FontPickerHooks): void {
+  const doc = hooks.getDoc();
+  if (doc === null) return;
+  const latin = readStackVar(optionOf("latin", readFontPref("latin")).stackVar);
+  const cjk = readStackVar(optionOf("cjk", readFontPref("cjk")).stackVar);
+  const mono = readStackVar(optionOf("mono", readFontPref("mono")).stackVar);
+  delete doc.dataset.face; // 旧衬线档契约退役：三组组合永远走内联栈
+  doc.style.fontFamily = `${stripTrailingGeneric(latin)}, ${cjk}`;
+  doc.style.setProperty("--font-mono", mono); // 子树继承 ⇒ pre/code 照常消费
+}
+
+/** 目录 + 可用性 → 三个下拉各自标注（只写回文案与「· 未装」标记，重复渲染安全） */
+export function renderFontPicker(hooks: FontPickerHooks): FontPickOption[] {
+  const measure = getMeasurer(hooks);
+  const plain = readCatalog();
+  const options = measure === null ? plain : markAvailability(plain, measure);
+  const byId = new Map(options.map((option) => [option.id, option]));
+  for (const group of GROUPS) {
+    const select = document.getElementById(SELECT_IDS[group]);
+    if (!(select instanceof HTMLSelectElement)) continue;
+    for (const el of select.querySelectorAll("option")) {
+      const option = byId.get(el.value);
+      if (option === undefined) continue;
+      el.dataset.label = option.label; // 完整名留档，重渲染不会叠加「· 未装」
+      el.dataset.generic = option.generic;
+      el.textContent = option.available === false ? `${option.label} · 未装` : option.label;
+      if (option.available === false) el.dataset.unavailable = "true";
+    }
+  }
+  syncFontSelects();
+  return options;
+}
+
+/** 三下拉回显各自键的当前值；select 的 title 挂当前完整名（截断兜底 ✓） */
+export function syncFontSelects(): void {
+  for (const group of GROUPS) {
+    const select = document.getElementById(SELECT_IDS[group]);
+    if (!(select instanceof HTMLSelectElement)) continue;
+    const id = readFontPref(group);
+    select.value = id;
+    const hit = readCatalog().find((o) => o.id === id);
+    if (hit !== undefined) select.title = hit.label;
   }
 }
 
-/** 刷新「实际生效字体」：按当前选择在 400 / 700 两个字重上各探测一次 */
+/** 刷新「实际生效字体」：按当前正文栈在 400 / 700 两个字重上各探测一次 */
 export function refreshEffective(hooks: FontPickerHooks): void {
   const code = document.getElementById("set-font-effective");
   const codeBold = document.getElementById("set-font-effective-bold");
@@ -178,48 +238,40 @@ export function refreshEffective(hooks: FontPickerHooks): void {
   const doc = hooks.getDoc();
   const stack = doc === null ? "" : getComputedStyle(doc).fontFamily;
   const text = describeResolved(resolveFamilies(stack, measure));
-  const pick = resolvePick(localStorage.getItem(FONT_KEY));
+  // ⚠ 文本**一字不改**（settings.spec.ts 的锚钉的就是这两串 ✗ 别动它们 ✓）
   code.textContent = `400 · ${text.regular}`;
-  // ⚠ 文本**一字不改**（`settings.spec.ts` 的三条锚钉的就是这两串 ✗ 别动它们 ✓）：
-  // 面板观感问题改用"**相同时隐藏第二行**"解决 ✓（隐藏元素的 textContent 仍可读 ⇒ 锚保持绿 ✓）
   codeBold.textContent = `700 · ${text.bold}`;
-  // 2026-09-27 阶段④-①：两个字重落在**同一族**时（常见情形 ✓），
-  // 两行读数把行高从 32 顶到 61、且信息重复 ⇒ 隐藏第二行，由 CSS 在第一行尾部补「· 700 同」✓
-  // 只有**真的不同**（"选了 A 加粗变 B"）时才占两行 —— 那正是需要看见的情况 ✓
+  // 两个字重同族时隐藏第二行（CSS 在第一行尾部补「· 700 同」）；不同才占两行
   const boldSame = text.regular === text.bold;
   codeBold.hidden = boldSame;
   code.dataset.boldSame = boldSame ? "1" : "0";
-  // ⭐ 2026-09-27：无异常时**不再显示**「当前选择：X」——它与上面下拉框显示的值完全重复 ✗
-  //（用户反馈面板乱 ✓）。这行提示的价值是"**选了 A、实际渲染成 B**"时给出解释 ⇒ 只在有话说时显示 ✓
-  hint.textContent = text.hint === "" ? "" : `${pick.label}：${text.hint}`;
+  // 提示只在有话说时显示（「选了 A、实际渲染成 B」的解释），无异常不打扰
+  hint.textContent = text.hint;
   hint.dataset.state = text.state;
 }
 
 /** 挂载字体面板：填目录 → 恢复选择 → 接 change → 亮出实际生效 */
 export function mountFontPicker(hooks: FontPickerHooks): void {
-  const select = document.getElementById("set-font");
-  if (!(select instanceof HTMLSelectElement)) {
-    console.error("界面元素缺失：#set-font"); // A4：技术细节只进 console，使用者只看下一行
-    throw new Error("界面资源未就绪，请重启墨读");
+  renderFontPicker(hooks);
+  applyFontPrefs(hooks); // 启动恢复：#doc 常驻 index.html，落容器上即可
+  for (const group of GROUPS) {
+    const select = document.getElementById(SELECT_IDS[group]);
+    if (!(select instanceof HTMLSelectElement)) {
+      console.error(`界面元素缺失：#${SELECT_IDS[group]}`); // A4：技术细节只进 console
+      throw new Error("界面资源未就绪，请重启墨读");
+    }
+    select.addEventListener("change", () => setFontPref(group, select.value, hooks));
   }
-  renderFontPicker(select, hooks);
-  select.value = readFontPref();
-  applyFontPref(readFontPref(), hooks); // 启动恢复：#doc 常驻 index.html，落容器上即可
-  select.addEventListener("change", () => setFontPref(select.value, hooks));
   refreshEffective(hooks);
 }
 
-/** 统一入口：应用 + 持久化 + 回显 + 刷新读数（面板只有这一个写入口） */
-export function setFontPref(id: string, hooks: FontPickerHooks): void {
-  applyFontPref(id, hooks);
-  const pick = resolvePick(id);
-  localStorage.setItem(FONT_KEY, pick.id);
-  localStorage.removeItem(LEGACY_FACE_KEY); // 双源归一，旧键退役
-  const select = document.getElementById("set-font");
-  if (select instanceof HTMLSelectElement) {
-    select.value = pick.id;
-    refreshGroupLabels(select, pick.id); // UX-5：组标题的当前值随选择变化
-  }
+/** 统一入口：应用 + 持久化（该组键）+ 回显 + 刷新读数（面板只有这一个写入口） */
+export function setFontPref(group: FontPickGroup, id: string, hooks: FontPickerHooks): void {
+  const hit = readCatalog().find((o) => o.group === group && o.id === id);
+  localStorage.setItem(FONT_KEYS[group], hit === undefined ? DEFAULT_IDS[group] : hit.id);
+  migrateLegacyPicks(); // 旧键退役（双源归一）
+  applyFontPrefs(hooks);
+  syncFontSelects();
   refreshEffective(hooks);
   hooks.onFontChange();
 }

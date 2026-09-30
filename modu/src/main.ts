@@ -25,7 +25,7 @@ import { hydrateRecentOnBoot, pushRecent, removeRecent, setupRecentMenu } from "
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
 import { setupWindowControls } from "./app/window-controls";
-import { setupZoom } from "./app/zoom";
+import { clearPaperZoom, restorePaperZoom, setupZoom } from "./app/zoom";
 import { setupWorkspacePanel } from "./app/workspace-panel";
 import { prevalidateMermaid } from "./render/mermaid";
 import { openEachMd } from "./app/drop";
@@ -84,11 +84,13 @@ let exportButton: HTMLButtonElement | null = null;
 /** 取界面元素（批次 3-7：实现搬到 `app/dom.ts` 的 `req`；此处保留 `$` 别名 ⇒ 原有调用点一字未动） */
 const $ = req;
 
-/** 打开失败（P5 批2·错误通道统一）：不清正文、不顶标签，状态栏红字闪错；多文件拖放单个失败同走此道不中断其余（文档名由窗口标题承担，见 D-05）。 */
-function showError(error: unknown): void {
+/** 打开失败（P5 批2·错误通道统一）：不清正文、不顶标签，状态栏红字闪错；多文件拖放单个失败同走此道不中断其余。
+ *  J3（2026-09-30 实测反馈「报错不显眼」）：文案带文件名（basename），error 级时长由 flashStatus 放慢到约 6s。 */
+function showError(error: unknown, path = ""): void {
   // ⚠ Error 带「Error: 」前缀不适状态栏；Rust invoke 拒绝的是字符串 ⇒ String() 恰为消息
   const text = error instanceof Error ? error.message : String(error);
-  flashStatus(`打开失败：${text}`, "error");
+  const name = path.split(/[\\/]/).pop() ?? ""; // 空串=没有路径（对话框自身失败）
+  flashStatus(name === "" ? `打开失败：${text}` : `打开失败「${name}」：${text}`, "error");
 }
 
 /* ---- 大纲 ---- */
@@ -242,7 +244,7 @@ async function openPath(tabs: TabManager, path: string, activate = true): Promis
     tabs.openTab(canonical, file, activate);
     pushRecent(canonical);
   } catch (error) {
-    showError(error);
+    showError(error, canonical); // J3：带上打不开的文件名
     removeRecent(canonical); // UX-8（des-5）：打不开的死条目不再躺在最近列表里
   }
 }
@@ -283,13 +285,13 @@ async function onExportClick(tabs: TabManager): Promise<void> {
   if (doc === null) {
     return;
   }
-  // C1+C4 导出版式归一：暗色近白不可读、根 zoom 让量宽漂移 ⇒ 存偏好与 zoom、临时切亮色重渲
-  // mermaid，finally 无条件还原。H 静默化：exporting 冻结层与归一同一同步块（同一次 recalc）。
-  // F6（fix-22）：冻结/变亮/重渲 mermaid 三行挪进 try——若 refreshMermaidTheme 同步
-  // 抛异常，finally 仍会揭幕还原，冻结层不再滞留整窗。
+  // C1+C4 导出版式归一：暗色近白不可读、纸面缩放让量宽漂移 ⇒ 清纸面缩放、临时切亮色重渲
+  // mermaid，finally 无条件还原。H 静默化：冻结层与归一同一同步块；F6（fix-22）：冻结/变亮/
+  // 重渲三行在 try 内，refreshMermaidTheme 抛异常时 finally 仍揭幕还原。
+  // J2（2026-09-30）：缩放目标从根元素换成纸面（#doc/.cm-editor）——清空/还原语义不变，
+  // 持久化档位即「保存值」，restorePaperZoom 按它重投。
   const savedThemePref = readThemePref(); // 权威来源（theme.ts），不自己摸 localStorage
-  const savedZoom = document.documentElement.style.zoom;
-  document.documentElement.style.zoom = "";
+  clearPaperZoom();
   try {
     document.documentElement.classList.add("exporting"); // 与下行同一同步块：先遮屏再变亮，中间不得有异步断点
     document.documentElement.dataset.theme = "light"; // 不落盘：崩溃后偏好不被改成亮色
@@ -335,7 +337,7 @@ async function onExportClick(tabs: TabManager): Promise<void> {
     const restored = resolvedTheme(savedThemePref); // auto 档解析回系统值
     document.documentElement.dataset.theme = restored;
     refreshMermaidTheme(restored);
-    document.documentElement.style.zoom = savedZoom;
+    restorePaperZoom(); // J2：纸面缩放还原（旧根 zoom 时代的 style.zoom = savedZoom 已退役）
     document.documentElement.classList.remove("exporting"); // 揭幕放最后：先还原主题后揭幕，同一同步块（顺序反了会闪亮）
   }
 }
@@ -530,7 +532,7 @@ async function boot(): Promise<void> {
   document.documentElement.classList.add("app-ready"); // FOUC 放行：主题偏好已应用，配合 index.html 内联防闪样式
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
-  setupZoom(); // 页面整体缩放（用户反馈 2026-09-27）：启动回填 + 面板 ± 两键 ✓
+  setupZoom(); // 纸面缩放（2026-09-27 起；J2 改为只缩放 #doc/.cm-editor）：启动回填 + 面板 ± 两键 ✓
   // 关闭守卫：✕ 与 Alt+F4 同发 close-requested（唯一入口）；守卫依赖本文件的 closeGuard 实例故留在此。
   void getCurrentWindow().onCloseRequested((event) => closeGuard(event));
   setupShellOverflow(); // D-05：顶栏拥挤态（标签装不下 → 收成「编辑 + ⋯」，判据见函数处注释）
@@ -619,6 +621,7 @@ const workspacePanel = setupWorkspacePanel({
       mountRendered({ tab, fragment: result.fragment, outline: result.outline });
     },
     onModeChange: (editing, line) => {
+      restorePaperZoom(); // J2：.cm-editor 懒建/两态换位后，把纸面缩放补投到当前目标（幂等）
       if (editing) {
         findbar.close(); // 进编辑态关查找条（P5 批2）：mark 属阅读 DOM
         setStatusLine(line ?? 1);
@@ -630,8 +633,7 @@ const workspacePanel = setupWorkspacePanel({
   const tabs = createTabs(editorSession, mountRendered);
   activeTabs = tabs;
   $("btn-edit").addEventListener("click", () => editorSession?.toggle());
-  // 文件入口只有标签条的「＋」（#btn-newtab）。原先与它并列的那枚「打开」按钮已删——
-  // 两枚按钮本就绑同一个 onOpenClick，做的是同一件事（用户定稿「保留一个加号」）。
+  // 文件入口只有标签条的「＋」（#btn-newtab，与已删的「打开」按钮本就同一处理函数）。
   $("btn-newtab").addEventListener("click", () => void onOpenClick(tabs));
   // 空态接线：主按钮 =「＋」；「打开文件夹为工作区」（2026-09-27 反馈批）→ pickFromOutside；最近条目走 openPath。
   activeEmptyState = setupEmptyState({
@@ -661,8 +663,7 @@ const workspacePanel = setupWorkspacePanel({
   if (pending.length > 0) {
     await openEachMd(pending, (path, activate) => openPath(tabs, path, activate), notifyIgnoredDrops);
   }
-  // 最近列表双形态收敛：归一/只在值变才写回/空态重画都在 recent.ts，此处只接线。
-  // ⚠ 放在 pending 打开之后：pushRecent 已写最新项，这里收敛全表且保留原序。
+  // 最近列表双形态收敛（归一/只在值变才写回/空态重画都在 recent.ts）：放 pending 之后——pushRecent 已写最新项，此处收敛全表且保留原序。
   void hydrateRecentOnBoot(() => activeEmptyState?.refresh()).catch((error: unknown) => {
     console.warn("最近列表归一失败", error); // 不阻断启动：沿用原值
   });

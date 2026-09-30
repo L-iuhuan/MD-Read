@@ -10,7 +10,7 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { LanguageDescription, defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { openSearchPanel, searchKeymap } from "@codemirror/search";
+import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import type { Tab } from "../app/tabs";
@@ -87,8 +87,8 @@ function baseExtensions(crlf: boolean, onDocChanged: () => void): Extension[] {
     crlf ? EditorState.lineSeparator.of("\r\n") : [],
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
-    keymap.of([{ key: "Mod-h", run: openSearchPanel, preventDefault: true }]), // 坑3
-    keymap.of([...searchKeymap]),
+    keymap.of([{ key: "Mod-h", run: openSearchPanel, preventDefault: true }, ...searchKeymap]), // 坑3：自定义绑定须排在 searchKeymap 前
+    search({ top: true }), // K1（2026-09-29）：查找/替换面板上提到编辑器顶部，与阅读态 #findbar 同角落
     lineNumbers(),
     highlightActiveLine(),
     EditorView.lineWrapping,
@@ -121,26 +121,27 @@ export interface SavedEditorState { state: EditorState; scrollTop: number }
 
 /* ---- 状态栏统一闪显（P5 批2·错误通道统一）----
  * #st-saved 单槽复用：kind 映射语义色类（app.css st-ok/st-warn/st-error →
- * tokens.css 的 --ok-text/--warn-text/--danger-text），时长统一 2000ms
- * （替换原先 2.5s/1.5s 两套）。放本模块而非 main.ts：编辑会话（已保存/保存
+ * tokens.css 的 --ok-text/--warn-text/--danger-text），普通级 2000ms、error 级 6000ms
+ * （J3）。放本模块而非 main.ts：编辑会话（已保存/保存
  * 失败/阅读态键位提示）与应用壳（导出/打开失败）走同一通道，tests 可直接导入。 */
 export type FlashKind = "ok" | "warn" | "error";
 
 const FLASH_MS = 2000;
 let flashTimer = 0;
 
-export function flashStatus(message: string, kind: FlashKind): void {
+export function flashStatus(message: string, kind: FlashKind, durationMs?: number): void {
   const el = document.getElementById("st-saved");
   if (el === null) {
     return;
   }
+  const ms = durationMs ?? (kind === "error" ? 6000 : FLASH_MS); // J3：error 6s（读内容+想对策），普通级不变
   el.textContent = message;
   el.className = `st-${kind}`;
   el.hidden = false;
   window.clearTimeout(flashTimer);
   flashTimer = window.setTimeout(() => {
     el.hidden = true;
-  }, FLASH_MS);
+  }, ms);
 }
 
 export interface EditorHandle {

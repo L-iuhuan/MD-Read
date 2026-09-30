@@ -63,6 +63,13 @@ describe("面向用户的错误文案不许露技术黑话（系统性扫描）"
     expect(main).not.toMatch(/flashStatus\(`打开失败：\$\{String\(error\)\}/);
   });
 
+  it("J3：打开失败文案带文件名（basename，Windows / POSIX 分隔符都认）", () => {
+    const main = readFileSync("src/main.ts", "utf8");
+    expect(main).toMatch(/path\.split\(\/\[\\\\\/\]\/\)/);
+    expect(main).toMatch(/打开失败「\$\{name\}」/);
+    expect(main).toMatch(/showError\(error, canonical\)/); // 失败入口真把路径传进来了
+  });
+
   it("Rust 侧上屏的错误串也不许带 HRESULT 行话（错误码只进 stderr ✓）", () => {
     const rust = readFileSync(path.join("src-tauri", "src", "print", "cdp.rs"), "utf8");
     expect(rust).not.toMatch(/Err\(format!\("打印引擎返回错误：hr=/);

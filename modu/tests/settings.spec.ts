@@ -1,10 +1,13 @@
 /**
- * 字体面板（D-02 第二步）契约。
+ * 字体面板（D-02 → 2026-09-30 J1 三下拉）契约。
  *
- * 与旧版（四预设 sans/serif/kai/hei）的差别就是本文件的锚：
- *   ① 推荐列表按语义分三组（中文正文 / 西文拉丁 / 代码），选项骨架在 index.html，
- *      「对应哪个栈变量」由 data-stack-var 声明（**字体栈只在 tokens.css**）；
- *   ② 旧持久化值 sans/serif/kai/hei 必须能迁移到新目录项，不能丢成默认值；
+ * 与更早版本（单下拉装三组 optgroup）的差别就是本文件的锚：
+ *   ① **三个独立 select**（#set-font-cn / #set-font-latin / #set-font-code），
+ *      各自 label 写明角色、各自读写各自键（modu-font-cn / -latin / -code），
+ *      选项骨架在 index.html，「对应哪个栈变量」由 data-stack-var 声明（**字体栈只在 tokens.css**）；
+ *      选项文案 = 完整字体名（J1：不再截断成「Times New R.」）；
+ *   ② 旧持久化值（单键 modu-font 的 sans/serif/kai/hei 与任意组内 id、更早 modu-face=serif）
+ *      必须能迁移到对应组的新键，不能丢成默认值；
  *   ③ 常显「实际生效字体」：按 400 / 700 两个字重各显示一次探测结果
  *      （判据见 font-detect.spec.ts：拉丁串 + 双假名基线 + 双字重）。
  *
@@ -28,35 +31,23 @@ function stripHtmlComments(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, "");
 }
 
-/** 从 index.html 里取第一段能匹配标签的元素（option / optgroup 两种） */
-function pickTag(html: string, tag: string, attr: string): string | null {
-  const found = new RegExp(`<${tag}\\b[^>]*${attr}[^>]*>`).exec(html);
-  return found === null ? null : found[0];
-}
-
 /**
- * 面板骨架：#set-font 的 optgroup / option 直接来自 index.html（id 与中文名不再手抄）。
+ * 面板骨架：三个字体下拉的 option 直接来自 index.html（完整名不再手抄）。
  * 真机上 index.html 的 option 文字正是「首次渲染读到的中文名」，渲染会把它们写进
  * data-label；这里把同样的关系复现出来（否则第二次渲染就读不到文案了）。
  */
-function fontSkeleton(): string {
+function selectSkeleton(id: string): string {
   const html = stripHtmlComments(readFileSync("index.html", "utf8"));
-  const select = /<select[^>]*id="set-font"[^>]*>([\s\S]*?)<\/select>/.exec(html);
-  if (select === null) throw new Error("index.html 里找不到 #set-font");
-  const groups = select[1].match(/<optgroup[\s\S]*?(?=<optgroup|$)/g) ?? [];
-  return groups
-    .map((raw) => {
-      const open = pickTag(raw, "optgroup", "data-group");
-      const options = (raw.match(/<option\b[^>]*>[^<]*/g) ?? [])
-        .map((tag) => {
-          const label = tag.slice(tag.indexOf(">") + 1).trim();
-          const attr = label === "" ? "" : ` data-label="${label}"`;
-          return `${tag.slice(0, tag.indexOf(">"))}${attr}>${label}`;
-        })
-        .join("");
-      return open === null ? options : `${open}${options}</optgroup>`;
+  const found = new RegExp(`<select[^>]*id="${id}"[^>]*>([\\s\\S]*?)</select>`).exec(html);
+  if (found === null) throw new Error(`index.html 里找不到 #${id}`);
+  const options = found[1].match(/<option\b[^>]*>[^<]*/g) ?? [];
+  return `<select id="${id}" class="settings-select">${options
+    .map((tag) => {
+      const label = tag.slice(tag.indexOf(">") + 1).trim();
+      const attr = label === "" ? "" : ` data-label="${label}"`;
+      return `${tag.slice(0, tag.indexOf(">"))}${attr}>${label}`;
     })
-    .join("");
+    .join("")}</select>`;
 }
 
 function mountPanel(): void {
@@ -70,7 +61,9 @@ function mountPanel(): void {
       <span id="set-width-val">46</span>
       <button id="set-width-inc" type="button">＋</button>
       <button id="set-reset-typo" type="button">恢复默认</button>
-      <select id="set-font" class="settings-select">${fontSkeleton()}</select>
+      ${selectSkeleton("set-font-cn")}
+      ${selectSkeleton("set-font-latin")}
+      ${selectSkeleton("set-font-code")}
       <span class="settings-label">实际生效</span>
       <code id="set-font-effective"></code>
       <code id="set-font-effective-bold"></code>
@@ -187,8 +180,9 @@ function wideVar(): string {
   return document.documentElement.style.getPropertyValue("--measure-wide");
 }
 
-function choose(id: string): void {
-  const select = document.getElementById("set-font") as HTMLSelectElement;
+/** 在某组下拉里选一项（J1：三 select 各自 change） */
+function choose(group: "cn" | "latin" | "code", id: string): void {
+  const select = document.getElementById(`set-font-${group}`) as HTMLSelectElement;
   select.value = id;
   select.dispatchEvent(new Event("change"));
 }
@@ -249,48 +243,24 @@ describe("字号步进（14–20px）", () => {
   });
 });
 
-describe("字体推荐列表（D-02：三组语义分组）", () => {
-  it("UX-5：三组 optgroup 标题都带「当前：」，当前选择所在组显示选项名、其余组显示「默认」", async () => {
-    await freshSettings();
-    const boxes = [...document.querySelectorAll<HTMLOptGroupElement>("#set-font optgroup")];
-    expect(boxes.map((b) => b.label).every((label) => label.includes("当前："))).toBe(true);
-    expect(boxes[0].label).toContain("中文正文"); // 基名保留（序号分组名不丢）
-    expect(boxes[0].label).toContain("当前：HarmonyOS Sans"); // 默认档落在 cjk 组
-    expect(boxes[1].label).toContain("当前：默认");
-    expect(boxes[2].label).toContain("当前：默认");
-  });
+describe("字体三下拉（J1：三组各一个 select、互不影响）", () => {
+  const FONT_SELECTS = ["set-font-cn", "set-font-latin", "set-font-code"] as const;
 
-  it("UX-5：选择变化时组标题跟随——换组后旧组回落「默认」、新组显示选项名", async () => {
+  it("三组目录齐备：三个下拉各 5 项，关键 id 都在", async () => {
     await freshSettings();
-    const boxes = () => [...document.querySelectorAll<HTMLOptGroupElement>("#set-font optgroup")];
-    choose("latin-georgia");
-    expect(boxes()[0].label).toContain("当前：默认");
-    expect(boxes()[1].label).toContain("当前：Georgia");
-    choose("cjk-notoserif");
-    expect(boxes()[0].label).toContain("当前：思源宋体");
-    expect(boxes()[1].label).toContain("当前：默认");
-    expect(boxes()[2].label).toContain("当前：默认");
-  });
-
-  it("目录按组齐备：中文正文 / 西文 / 代码 各 5 项", async () => {
-    await freshSettings();
-    const boxes = [...document.querySelectorAll<HTMLOptGroupElement>("#set-font optgroup")];
-    // 2026-09-27 设置面板重做：分组标题加了序号（① 中文正文 / ② 西文与数字 / ③ 代码）。
-    // 锚的**意图**是"三组齐备"，不是逐字文案 ⇒ 改为语义包含：
-    // 原先 `toEqual([...])` 让"改一句措辞"就红 ✗，而它拦不住真正的回归（组少了/项数变了）。
-    expect(boxes.map((b) => b.label)).toHaveLength(3);
-    expect(boxes[0].label).toContain("中文正文");
-    expect(boxes[1].label).toContain("西文");
-    expect(boxes[2].label).toContain("代码");
-    for (const box of boxes) {
-      expect(box.querySelectorAll("option").length).toBe(5);
+    for (const id of FONT_SELECTS) {
+      const select = document.getElementById(id) as HTMLSelectElement;
+      expect(select.querySelectorAll("option").length).toBe(5);
     }
-    const ids = [...document.querySelectorAll<HTMLOptionElement>("#set-font option")].map((o) => o.value);
+    const ids = FONT_SELECTS.flatMap((id) =>
+      [...document.querySelectorAll<HTMLOptionElement>(`#${id} option`)].map((o) => o.value),
+    );
     expect(ids).toContain("cjk-harmonyos");
     expect(ids).toContain("cjk-yahei");
     expect(ids).toContain("cjk-songti");
     expect(ids).toContain("cjk-lxgw"); // 霞鹜文楷屏幕版（本机已装）
     expect(ids).toContain("cjk-notoserif");
+    expect(ids).toContain("latin-times");
     expect(ids).toContain("mono-maple-nf");
     expect(ids).toContain("mono-cascadia");
     expect(ids).toContain("mono-consolas");
@@ -298,118 +268,149 @@ describe("字体推荐列表（D-02：三组语义分组）", () => {
 
   it("每个选项都声明 data-stack-var（栈只在 tokens.css，TS 零族名）", async () => {
     await freshSettings();
-    for (const option of document.querySelectorAll("#set-font option")) {
-      expect(option.getAttribute("data-stack-var")).toMatch(/^--font-pick-/);
+    for (const id of FONT_SELECTS) {
+      for (const option of document.querySelectorAll(`#${id} option`)) {
+        expect(option.getAttribute("data-stack-var")).toMatch(/^--font-pick-/);
+      }
     }
   });
 
-  it("本机缺失的首选被标注「· 未装」，已装的保持短名", async () => {
+  it("选项文案为完整字体名（J1：不再截断——「Times New R.」✗）", async () => {
     await freshSettings();
-    const select = document.getElementById("set-font") as HTMLSelectElement;
+    // Times 本机未装（假字宽表只登记 3 族）⇒ 带后缀，但主体必须是完整名而非缩写
+    const times = document.querySelector('#set-font-latin option[value="latin-times"]');
+    expect(times?.textContent).toContain("Times New Roman（衬线）");
+    expect(times?.textContent).not.toContain("Times New R.");
+    const yaheiui = document.querySelector('#set-font-latin option[value="latin-yaheiui"]');
+    expect(yaheiui?.textContent).toBe("Microsoft YaHei UI"); // 已装 ⇒ 纯完整名
+    const mix = document.querySelector('#set-font-code option[value="mono-maple-mix"]');
+    expect(mix?.textContent).toContain("Maple Mono NF（中文回雅黑）");
+  });
+
+  it("select 的 title 挂当前完整名（J1：下拉万一截断时的兜底）", async () => {
+    await freshSettings();
+    const latin = document.getElementById("set-font-latin") as HTMLSelectElement;
+    expect(latin.title).toContain("Segoe UI Variable Text"); // 默认档也是完整名
+    choose("latin", "latin-times");
+    expect(latin.title).toBe("Times New Roman（衬线）");
+  });
+
+  it("本机缺失的首选被标注「· 未装」，已装的保持完整名", async () => {
+    await freshSettings();
     // 假字宽表里只登记了 HarmonyOS Sans SC / Microsoft YaHei UI / Noto Serif SC 三族
-    const missing = select.querySelector('option[value="mono-maple-nf"]');
+    const missing = document.querySelector('#set-font-code option[value="mono-maple-nf"]');
     expect(missing?.getAttribute("data-unavailable")).toBe("true");
-    // 2026-09-27 设置面板重做：标注从「（本机未安装）」压成「 · 未装」
-    //（用户反馈「字体名字特别长，你又不去限制，导致整个结构特别乱」✗；全名改由 title 承载 ✓）
     expect(missing?.textContent).toContain("未装");
-    const present = select.querySelector('option[value="cjk-harmonyos"]');
+    const present = document.querySelector('#set-font-cn option[value="cjk-harmonyos"]');
     expect(present?.getAttribute("data-unavailable")).toBe(null);
-    // 短名（原「HarmonyOS Sans SC」⇒ 「HarmonyOS Sans」；全名在 title 里 ✓）
-    expect(present?.textContent).toBe("HarmonyOS Sans");
-    const serifPresent = select.querySelector('option[value="cjk-notoserif"]');
-    expect(serifPresent?.getAttribute("data-unavailable")).toBe(null);
+    expect(present?.textContent).toBe("HarmonyOS Sans SC");
   });
 
-  it("选非衬线项 → #doc 内联 var(--font-pick-*)，modu-font 持久化", async () => {
+  it("三 select 各自读写各自键（选中文/西文/代码互不影响）", async () => {
     await freshSettings();
-    choose("cjk-harmonyos");
-    const doc = document.getElementById("doc") as HTMLElement;
-    expect(doc.style.fontFamily).toBe("var(--font-pick-cjk-harmonyos)");
-    expect(doc.dataset.face).toBeUndefined();
-    expect(localStorage.getItem("modu-font")).toBe("cjk-harmonyos");
+    choose("cn", "cjk-songti");
+    choose("latin", "latin-times");
+    choose("code", "mono-consolas");
+    expect(localStorage.getItem("modu-font-cn")).toBe("cjk-songti");
+    expect(localStorage.getItem("modu-font-latin")).toBe("latin-times");
+    expect(localStorage.getItem("modu-font-code")).toBe("mono-consolas");
+    expect((document.getElementById("set-font-cn") as HTMLSelectElement).value).toBe("cjk-songti");
+    expect((document.getElementById("set-font-latin") as HTMLSelectElement).value).toBe("latin-times");
+    expect((document.getElementById("set-font-code") as HTMLSelectElement).value).toBe("mono-consolas");
   });
 
-  it("衬线项 → 走 #doc[data-face] 契约（清内联栈），两个衬线预设各自回显", async () => {
+  it("应用：正文栈 = 西文链（去尾通用族）+ 中文章，代码链覆写 --font-mono", async () => {
     await freshSettings();
-    choose("cjk-notoserif");
     const doc = document.getElementById("doc") as HTMLElement;
-    expect(doc.dataset.face).toBe("serif");
-    expect(doc.style.fontFamily).toBe("");
-    choose("cjk-songti");
-    expect((document.getElementById("set-font") as HTMLSelectElement).value).toBe("cjk-songti");
-    expect(localStorage.getItem("modu-font")).toBe("cjk-songti");
+    // ⚠ 西文链尾的 sans-serif 必须剥掉：通用族在中间会短路 CJK 回退（见 font-picker 头注释）
+    expect(doc.style.fontFamily).toBe(
+      '"Segoe UI Variable Text", "Segoe UI", Inter, Arial, "HarmonyOS Sans SC", "Microsoft YaHei UI", system-ui, sans-serif',
+    );
+    expect(doc.style.getPropertyValue("--font-mono")).toBe(
+      '"Maple Mono NF", ui-monospace, "Cascadia Mono", Consolas, monospace',
+    );
+    expect(doc.dataset.face).toBeUndefined(); // 旧衬线档契约退役：三组组合永远走内联栈
   });
 
-  it("衬线档契约按**首选族**判定，不按通用族：霞鹜文楷 / Georgia 各走自己的链", async () => {
+  it("换档后组合跟随：latin-times + cjk-yahei 的正文栈、mono-consolas 的代码链", async () => {
     await freshSettings();
+    choose("latin", "latin-times");
+    choose("cn", "cjk-yahei");
+    choose("code", "mono-consolas");
     const doc = document.getElementById("doc") as HTMLElement;
-    // 霞鹜文楷虽以 serif 收尾，但首选是 LXGW WenKai Screen（≠ --font-serif 首选的 Noto Serif SC）
-    choose("cjk-lxgw");
-    expect(doc.dataset.face).toBeUndefined();
-    expect(doc.style.fontFamily).toBe("var(--font-pick-cjk-lxgw)");
-    expect((document.getElementById("set-font") as HTMLSelectElement).value).toBe("cjk-lxgw");
+    expect(doc.style.fontFamily).toBe(
+      '"Times New Roman", Times, Georgia, "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif',
+    );
+    expect(doc.style.getPropertyValue("--font-mono")).toBe(
+      'Consolas, "Cascadia Mono", ui-monospace, monospace',
+    );
   });
 
-  it("启动恢复：modu-font=mono-maple-nf → 面板回显并应用该栈", async () => {
-    localStorage.setItem("modu-font", "mono-maple-nf");
+  it("启动恢复：modu-font-code=mono-cascadia → 代码下拉回显并应用该链", async () => {
+    localStorage.setItem("modu-font-code", "mono-cascadia");
     await freshSettings();
     const doc = document.getElementById("doc") as HTMLElement;
-    expect(doc.style.fontFamily).toBe("var(--font-pick-mono-maple-nf)");
-    expect((document.getElementById("set-font") as HTMLSelectElement).value).toBe("mono-maple-nf");
+    expect(doc.style.getPropertyValue("--font-mono")).toBe(
+      '"Cascadia Mono", ui-monospace, Consolas, monospace',
+    );
+    expect((document.getElementById("set-font-code") as HTMLSelectElement).value).toBe("mono-cascadia");
   });
 
   it("字体变化触发 onFontChange 钩子（壳层重算排版）", async () => {
     const ctx = await freshSettings();
-    ctx.settings.setFontPref("mono-cascadia");
+    ctx.settings.setFontPref("mono", "mono-cascadia");
     expect(ctx.onFontChange).toHaveBeenCalled();
   });
 });
 
-describe("字体旧值迁移（modu-font 四预设 + 旧 modu-face）", () => {
-  it("旧 modu-face=serif（无 modu-font）→ 迁到衬线项并走 data-face 契约", async () => {
+describe("字体旧值迁移（旧单键 modu-font / 更早 modu-face → 三新键）", () => {
+  it("旧 modu-face=serif（无任何新键）→ 迁到中文组思源宋体，其余两组默认，旧键退役", async () => {
     localStorage.setItem("modu-face", "serif");
     const { settings } = await freshSettings();
-    expect(settings.readFontPref()).toBe("cjk-notoserif");
-    const doc = document.getElementById("doc") as HTMLElement;
-    expect(doc.dataset.face).toBe("serif");
-    expect((document.getElementById("set-font") as HTMLSelectElement).value).toBe("cjk-notoserif");
+    expect(settings.readFontPref("cjk")).toBe("cjk-notoserif");
+    expect(settings.readFontPref("latin")).toBe("latin-segoe");
+    expect(settings.readFontPref("mono")).toBe("mono-maple-nf");
+    expect(localStorage.getItem("modu-face")).toBe(null);
+    expect((document.getElementById("set-font-cn") as HTMLSelectElement).value).toBe("cjk-notoserif");
   });
 
   it.each([
-    ["sans", "sans"],
+    ["sans", "cjk-harmonyos"],
     ["serif", "cjk-notoserif"],
     ["kai", "cjk-lxgw"],
     ["hei", "cjk-yahei"],
-  ])("旧 modu-font=%s → %s（不被丢成默认值）", async (legacy, expected) => {
+  ])("旧 modu-font=%s → 中文组=%s（不被丢成默认值）", async (legacy, expected) => {
     localStorage.setItem("modu-font", legacy);
     const { settings } = await freshSettings();
-    expect(settings.readFontPref()).toBe(expected);
+    expect(settings.readFontPref("cjk")).toBe(expected);
+    expect(localStorage.getItem("modu-font")).toBe(null);
   });
 
-  it("旧键迁移后退役，双源归一", async () => {
-    localStorage.setItem("modu-face", "serif");
-    localStorage.setItem("modu-font", "hei"); // 新键优先
+  it("旧值落在哪组由值本身决定：latin-times → 西文组得它，中文/代码组用默认", async () => {
+    localStorage.setItem("modu-font", "latin-times");
     const { settings } = await freshSettings();
-    settings.setFontPref("cjk-yahei");
-    expect(localStorage.getItem("modu-font")).toBe("cjk-yahei");
-    expect(localStorage.getItem("modu-face")).toBe(null);
+    expect(settings.readFontPref("latin")).toBe("latin-times");
+    expect(settings.readFontPref("cjk")).toBe("cjk-harmonyos");
+    expect(settings.readFontPref("mono")).toBe("mono-maple-nf");
   });
 
-  it("sans = 清内联、回 tokens.css 的 --font-sans（不是某个预设）", async () => {
-    localStorage.setItem("modu-font", "sans");
-    await freshSettings();
-    const doc = document.getElementById("doc") as HTMLElement;
-    expect(doc.style.fontFamily).toBe("");
-    expect(doc.dataset.face).toBeUndefined();
-  });
-
-  it("坏值 / 未知 id 回退默认项（HarmonyOS Sans SC）", async () => {
+  it("坏值 → 三组全默认（HarmonyOS Sans SC / Segoe UI Variable Text / Maple Mono NF）", async () => {
     localStorage.setItem("modu-font", "乱码");
     const first = await freshSettings();
-    expect(first.settings.readFontPref()).toBe("cjk-harmonyos");
+    expect(first.settings.readFontPref("cjk")).toBe("cjk-harmonyos");
+    expect(first.settings.readFontPref("latin")).toBe("latin-segoe");
     localStorage.setItem("modu-font", "not-a-real-id");
     const second = await freshSettings();
-    expect(second.settings.readFontPref()).toBe("cjk-harmonyos");
+    expect(second.settings.readFontPref("cjk")).toBe("cjk-harmonyos");
+    expect(second.settings.readFontPref("mono")).toBe("mono-maple-nf");
+  });
+
+  it("三新键已在场时旧键不抢写（双源归一：新键优先，旧键清退）", async () => {
+    localStorage.setItem("modu-font-cn", "cjk-yahei");
+    localStorage.setItem("modu-font", "hei"); // 旧值与现值冲突 ⇒ 以新键为准
+    const { settings } = await freshSettings();
+    expect(settings.readFontPref("cjk")).toBe("cjk-yahei");
+    expect(localStorage.getItem("modu-font")).toBe(null);
   });
 });
 

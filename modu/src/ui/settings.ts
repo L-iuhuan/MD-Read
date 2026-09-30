@@ -4,12 +4,10 @@
  * 七件事：
  * ① 字号步进 14–20px：改 --fs-body（cjk.css 认定的唯一作用点），
  *   localStorage modu-fs 持久化、启动恢复；
- * ② 字体（D-02 第二步起换血）：**推荐列表按语义分三组 + 常显「实际生效字体」**，
- *   实现全部在 ui/font-picker.ts（目录来自 tokens.css，探测判据见 ui/font-detect.ts）。
- *   本文件只保留接线：modu-font 持久化、旧 modu-face=serif 存量迁移回退、
- *   字体变化后回调 onFontChange 重算排版。
- *   ⚠ 旧「四预设 sans/serif/kai/hei」仍可读：resolvePick 会迁到对应新选项，
- *     旧值不会被丢成默认值。
+ * ② 字体（D-02 → 2026-09-30 J1 换血）：**三个独立下拉（中文正文/西文/代码）+ 常显
+ *   「实际生效字体」**，实现全部在 ui/font-picker.ts（目录来自 tokens.css，探测判据
+ *   见 ui/font-detect.ts）。本文件只保留接线；持久化拆三键 modu-font-cn/-latin/-code，
+ *   旧单键 modu-font（含更早 modu-face=serif）由 font-picker 一次性迁移回退。
  * ③ 主题三档（亮/暗/自动）入面板：状态机在 ui/theme.ts，此处只接下拉；
  *    D-01 批次再加一行「配色」下拉（5 套主题），与 ③ 正交组合出 10 组调色板；
  *    持久化键 modu-palette（无记录回退靛蓝），读写与回显同样在 ui/theme.ts；
@@ -35,8 +33,9 @@ import {
   mountFontPicker,
   readFontPref,
   refreshEffective,
-  refreshGroupLabels,
   setFontPref as applyFontPick,
+  syncFontSelects,
+  type FontPickGroup,
   type FontPickerHooks,
 } from "./font-picker";
 import { invoke } from "@tauri-apps/api/core";
@@ -115,13 +114,13 @@ function writeFs(px: number): void {
   localStorage.setItem(FS_KEY, String(v));
 }
 
-/** 字体选择（D-02）：目录/探测/「实际生效字体」全在 ui/font-picker.ts */
+/** 字体选择（D-02 → 2026-09-30 J1 三下拉）：目录/探测/组合应用全在 ui/font-picker.ts */
 export { readFontPref, refreshEffective };
 
-/** 统一入口（对外保留旧名 setFontPref）：应用 + 持久化 + 回显 + 刷新读数。
- *  旧值 sans/serif/kai/hei 由 font-picker 的 resolvePick 迁移到对应新选项。 */
-export function setFontPref(font: string): void {
-  applyFontPick(font, fontHooks());
+/** 统一入口（对外保留旧名 setFontPref）：应用 + 持久化（该组键）+ 回显 + 刷新读数。
+ *  旧单键 modu-font / modu-face 由 font-picker 的 migrateLegacyPicks 一次性迁移。 */
+export function setFontPref(group: FontPickGroup, id: string): void {
+  applyFontPick(group, id, fontHooks());
 }
 
 /** 自动保存开关（用户反馈批次）：默认开——只有显式 off 才关，坏值也当开
@@ -206,10 +205,9 @@ export function syncSettingsPanel(): void {
   if (widthVal !== null) {
     widthVal.textContent = String(currentWidth());
   }
-  const font = document.getElementById("set-font") as HTMLSelectElement | null;
+  const font = document.getElementById("set-font-cn");
   if (font !== null) {
-    font.value = readFontPref();
-    refreshGroupLabels(font, readFontPref()); // UX-5：组标题当前值同批刷新（面板外改过不陈旧）
+    syncFontSelects(); // J1：三下拉各自回显各自键（面板外改过不陈旧）
   }
   refreshEffective(fontHooks()); // 「实际生效字体」与选择同批刷新（换主题/字号都可能改变命中）
   const autosave = document.getElementById("set-autosave") as HTMLInputElement | null;

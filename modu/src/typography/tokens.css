@@ -16,8 +16,9 @@
      不属 Radix 体系，且 #1d4ed8 不在任何 Radix 阶数里）——本条须随报告入评审台账；
      红绿黄状态色未换体系，仍取 Radix 阶数。
    - 派生量（tint 悬停/描边、强调文字悬停、hover/active 面、强描边、代码底）
-     一律写成本文件内的 color-mix，**不新造字面色值**；10 组用同一配方，
-     方向随亮暗自适应（混入 --pal-fg：亮色变深、暗色变浅）。
+     一律写成本文件内的 color-mix，**不新造字面色值**；同档位亮暗配方同族、
+     方向随亮暗自适应（混入 --pal-fg / --pal-line-2：亮色变深、暗色变浅）；
+     亮暗分叉处均有 K3/K4 注释记录（例：暗色 hover，见下方调色板区）。
    - 亮暗双套成对设计、同步验收。
 
    DOM 契约（向后兼容，data-theme 语义一字未改）：
@@ -294,12 +295,18 @@
   --pal-quote: #f3f8f7;   --pal-th: #e4f1ef;
 }
 
+/* ⚠ K3（2026-09-29，主人实测反馈③）：五组暗色 --pal-paper 由 D-01 原值提档——
+   暗色纸面须明显亮于画布（实测 1.28~1.32:1；原值 1.07~1.11:1 肉眼不可辨）。
+   K4（2026-09-30）：提档后原派生式（50% 纸 × 50% line-2）的 --pal-hover 对新纸面
+   只剩 1.046~1.070:1（原 1.197~1.227）——悬停几乎不可见 ⇒ 暗色五组改
+   「92% 纸 × 8% --pal-fg」：对纸面实测 1.215~1.219:1；亮色 hover 配方不动。 */
+
 /* --- 靛蓝 · 暗（默认主题暗态；accent/soft/on 按 D-01 更正值）--- */
 :root[data-theme="dark"],
 :root[data-palette="dianlan"][data-theme="dark"] {
-  --pal-chrome: #191d24;  --pal-card: #1f242c;    --pal-paper: #12151a;
+  --pal-chrome: #191d24;  --pal-card: #1f242c;    --pal-paper: #2d323a;
   --pal-line: #373d45;    --pal-line-2: #333a44;  --pal-hair: #3c434d;
-  --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
+  --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #e6e9ee;      --pal-muted: #98a0ad;   --pal-dim: #6b7480;
   --pal-accent: #4da3ff;  --pal-soft: #16283c;    --pal-on: #9dc9ff;
   --pal-quote: #1a2130;   --pal-th: #16283c;
@@ -307,9 +314,9 @@
 
 /* --- 宣纸 · 暗（暖碳）--- */
 :root[data-palette="xuanzhi"][data-theme="dark"] {
-  --pal-chrome: #1f1e19;  --pal-card: #262420;    --pal-paper: #171613;
+  --pal-chrome: #1f1e19;  --pal-card: #262420;    --pal-paper: #33312e;
   --pal-line: #3e3c35;    --pal-line-2: #3b3830;  --pal-hair: #43413d;
-  --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
+  --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #eae8e2;      --pal-muted: #a5a096;   --pal-dim: #78746b;
   --pal-accent: #d9a353;  --pal-soft: #302819;    --pal-on: #ecc98d;
   --pal-quote: #1f1d18;   --pal-th: #302819;
@@ -317,9 +324,9 @@
 
 /* --- 石墨 · 暗 --- */
 :root[data-palette="shimo"][data-theme="dark"] {
-  --pal-chrome: #1d2023;  --pal-card: #24282b;    --pal-paper: #16181a;
+  --pal-chrome: #1d2023;  --pal-card: #24282b;    --pal-paper: #313437;
   --pal-line: #3b3f42;    --pal-line-2: #373b3f;  --pal-hair: #404548;
-  --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
+  --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #e8eaec;      --pal-muted: #9aa1a7;   --pal-dim: #6f767c;
   --pal-accent: #a8b4c0;  --pal-soft: #242a30;    --pal-on: #c8d3de;
   --pal-quote: #1e2225;   --pal-th: #242a30;
@@ -327,9 +334,9 @@
 
 /* --- 紫黛 · 暗 --- */
 :root[data-palette="zidai"][data-theme="dark"] {
-  --pal-chrome: #1c1c26;  --pal-card: #23232f;    --pal-paper: #15151d;
+  --pal-chrome: #1c1c26;  --pal-card: #23232f;    --pal-paper: #2f2f3b;
   --pal-line: #393947;    --pal-line-2: #363645;  --pal-hair: #3e3e4c;
-  --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
+  --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #e7e7f0;      --pal-muted: #9a9ab5;   --pal-dim: #6f6f85;
   --pal-accent: #8f9ce8;  --pal-soft: #262a42;    --pal-on: #bcc5f5;
   --pal-quote: #1e1e2c;   --pal-th: #262a42;
@@ -337,9 +344,9 @@
 
 /* --- 青墨 · 暗 --- */
 :root[data-palette="qingmo"][data-theme="dark"] {
-  --pal-chrome: #18201e;  --pal-card: #1e2725;    --pal-paper: #121917;
+  --pal-chrome: #18201e;  --pal-card: #1e2725;    --pal-paper: #2c3533;
   --pal-line: #35403c;    --pal-line-2: #333f3b;  --pal-hair: #3b4643;
-  --pal-hover: color-mix(in oklab, var(--pal-paper) 50%, var(--pal-line-2));
+  --pal-hover: color-mix(in oklab, var(--pal-paper) 92%, var(--pal-fg));
   --pal-fg: #e5ebe9;      --pal-muted: #95a39f;   --pal-dim: #6b7874;
   --pal-accent: #5fc0b4;  --pal-soft: #1a2b28;    --pal-on: #a5ded5;
   --pal-quote: #172220;   --pal-th: #1a2b28;
@@ -467,14 +474,25 @@
                            本阶只为亮暗配对完整保留，改亮暗不齐会更容易改错）*/
 
   --bg-canvas: var(--pal-chrome);
-  /* 暗色下画布与壳层同档：纸面（--pal-paper）是三档里最深的一档，仍是 1.11:1 可辨。
-     三级表面不再塌成两级：chrome #191d24 / card #1f242c / paper #12151a（靛蓝·暗）。 */
+  /* 暗色下画布与壳层同档（画布 = 最暗档）；纸面经 K3（2026-09-29）提档为**最亮档**：
+     画布→纸面实测 1.28~1.32:1（原 1.07~1.11:1 肉眼不可辨，主人反馈③「纸面没有了」）；
+     卡片居间（纸面/卡片 1.18~1.21:1，仍分层）。
+     靛蓝·暗现例：canvas/chrome #191d24 < card #1f242c < paper #2d323a。 */
 
   /* G2（P2-30，2026-09-29）：行内代码底/复制钮 hover 在暗色与纸面差不足
      （原 45% chrome 混色，暗色 5 组对纸面 1.36~1.42:1、且与 --bg-code 完全相同）
      ⇒ 暗色提一档到 20% chrome：对纸面 1.55~1.62:1、对代码块底 1.16:1（明暗反转）。
-     只动这一档；--bg-code 与其他色值不动（实测 Edge 153 探针，10 组）。 */
+     只动这一档；--bg-code 与其他色值不动（实测 Edge 153 探针，10 组）。
+     ⚠ K4 复测（2026-09-30）：上面 1.55~1.62:1 是 K3 提亮纸面前的数——K3 之后本档对纸面
+     只剩 1.13~1.14:1（与 --mmd-primary 同因）；本档配方受 G2 门禁锚锁定，K4 不重算
+     （--mmd-primary 已另行重算，见下）。 */
   --bg-subtle: color-mix(in oklab, var(--pal-chrome) 20%, var(--pal-hair));
+
+  /* K4（2026-09-30）：--mmd-primary 暗色重算 —— K3 提亮纸面后，原映射（--bg-subtle）
+     对图底（--mmd-bg = 纸面）只剩 1.13~1.14:1（原 1.55~1.62），节点底几乎沉进纸里。
+     暗色改「hair 92% × fg 8%」：对纸面实测 1.516~1.558:1、节点文字（--text）对其
+     ≥6.67:1；描边/文字映射（--border-strong / --text）不动，亮色映射仍走 --bg-subtle。 */
+  --mmd-primary: color-mix(in oklab, var(--pal-hair) 92%, var(--pal-fg));
 
   /* 暗色阴影靠黑度而非亮度表达层级，故只换 alpha 与色相（不用墨蓝）。 */
   --shadow-card: 0 8px 28px rgba(0, 0, 0, .5);

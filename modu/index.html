@@ -65,14 +65,14 @@
           <div class="settings-wrap">
             <button id="btn-settings" type="button" title="字体与外观设置" aria-label="打开字体与外观设置面板">Aa</button>
             <!-- 「Aa」设置面板。2026-09-27 重做（用户反馈「一塌糊涂」）：
-                 ① 加面板标题 + 分组小标题（原先只有一条细横线，层次看不出来）
-                 ② 字体一律**短名**（全名进 title）、未安装标「· 未装」——原先「（本机未安装）」
-                    把选项撑得老长，整个卡片显乱 ✗
-                 ③ 字号/行宽补单位（px / em）
-                 ④ 「三组各选一个、互不影响」这句语义**常显**——原先看不出来，
-                    用户以为只有一个字体可设 ✗
-                 ⑤ 自动保存的说明从 tooltip 提到常显小字
-                 ⚠ 所有 id 与 data-* 原样保留 ⇒ settings.ts / font-picker.ts 接线零改动 ✓ -->
+                  ① 加面板标题 + 分组小标题（原先只有一条细横线，层次看不出来）
+                  ② 字体未安装标「· 未装」；2026-09-30（J1）起选项文案改**完整字体名**
+                     并拆成三个独立下拉（见下方字体区注释）
+                  ③ 字号/行宽补单位（px / em）
+                  ④ 「三组各选一个、互不影响」这句语义**常显**
+                  ⑤ 自动保存的说明从 tooltip 提到常显小字
+                  ⚠ 所有 id 与 data-* 原样保留 ⇒ settings.ts / font-picker.ts 接线零改动 ✓ -->
+
             <div id="settings-panel" class="settings-panel" hidden aria-label="字体与外观设置">
               <div class="settings-title">设置</div>
 
@@ -94,9 +94,10 @@
                     <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
                   </div>
                 </div>
-                <!-- 页面整体缩放（2026-09-27 用户反馈：「想放大一点也不行，像浏览器直接放大整个页面」）：
-                     与上面两项**语义不同** —— 字号/行宽只改正文排版；这一项走 Tauri 的
-                     `Webview.setZoom`，把**整个界面**（工具栏/大纲/设置面板/正文）等比缩放 ✓ -->
+                <!-- 纸面缩放（2026-09-30 用户反馈 J2：「放大成了应用内所有都放大，
+                      应该只放大中间的纸面区域」）：只缩放阅读态 #doc / 编辑态 .cm-editor，
+                      顶栏/标签栏/状态栏/大纲/设置面板一律不缩放（实现见 app/zoom.ts）。 -->
+
                 <div class="settings-row">
                   <span class="settings-label" id="set-zoom-label">缩放</span>
                   <div class="settings-fs" role="group" aria-labelledby="set-zoom-label">
@@ -119,30 +120,39 @@
                   字体
                   <span class="settings-group-note">三组各选一个，互不影响；未安装自动回退</span>
                 </div>
+                <!-- 2026-09-30 用户实测反馈（J1）：单下拉装三组 optgroup，「选了到底改哪组」只能靠
+                     optgroup 归属猜 ✗，且 190px 定宽把「Times New Roman」截成「Times New R.」✗
+                     ⇒ 拆成三个独立下拉（各自 label 写明角色、各自持久化键）；
+                     选项文案一律**完整字体名**（不再是短名），select 的 title 由 font-picker
+                     运行时挂当前完整名兜底防截断；data-stack-var 契约不变（栈仍只在 tokens.css）。 -->
                 <div class="settings-row settings-font">
-                  <label class="settings-label" for="set-font">选择</label>
-                  <select id="set-font" class="settings-select" title="按组选择字体（三组互不影响）" aria-label="按组选择字体">
-                    <optgroup label="① 中文正文" data-group="cjk">
-                      <option value="cjk-harmonyos" data-stack-var="--font-pick-cjk-harmonyos" title="HarmonyOS Sans SC">HarmonyOS Sans</option>
-                      <option value="cjk-yahei" data-stack-var="--font-pick-cjk-yahei" title="微软雅黑（Microsoft YaHei）">微软雅黑</option>
-                      <option value="cjk-lxgw" data-stack-var="--font-pick-cjk-lxgw" title="霞鹜文楷 屏幕版（LXGW WenKai Screen）">霞鹜文楷</option>
-                      <option value="cjk-songti" data-stack-var="--font-pick-cjk-songti" title="宋体（SimSun）">宋体</option>
-                      <option value="cjk-notoserif" data-stack-var="--font-pick-cjk-notoserif" title="思源宋体（Noto Serif SC）">思源宋体</option>
-                    </optgroup>
-                    <optgroup label="② 西文与数字" data-group="latin">
-                      <option value="latin-inter" data-stack-var="--font-pick-latin-inter" title="Inter">Inter</option>
-                      <option value="latin-segoe" data-stack-var="--font-pick-latin-segoe" title="Segoe UI Variable Text">Segoe UI Var.</option>
-                      <option value="latin-georgia" data-stack-var="--font-pick-latin-georgia" title="Georgia（衬线）">Georgia</option>
-                      <option value="latin-times" data-stack-var="--font-pick-latin-times" title="Times New Roman（衬线）">Times New R.</option>
-                      <option value="latin-yaheiui" data-stack-var="--font-pick-latin-yaheiui" title="Microsoft YaHei UI">YaHei UI</option>
-                    </optgroup>
-                    <optgroup label="③ 代码" data-group="mono">
-                      <option value="mono-maple-nf" data-stack-var="--font-pick-mono-maple-nf" title="Maple Mono NF">Maple Mono NF</option>
-                      <option value="mono-maple" data-stack-var="--font-pick-mono-maple" title="Maple Mono（变量版）">Maple Mono</option>
-                      <option value="mono-cascadia" data-stack-var="--font-pick-mono-cascadia" title="Cascadia Mono">Cascadia</option>
-                      <option value="mono-consolas" data-stack-var="--font-pick-mono-consolas" title="Consolas">Consolas</option>
-                      <option value="mono-maple-mix" data-stack-var="--font-pick-mono-maple-mix" title="Maple Mono NF（中文回雅黑）">Maple·中文回退</option>
-                    </optgroup>
+                  <label class="settings-label" for="set-font-cn">中文正文</label>
+                  <select id="set-font-cn" class="settings-select" data-group="cjk" title="中文正文字体" aria-label="中文正文字体">
+                    <option value="cjk-harmonyos" data-stack-var="--font-pick-cjk-harmonyos" title="HarmonyOS Sans SC">HarmonyOS Sans SC</option>
+                    <option value="cjk-yahei" data-stack-var="--font-pick-cjk-yahei" title="微软雅黑（Microsoft YaHei）">微软雅黑（Microsoft YaHei）</option>
+                    <option value="cjk-lxgw" data-stack-var="--font-pick-cjk-lxgw" title="霞鹜文楷屏幕版（LXGW WenKai Screen）">霞鹜文楷屏幕版（LXGW WenKai Screen）</option>
+                    <option value="cjk-songti" data-stack-var="--font-pick-cjk-songti" title="宋体（SimSun）">宋体（SimSun）</option>
+                    <option value="cjk-notoserif" data-stack-var="--font-pick-cjk-notoserif" title="思源宋体（Noto Serif SC）">思源宋体（Noto Serif SC）</option>
+                  </select>
+                </div>
+                <div class="settings-row settings-font">
+                  <label class="settings-label" for="set-font-latin">西文数字</label>
+                  <select id="set-font-latin" class="settings-select" data-group="latin" title="西文与数字字体" aria-label="西文与数字字体">
+                    <option value="latin-inter" data-stack-var="--font-pick-latin-inter" title="Inter">Inter</option>
+                    <option value="latin-segoe" data-stack-var="--font-pick-latin-segoe" title="Segoe UI Variable Text">Segoe UI Variable Text</option>
+                    <option value="latin-georgia" data-stack-var="--font-pick-latin-georgia" title="Georgia（衬线）">Georgia（衬线）</option>
+                    <option value="latin-times" data-stack-var="--font-pick-latin-times" title="Times New Roman（衬线）">Times New Roman（衬线）</option>
+                    <option value="latin-yaheiui" data-stack-var="--font-pick-latin-yaheiui" title="Microsoft YaHei UI">Microsoft YaHei UI</option>
+                  </select>
+                </div>
+                <div class="settings-row settings-font">
+                  <label class="settings-label" for="set-font-code">代码</label>
+                  <select id="set-font-code" class="settings-select" data-group="mono" title="代码字体" aria-label="代码字体">
+                    <option value="mono-maple-nf" data-stack-var="--font-pick-mono-maple-nf" title="Maple Mono NF">Maple Mono NF</option>
+                    <option value="mono-maple" data-stack-var="--font-pick-mono-maple" title="Maple Mono（变量版）">Maple Mono（变量版）</option>
+                    <option value="mono-cascadia" data-stack-var="--font-pick-mono-cascadia" title="Cascadia Mono">Cascadia Mono</option>
+                    <option value="mono-consolas" data-stack-var="--font-pick-mono-consolas" title="Consolas">Consolas</option>
+                    <option value="mono-maple-mix" data-stack-var="--font-pick-mono-maple-mix" title="Maple Mono NF（中文回雅黑）">Maple Mono NF（中文回雅黑）</option>
                   </select>
                 </div>
                 <div class="settings-row settings-effective">

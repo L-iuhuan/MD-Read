@@ -54,6 +54,19 @@ describe("flashStatus（错误通道统一）", () => {
     expect(el.hidden).toBe(true);
   });
 
+  it("J3（2026-09-30 实测「报错不显眼」）：error 级默认约 6s；普通级不受影响", () => {
+    vi.useFakeTimers();
+    flashStatus("打开失败「x.md」：文件不存在", "error");
+    const el = document.getElementById("st-saved") as HTMLElement;
+    vi.advanceTimersByTime(5999); // 普通级的 3 倍 —— error 还得在场
+    expect(el.hidden).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(el.hidden).toBe(true);
+    flashStatus("已保存", "ok"); // 普通级时长不变
+    vi.advanceTimersByTime(2000);
+    expect(el.hidden).toBe(true);
+  });
+
   it("单槽复用：后一次闪显重置计时并覆盖文案", () => {
     vi.useFakeTimers();
     flashStatus("第一条", "ok");

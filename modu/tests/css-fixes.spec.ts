@@ -189,7 +189,7 @@ describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () 
 /* Lane C 批次（2026-09-29）：C1 暗色导出 / C2 Alert 打印块归位 / C4 缩放污染 /
    C5 孤寡行 / C8 撒谎注释——沿用本文件「源码文本锚」模式（jsdom 无布局引擎）。 */
 describe("Lane C：导出归一与打印契约锚", () => {
-  it("C1/C4：导出前归一主题与缩放（先于量宽/等渲染），finally 无条件还原", () => {
+  it("C1/C4(+J2)：导出前归一主题与纸面缩放（先于量宽/等渲染），finally 无条件还原", () => {
     // 归一点必须先于 markPrintBlocks（量宽）与 awaitPrintReady（等渲染）
     const normalizeAt = main.indexOf('document.documentElement.dataset.theme = "light"');
     const measureAt = main.indexOf("markPrintBlocks(doc)");
@@ -197,16 +197,21 @@ describe("Lane C：导出归一与打印契约锚", () => {
     expect(normalizeAt).toBeGreaterThan(-1);
     expect(measureAt).toBeGreaterThan(normalizeAt);
     expect(waitAt).toBeGreaterThan(normalizeAt);
-    // 偏好读 theme.ts 权威来源；还原按原偏好的解析值（auto 跟系统）；zoom 保存/还原成对
+    // 偏好读 theme.ts 权威来源；还原按原偏好的解析值（auto 跟系统）。
+    // J2（2026-09-30）：缩放目标从根元素换成纸面——导出前 clearPaperZoom()、
+    // finally 在还原主题之后 restorePaperZoom()（清空/还原成对，语义不放宽 ✓）。
     expect(main).toMatch(/const savedThemePref = readThemePref\(\)/);
+    expect(main).toMatch(/clearPaperZoom\(\)/);
     expect(main).toMatch(
-      /\} finally \{[\s\S]*?resolvedTheme\(savedThemePref\)[\s\S]*?style\.zoom = savedZoom/,
+      /\} finally \{[\s\S]*?resolvedTheme\(savedThemePref\)[\s\S]*?restorePaperZoom\(\)/,
     );
   });
 
-  it("C4：zoom.ts 注释不再声称「两层同给不会更差」（叠乘风险已写明）", () => {
+  it("C4(+J2)：zoom.ts 纸面化——不再写根元素，历史注释写明叠乘风险", () => {
     expect(zoomSrc).not.toMatch(/不会比单给更差/);
     expect(zoomSrc).toMatch(/叠乘/);
+    // J2：documentElement.style.zoom 不得再被 zoom.ts 写（写了就是整体放大回归 ✗）
+    expect(zoomSrc).not.toMatch(/documentElement\.style\.zoom\s*=/);
   });
 
   it("C2：Alert 打印覆盖规则收进 @media print 块内（媒体块闭合后的顶层不复现）", () => {
@@ -277,26 +282,20 @@ describe("Lane H：导出冻结层（静默导出）锚", () => {
   });
 });
 
-/* Lane G 批次（2026-09-29）：视觉修复锚。G1/G4 = 纸列同源基准（findbar 右缘与状态栏
-   两端读数不再贴窗口）；G5/G6 = 纸面护栏（screen-only paint containment + 暗色纸缘）；
-   G8 = `.no-hit` 类名契约（挂/摘归 Lane I）；G2/G7 = 两处 token 值；G9/G10 = 孤儿删除
-   与窗口三钮的皮外移接线。 */
-describe("Lane G：视觉批锚（纸列对齐 / 暗色纸缘 / 无结果计数 / 外移接线）", () => {
-  it("G1/G4：查找条右缘与状态栏两端读数走 --paper-shift 同源基准", () => {
+/* Lane G 批次（2026-09-29）：视觉修复锚。G1 = 查找条右缘纸列基准；G5 = 纸面护栏
+   （screen-only paint containment）；G8 = `.no-hit` 类名契约（挂/摘归 Lane I）；
+   G2/G7 = 两处 token 值；G9/G10 = 孤儿删除与窗口三钮的皮外移接线。
+   ⚠ G4（状态栏纸缘居中）与 G6（暗色纸缘 1px 线）已被主人实测推翻/替换 ⇒ 见下面 Lane K。 */
+describe("Lane G：视觉批锚（纸列对齐 / 无结果计数 / 外移接线）", () => {
+  it("G1：查找条右缘走 --paper-shift 纸列基准（状态栏已不消费，K2 回退）", () => {
     expect(app).toMatch(/--paper-shift:\s*var\(--w-outline\)/);
     expect(app).toMatch(
       /\.findbar\s*\{[^}]*inset-inline-end:\s*max\(var\(--size-4\),\s*calc\(\(100% - var\(--paper-shift\)/,
     );
-    const bar = /\.statusbar\s*\{([^}]*)\}/.exec(app)?.[1] ?? "";
-    expect(bar).toMatch(/padding-inline:[\s\S]*?\+ var\(--paper-shift\)/);
-    expect(bar).toMatch(/padding-inline:[\s\S]*?- var\(--paper-shift\)/);
   });
 
-  it("G5/G6：纸面护栏——screen-only paint containment + 暗色纸缘 1px inset", () => {
+  it("G5：纸面护栏——screen-only paint containment（G6 线已删，K3 换明度分层）", () => {
     expect(app).toMatch(/@media screen\s*\{\s*#doc\s*\{\s*contain:\s*paint/);
-    expect(app).toMatch(
-      /\[data-theme="dark"\] #doc\s*\{\s*box-shadow:\s*inset 0 0 0 1px var\(--border-chrome\)/,
-    );
   });
 
   it("G8：`.no-hit` 契约——样式只认类名，色走 --amber-11（挂/摘逻辑在 Lane I）", () => {
@@ -323,5 +322,37 @@ describe("Lane G：视觉批锚（纸列对齐 / 暗色纸缘 / 无结果计数 
       /--bg-subtle:\s*color-mix\(in oklab, var\(--pal-chrome\) 20%, var\(--pal-hair\)\)/,
     );
     expect(tokens).toMatch(/--opacity-dim:\s*\.6/);
+  });
+});
+
+/* Lane K 批次（2026-09-29 主人实测三件）：K1 = CM 查找/替换卡上提编辑器顶部
+   （editor.ts search({ top: true })），与阅读态 findbar 同右缘/同 z 档；K2 = 状态栏读数
+   回退贴窗口两缘（G4 作废）；K3 = 暗色纸面提档（纸/画布 ≥1.25:1），G6 的 1px 内线删除。 */
+describe("Lane K：主人实测三件（查找上提 / 状态栏回退 / 暗色纸面）", () => {
+  it("K1：编辑器 search 扩展 top:true + 卡片与 findbar 同基准（右缘=纸列右缘、z 同档）", () => {
+    const editorSrc = readFileSync("src/editor/editor.ts", "utf8");
+    expect(editorSrc).toMatch(/search\(\{\s*top:\s*true\s*\}\)/);
+    expect(app).toMatch(/#editor-pane \.cm-panels\s*\{[^}]*z-index:\s*var\(--z-float\)/);
+    expect(app).toMatch(
+      /#editor-pane \.cm-panel\.cm-search\s*\{[^}]*margin:[^}]*max\(var\(--size-4\),\s*calc\(\(100% - var\(--measure\)/,
+    );
+    // 位置契约注释已改写：顶部新契约 + 旧「上/下沿故意不同」措辞退场
+    expect(app).toMatch(/2026-09-29 主人实测裁决/);
+    expect(app).not.toMatch(/上\/下沿/);
+  });
+
+  it("K2：状态栏两端读数回退贴窗口两缘（padding: 0 --size-3，不再消费 --paper-shift）", () => {
+    const bar = /\.statusbar\s*\{([^}]*)\}/.exec(app)?.[1] ?? "";
+    expect(bar).toMatch(/padding:\s*0 var\(--size-3\)/);
+    expect(bar).not.toMatch(/--paper-shift/);
+  });
+
+  it("K3：暗色五组 --pal-paper 提档（对画布 ≥1.25:1），G6 内线已删", () => {
+    for (const v of ["#2d323a", "#33312e", "#313437", "#2f2f3b", "#2c3533"]) {
+      expect(tokens).toContain(`--pal-paper: ${v};`);
+    }
+    expect(tokens).not.toMatch(/--pal-paper:\s*#12151a/);
+    expect(tokens).not.toMatch(/--pal-paper:\s*#15151d/);
+    expect(app).not.toMatch(/\[data-theme="dark"\] #doc\s*\{[^}]*box-shadow/);
   });
 });

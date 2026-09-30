@@ -490,9 +490,9 @@ html.settings-open #btn-settings,
    另两块垫片的职责（把右侧按钮组顶到最右）现在由标签条的 flex 承担（见 §1）。
    拖拽/双击最大化的接线改在 main.ts 的 setupWindowControls，按事件目标排除控件。 --- */
 
-/* G1/G4 同源基准（2026-09-29）：查找条右缘与状态栏两端读数按**纸列**对齐，不再贴窗口。
+/* G1 基准（2026-09-29；K2 后仅查找条消费）：#findbar 右缘按**纸列**对齐，不贴窗口。
    有侧栏时纸列中轴右移 --w-outline（存进 --paper-shift）；侧栏隐（空态无工作区 / 折叠 /
-   ≤840 窄窗，判据见 §5/§12）时归零。 */
+   ≤840 窄窗，判据见 §5/§12）时归零。状态栏的纸缘对齐已按主人裁决回退（见 §9）。 */
 body { --paper-shift: 0px; }
 body:not(.outline-off):not(.empty),
 body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
@@ -1052,9 +1052,8 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
 @media screen {
   #doc { contain: paint; }
 }
-/* P2-29（G6，2026-09-29）：暗色下纸面与画布暗差只剩 ~1.1:1 ⇒ 纸缘 1px 内线。inset 阴影
-   （layout 零影响，不裁内容）；亮色不加——白纸对画布已有色差，「整页纸不做描边」仅此例外。 */
-:root[data-theme="dark"] #doc { box-shadow: inset 0 0 0 1px var(--border-chrome); }
+/* P2-29（G6）的暗色纸缘 1px 内线已删（K3，2026-09-29）：1px 线在暗色里读不出来 ⇒ 改由
+   tokens.css 拉开纸/画布明度分层（暗色纸面提档）；纸边语义回到「无描边」（亮暗一致）。 */
 
 /* 空态（首访欢迎页）：2026-09-23 第二批按用户选定的 **V1「克制」** 设计稿落地。
    旧形态（一枚 15px 灰胶囊词标 + 一行灰提示）的三个问题：无品牌感、无主行动、
@@ -1210,9 +1209,9 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
    9. 状态栏 —— 低调一行（D-05 定稿：11.5px / 次级色 / chrome 底 + 上沿 1px --hair）
    高度 22px；上沿从 --border-chrome 改为 --hair —— 它要与正文纸面接壤，用的是
    「同类细线」的语义（--rule/--hair 一族），比壳层分隔线更轻，不与顶栏下沿争。
-   P2-32（G4，2026-09-29）：两端读数改按**纸宽**居中——左右内边距 = 纸列左/右缘
-   （左 (100% + 侧栏 − 纸宽)/2、右 (100% − 侧栏 − 纸宽)/2，即 §4 前的 --paper-shift），
-   与正文纸列同源；窄窗退到 --size-3，不再贴窗口。
+   ⚠ 位置裁决（2026-09-29 主人实测后回退）：G4 的「按纸缘居中」作废——两端读数必须
+   贴**窗口左右两缘**（左右各 --size-3），不再随侧栏/纸宽内缩。--paper-shift 仍供
+   查找条（G1）使用，与本节无关。
    ========================================================================== */
 .statusbar {
   display: flex;
@@ -1220,9 +1219,7 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
   flex: none;
   gap: var(--size-3);
   height: var(--h-status);
-  padding-block: 0;
-  padding-inline: max(var(--size-3), calc((100% + var(--paper-shift) - var(--measure) - 2 * var(--pad-page)) / 2))
-                 max(var(--size-3), calc((100% - var(--paper-shift) - var(--measure) - 2 * var(--pad-page)) / 2));
+  padding: 0 var(--size-3);
   background: var(--bg-chrome);
   border-top: 1px solid var(--hair);
   color: var(--text-muted);
@@ -1265,28 +1262,30 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
    灰底 #f0f0f0，白卡里嵌着一套「系统默认控件」。现在统一放宽到
    `#editor-pane :is(.cm-search, .cm-dialog)`；`.cm-searchMatch` 等既有规则不受影响
    （`.cm-search` 是整词类名匹配，不会命中 `.cm-searchMatch`）。
-   P5（位置语义，如实说明、不再含糊）：编辑态的查找卡在**编辑器底部**（.cm-panels-bottom，
-   由 @codemirror/search 的 showPanel 默认 bottom 决定），阅读态的 #findbar 在**内容区右上**。
-   两者位置**故意不同**，本节不再声称「同角落、同一件东西」：
-   CM 的面板容器是「贴在编辑器上/下沿的工具条」（要挪到右上角得自绘查找 UI，属另一批），
-   而 #findbar 是浮在正文纸面上的卡片，两者容器形态本就不同。
+   位置语义（K1，2026-09-29 主人实测裁决——**推翻 P5 的「两者故意不同位」旧契约**）：
+   编辑态 CM 查找/替换卡**上提到编辑器顶部**（editor.ts 的 search({ top: true })；此前在
+   .cm-panels-bottom，主人要求「查找和替换都放到顶部」），与阅读态 #findbar 同一角落
+   （内容区右上）、同一右缘基准（纸列右缘）与同一浮层档（--z-float），切态卡片不再横跳。
+   CM 的面板容器仍是「贴在编辑器上沿的工具条」，只是从下沿搬到上沿。
    可以也**已经**统一的是「控件语言」：输入框同宽 184px / 同高 28px / 同 1px --border /
    同 8px 圆角 / 同轻投影，按钮同高同皮，关闭钮同位同规格（24px 方钮 + 8px inset）。 */
 #editor-pane .cm-panels {
   background: none;                 /* 容器让位：卡片感交给内层 .cm-search */
   border: 0;                        /* CM 默认在容器上画 1px #ddd 分隔线 */
   color: var(--text);
-  /* 与阅读态 findbar 同一浮层档，+1 保证不被 findbar 压住（DOM 上编辑器更晚，
-     但层级不靠 DOM 顺序兜底）；仍低于顶栏（--z-float + 10），不会被工具条反压 */
-  z-index: calc(var(--z-float) + 1);
+  /* K1（2026-09-29）：与阅读态 findbar 同一浮层档（两者模式互斥、同在右上角，不再 +1）；
+     仍低于顶栏（--z-float + 10），不会被工具条反压 */
+  z-index: var(--z-float);
 }
 /* 卡片本体：与 §4/§6/§7 三处浮层同一套四件套。
    用户反馈批次·布局留位：右内边距加宽 32px——关闭钮（绝对定位 24px 方钮 +
-   8px inset）独占右上角车道，输入框/勾选项永不钻到它底下（z 序相同也不重叠）。 */
+   8px inset）独占右上角车道，输入框/勾选项永不钻到它底下（z 序相同也不重叠）。
+   K1（2026-09-29）：右缘与 findbar 同基准 = 纸列右缘（容器=编辑器宽，故不带
+   --paper-shift）；窄窗退 --size-4。 */
 #editor-pane .cm-panel.cm-search {
   inline-size: fit-content;
   max-inline-size: calc(100% - 2 * var(--size-4));
-  margin: var(--size-2) var(--size-4) 0 auto;   /* 上 8 / 右 16 / 左 auto = 贴右上 */
+  margin: var(--size-2) max(var(--size-4), calc((100% - var(--measure) - 2 * var(--pad-page)) / 2)) 0 auto;
   padding: var(--size-2) calc(var(--size-3) + 32px) var(--size-2) var(--size-3);
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1436,7 +1435,7 @@ html.editing .topbar { opacity: 1; }
 }
 @media (max-width: 840px) {
   .outline { display: none; }     /* 窄窗优先保正文宽度 */
-  /* G1/G4：侧栏隐 ⇒ 纸列回到全窗中轴（与 §4 前的 --paper-shift 同条件，靠后覆盖） */
+  /* G1：侧栏隐 ⇒ 纸列回到全窗中轴（与 §4 前的 --paper-shift 同条件，靠后覆盖） */
   body:not(.outline-off):not(.empty),
   body:not(.outline-off).empty.has-workspace { --paper-shift: 0px; }
 }

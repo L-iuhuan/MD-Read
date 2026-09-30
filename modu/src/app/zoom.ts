@@ -1,16 +1,24 @@
 /**
- * 页面整体缩放（2026-09-27 用户反馈：「想放大一点也不行，像浏览器里面直接放大整个页面」）
+ * 纸面缩放（2026-09-30 用户实测反馈 J2：「放大成了应用内所有都放大，
+ * 应该只放大中间的纸面区域」）。
  *
- * 与「字号 / 行宽」**语义不同**（这点要在 UI 上讲清 ✓）：
- *   · 字号 / 行宽 ⇒ 只改**正文排版**（`--fs-body` / `--me-width`，阅读栏宽与行距）
- *   · 本模块     ⇒ 走 Tauri 的 `Webview.setZoom`，把**整个 webview 内容**等比缩放
- *                  （工具栏、标签、大纲、状态栏、设置面板、正文全在内 ✓）＝ 浏览器 Ctrl+加号的手感 ✓
+ * 缩放目标 = **纸面列**：阅读态 `#doc`、编辑态 `.cm-editor`（含行号槽一起缩放保持
+ * 对齐）；顶栏 / 标签栏 / 状态栏 / 大纲 / 设置面板**一律不缩放** ✓。
  *
- * 档位 90 / 100 / 110 / 125 / 150（%），持久化在 `modu-zoom`。
- * ⚠ 缩放是**原生侧**状态：启动时必须回填一次，否则重启回到 100% 而面板还显示旧值 ✗
+ * 档位 90 / 100 / 110 / 125 / 150（%），持久化在 `modu-zoom`；滚轮 / 快捷键 /
+ * 百分比显示的交互语义自 2026-09-27 首版起不变。
+ *
+ * 历史（为何现在只写纸面内联 zoom）：首版曾叠两层——Tauri `Webview.setZoom`
+ * （原生层）+ 根元素 CSS `zoom`（兜底层）。真机实测原生层是空操作、效果全由根
+ * zoom 承担，而两层并存有**叠乘**风险（125%×125%≈156% ✗）；且根 zoom 连顶栏/
+ * 标签一起放大，正是本批用户反馈要消灭的行为 ✗ ⇒ 纸面化后两层皆弃，只把内联
+ * `zoom` 写在纸面元素上。
+ *
+ * ⚠ 编辑器是懒建的：`.cm-editor` 首次进编辑态才出现 ⇒ main.ts 在 onModeChange
+ *   里调 restorePaperZoom() 把缩放补到新目标（幂等，重复调用无害）。
+ * ⚠ 导出联动：markPrintBlocks 量宽须回到基准 ⇒ main.ts onExportClick 导出前
+ *   clearPaperZoom()、finally 里 restorePaperZoom()（与旧根 zoom 时代的三步同款）。
  */
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-
 const ZOOM_KEY = "modu-zoom";
 export const ZOOM_STEPS = [90, 100, 110, 125, 150] as const;
 const ZOOM_DEFAULT = 100;
@@ -34,35 +42,49 @@ function clampStep(z: number): number {
   return best;
 }
 
-/** 应用到原生 webview（失败只记日志：缩放不该拦住启动 ✓） */
-function applyZoom(z: number): void {
-  window.localStorage.setItem(ZOOM_KEY, String(z));
-  // ① 原生缩放：Tauri `Webview.setZoom`
-  void getCurrentWebview()
-    .setZoom(z / 100)
-    .catch((e: unknown) => {
-      console.error("[zoom] 设置整体缩放失败", e);
-    });
-  // ② ⚠ 2026-09-27 **真机实测**：只调 ① 时**界面毫无变化** ✗ ——
-  //    三路读数（`innerWidth` 1680 / 工具栏高 48 / 正文字号 16px）**全都不动**，
-  //    而面板值与 `localStorage` 都已写成 125 ✓ ⇒ ① 在本机是空操作 ✗。
-  //    （教训：这一项走**原生** API，`tsc` 通过**不等于**生效 ✗ —— 上一版就是这么误判的。）
-  //    ⇒ 再叠一层 CSS `zoom` 兜底：Chromium 对根元素应用 `zoom` 会**整体等比缩放**
-  //      （视口 CSS px 随之收缩 ✓），正是用户要的"像浏览器 Ctrl+加号"效果 ✓。
-  //    ⚠ 两层并存**并非**「不会更差」：若某环境 ① 真正生效，两层会**叠乘**
-  //      （如 125%×125%≈156%）✗。当前实测 ① 在本机是空操作、效果全由 ② 承担；
-  //      导出 PDF 前 main.ts 会暂时清掉 ②（markPrintBlocks 量宽与打印都不吃缩放），
-  //      导出结束还原（onExportClick 的 finally）。
-  document.documentElement.style.zoom = String(z / 100);
+/** 纸面目标：阅读态 #doc + 编辑态 .cm-editor（缺席的跳过；两者互斥显隐，并存无害） */
+function paperTargets(): HTMLElement[] {
+  const targets: HTMLElement[] = [];
+  const doc = document.getElementById("doc");
+  if (doc instanceof HTMLElement) {
+    targets.push(doc);
+  }
+  const cm = document.querySelector(".cm-editor");
+  if (cm instanceof HTMLElement) {
+    targets.push(cm);
+  }
+  return targets;
 }
 
-function setZoom(z: number): void {
-  const next = clampStep(z);
-  applyZoom(next);
+/** 把档位写到纸面元素的内联 zoom（不碰 documentElement —— 那是 J2 要修掉的 ✗） */
+function writePaperZoom(step: number): void {
+  const v = clampStep(step);
+  for (const el of paperTargets()) {
+    el.style.zoom = String(v / 100);
+  }
   const el = document.getElementById("set-zoom-val");
   if (el !== null) {
-    el.textContent = String(next);
+    el.textContent = String(v);
   }
+}
+
+/** 应用一档纸面缩放：钳制 → 持久化 → 写纸面 → 回显百分比（对外主入口） */
+export function applyPaperZoom(step: number): void {
+  const v = clampStep(step);
+  window.localStorage.setItem(ZOOM_KEY, String(v));
+  writePaperZoom(v);
+}
+
+/** 清掉纸面缩放（导出前量宽回基准用；持久化档位不动，便于还原） */
+export function clearPaperZoom(): void {
+  for (const el of paperTargets()) {
+    el.style.removeProperty("zoom");
+  }
+}
+
+/** 按持久化档位重投纸面（导出结束还原 / 编辑器新建后补挂共用；幂等 ✓） */
+export function restorePaperZoom(): void {
+  writePaperZoom(readZoomPref());
 }
 
 /**
@@ -71,7 +93,6 @@ function setZoom(z: number): void {
  * （实测：8 次 setup 后一次 wheel 直接顶到 150% ✗）。
  * ⇒ 只注册一次 ✓；**档位回填仍每次执行**（那才是"回填"的语义 ✓）。
  * ⚠ 只守 document 级：`±` 按钮的监听挂在元素上，DOM 重建后自然消失 ⇒ 无需守 ✓
- *   （也因此单测里每次重建 DOM 后 `setupZoom()` 仍能正常绑上按钮 ✓）
  */
 let documentWired = false;
 
@@ -80,11 +101,11 @@ function stepZoom(delta: number): void {
   const steps = ZOOM_STEPS as readonly number[];
   const i = steps.indexOf(readZoomPref());
   const next = Math.min(steps.length - 1, Math.max(0, i + delta));
-  setZoom(steps[next]);
+  applyPaperZoom(steps[next]);
 }
 
 /**
- * Ctrl/⌘ + 滚轮 = 整体缩放（浏览器手感 ✓）。
+ * Ctrl/⌘ + 滚轮 = 纸面缩放（浏览器手感 ✓）。
  * ⚠ 三条纪律：
  *  ① **普通滚轮一律不拦**（不带修饰键直接 return ✓）—— 正文滚动是主行为，不能被抢 ✗
  *  ② 监听必须 `{ passive: false }` 才能 `preventDefault()` ✓（否则报"无法取消"并静默失效 ✗）
@@ -127,18 +148,14 @@ function wireZoomKeys(): void {
       stepZoom(-1);
     } else if (key === "0") {
       event.preventDefault();
-      setZoom(100); // 复位到 100%（不是"减到最小"✗）
+      applyPaperZoom(100); // 复位到 100%（不是"减到最小"✗）
     }
   });
 }
 
 /** 启动/接线：回填当前档位 + 绑 ± 两键（与字号/行宽同一套交互语言 ✓）+ 滚轮/快捷键 ✓ */
 export function setupZoom(): void {
-  applyZoom(readZoomPref()); // 启动回填：面板显示值与实际缩放必须一致 ✓
-  const val = document.getElementById("set-zoom-val");
-  if (val !== null) {
-    val.textContent = String(readZoomPref());
-  }
+  restorePaperZoom(); // 启动回填：面板显示值与实际缩放必须一致 ✓
   document.getElementById("set-zoom-dec")?.addEventListener("click", () => stepZoom(-1));
   document.getElementById("set-zoom-inc")?.addEventListener("click", () => stepZoom(1));
   if (!documentWired) {
