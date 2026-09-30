@@ -102,11 +102,16 @@ describe("P0-5 宽表/大图：纸面宽度红线锚", () => {
   it("表格样式未被削弱：外框/圆角/末行线（无末行抑制规则）", () => {
     expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border:\s*1px solid var\(--border\)/);
     expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border-radius:\s*var\(--radius-2\)/);
-    // L1（Lane L，2026-09-30）：表格顶 accent 细线（2px --accent-solid）——
-    // 外框仍 1px --border（语义不放宽）、表头底/行底线不动，只多一条冠线
+    // L1（Lane L）→ M1（FB-11 返修，2026-09-30）：表格顶 accent 细线（2px --accent-solid）
+    // 从 wrap 顶边框**移到 thead th 顶边框**——线宽随表格本体（打印宽表横页才横贯全部列）。
+    // 语义不放宽：外框三边/圆角仍 1px --border（顶边让位归零），表头底/行底线不动。
     expect(cjk).toMatch(
-      /\.mdc \.table-wrap\s*\{[^}]*border-block-start:\s*2px solid var\(--accent-solid\)/,
+      /\.mdc thead th\s*\{[^}]*border-block-start:\s*2px solid var\(--accent-solid\)/,
     );
+    expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border-block-start:\s*0/);
+    expect(cjk).not.toMatch(
+      /\.mdc \.table-wrap\s*\{[^}]*border-block-start:\s*2px/,
+    ); // 旧落点不得回归（线会只盖 wrap 宽）
     expect(cjk).toMatch(/\.mdc th, \.mdc td\s*\{[^}]*border-bottom:\s*1px solid var\(--border\)/);
     expect(cjk).not.toMatch(/tbody tr:last-child[^{]*\{[^}]*border-bottom:\s*0/);
   });
@@ -381,8 +386,17 @@ describe("Lane L：纸面主题色（FB-8）与尾巴锚", () => {
   const cjkBody = cjk.replace(/\/\*[\s\S]*?\*\//g, "");
   const appBody = app.replace(/\/\*[\s\S]*?\*\//g, "");
 
-  it("L1a：H2-H4 小节标题走 accent 墨；H1/正文/公式/金额保持中性（红线）", () => {
-    expect(cjk).toMatch(/\.mdc h2, \.mdc h3, \.mdc h4\s*\{\s*color:\s*var\(--accent-text\)/);
+  it("L1a：H2-H4 小节标题走 accent 墨（M2 起专用 --accent-ink）；H1/正文/公式/金额保持中性（红线）", () => {
+    expect(cjk).toMatch(/\.mdc h2, \.mdc h3, \.mdc h4\s*\{\s*color:\s*var\(--accent-ink\)/);
+    // M2（FB-11 返修）：专用墨档的亮/暗两式（oklch 相对色，只调明度、色相/彩度守恒）
+    expect(tokens).toMatch(
+      /--accent-ink:\s*oklch\(from var\(--pal-accent\) calc\(l - 0\.1\) c h\)/,
+    );
+    expect(tokens).toMatch(
+      /--accent-ink:\s*oklch\(from var\(--pal-accent\) calc\(l \+ 0\.05\) c h\)/,
+    );
+    // 标题不得回退到 pal-on 档（除宣纸外暗色组发灰的根因）
+    expect(cjkBody).not.toMatch(/\.mdc h[234][^{]*\{[^}]*color:\s*var\(--accent-text/);
     const h1 = /\.mdc h1 \{[^}]*\}/.exec(cjk)?.[0] ?? "";
     expect(h1).not.toMatch(/accent/);
     // H4 旧灰值退役（改为 accent 墨后不得留 --text-muted 声明）
@@ -420,18 +434,18 @@ describe("Lane L：纸面主题色（FB-8）与尾巴锚", () => {
     expect(cjkBody).not.toMatch(/background:\s*var\(--bg-quote\);\s*\n\s*background:/);
   });
 
-  it("L1c：脚注引用上标补 accent；fn-ref 死选择器退役、真类名 footnote-ref", () => {
-    expect(cjk).toMatch(/\.mdc \.footnote-ref a\s*\{[^}]*color:\s*var\(--accent-text\)/);
+  it("L1c：脚注引用上标补 accent（M2 起 --accent-ink）；fn-ref 死选择器退役、真类名 footnote-ref", () => {
+    expect(cjk).toMatch(/\.mdc \.footnote-ref a\s*\{[^}]*color:\s*var\(--accent-ink\)/);
     expect(cjkBody).not.toMatch(/\.fn-ref/);
   });
 
-  it("L1d：语言标签 accent——hljs 冻结层的唯一定向覆盖（一档特异度）", () => {
+  it("L1d：语言标签 accent（M2 起 --accent-ink）——hljs 冻结层的唯一定向覆盖（一档特异度）", () => {
     // hljs.css 仍是冻结层：标签色写死在那里（本锚同时钉住这层耦合）
     expect(hljs).toMatch(
       /\.mdc pre\[data-lang\][^{]*::before\s*\{[^}]*color:\s*var\(--text-muted\)/,
     );
     expect(cjk).toMatch(
-      /\.mdc\.mdc pre\[data-lang\]:not\(:has\(\.code-lang\)\)::before\s*\{\s*color:\s*var\(--accent-text\)/,
+      /\.mdc\.mdc pre\[data-lang\]:not\(:has\(\.code-lang\)\)::before\s*\{\s*color:\s*var\(--accent-ink\)/,
     );
   });
 

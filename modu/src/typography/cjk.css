@@ -134,13 +134,14 @@
   letter-spacing: .03em;
   margin-block-start: 1.6em;
 }
-/* L1（FB-8，2026-09-30）：小节标题带主题色 —— H2-H4 用调色板最深的 accent 墨
-   （--accent-text = 各组 --pal-on），H1 与正文保持中性（纸的重量感）。
-   选「文字染色」而不是「左侧 accent 短竖条」：不动盒模型、文字起点不偏移，
-   46em 栏位对齐与 §3.1「靠字号/重量/间距拉开，不靠边框堆砌」都不破。
-   十组实测对纸面 6.45~9.52:1（≥4.5 正文级，含 15.2px/600 的 H4）。
-   H4 原先的 --text-muted 灰值退役。 */
-.mdc h2, .mdc h3, .mdc h4 { color: var(--accent-text); }
+/* L1（FB-8，2026-09-30）：小节标题带主题色 —— H2-H4 用 accent 墨，H1 与正文保持中性
+   （纸的重量感）。选「文字染色」而不是「左侧 accent 短竖条」：不动盒模型、文字起点
+   不偏移，46em 栏位对齐与 §3.1「靠字号/重量/间距拉开，不靠边框堆砌」都不破。
+   M2（FB-11，主人返修）：L1 原用 --accent-text（=pal-on），除宣纸外暗色组发灰
+   （pal-on 是低彩度浅灰系）⇒ 改用专用墨档 --accent-ink（从 pal-accent 派生、
+   色相/彩度守恒，见 tokens.css）；十组对纸面实测 5.75~11.25:1（≥4.5 正文级，
+   含 15.2px/600 的 H4）。H4 原先的 --text-muted 灰值退役。 */
+.mdc h2, .mdc h3, .mdc h4 { color: var(--accent-ink); }
 .mdc h1 + *, .mdc h2 + *, .mdc h3 + *, .mdc h4 + * { margin-block-start: 0; }
 
 /* --- 正文 --- */
@@ -246,8 +247,9 @@
 /* L1（FB-8，2026-09-30）：代码块语言标签改 accent 小字（字号/字重/内边距/底带不动）。
    hljs.css 是冻结层（禁改）且标签墨色写死在其中（--text-muted）⇒ 唯一合法通道 =
    本文件同款选择器 + 一档特异度（.mdc.mdc）定向覆盖。标签底 = 45% 卡面叠代码块底，
-   accent 墨对其十组实测 5.68~9.27:1（≥4.5 小字级）。未来若解冻 hljs.css，把这条挪回去。 */
-.mdc.mdc pre[data-lang]:not(:has(.code-lang))::before { color: var(--accent-text); }
+   墨色 M2 起走专用墨档 --accent-ink（对底实测 5.91~9.87:1，≥4.5 小字级；十组探针复测）。
+   未来若解冻 hljs.css，把这条挪回去。 */
+.mdc.mdc pre[data-lang]:not(:has(.code-lang))::before { color: var(--accent-ink); }
 
 /* ==========================================================================
    4. 表格（7 列财务明细场景，§3.3；打印友好规则来自规格 §4 D2）
@@ -265,11 +267,11 @@
                          所以它永远不越出纸面；                         滚动只发生在表格比容器更宽时。
                          打印媒体的还原见 print.css（滚动容器不可跨页分页）。 */
   border: 1px solid var(--border);
-  /* L1（FB-8，2026-09-30）：表格顶 accent 细线 —— 外框上沿升为 2px --accent-solid 冠线。
-     选「顶线」而非「淡 accent 表头底」：表头底走 --bg-code，受 tests/panel-unify.spec.ts
-     P6 锚保护（--bg-th 接线留待后续批次），本批不动表头底；顶线与外框/圆角/行底线
-     体系叠加，不新增第二条表头语言。十组实测：线色对纸面 4.39~7.32:1（远超 ≥1.15 可辨线）。 */
-  border-block-start: 2px solid var(--accent-solid);
+  /* M1（FB-11，2026-09-30）返修：顶线原画在本层（wrap 顶边框）——打印宽表横页时
+     wrap 比表格本体窄，线只盖约两列 ✗（实测 wrap 414px / 表 900px）。现改画在
+     「随表格本体宽度」的 thead th 上（见下方 thead th 规则）；本层顶边让位归零，
+     外框三边/圆角/表头填充/行底线体系不动。 */
+  border-block-start: 0;
   border-radius: var(--radius-2);
 }
 .mdc table {
@@ -303,7 +305,19 @@
    屏显无害（break-* 只影响分页碎片化），导出 PDF 时生效 */
 .mdc thead { display: table-header-group; }
 .mdc tr { break-inside: avoid; }
-.mdc thead th { background: var(--bg-code); font-weight: 600; color: var(--text); }
+/* M1（FB-11，2026-09-30）：表格顶 accent 细线改画在这里 —— thead th 的顶边框
+   宽度恒等于**表格本体宽度**，屏显（含 wrap 内横向滚动）与打印（含宽表横页，
+   print.css 里 wrap 还原 overflow:visible 后表格可越出 wrap）都横贯全部列；
+   实测：wrap 414px 时表 900px，本线 900px（修复前线随 wrap 只有 414px）。
+   2px --accent-solid（与引用边条/勾选框同源）；线色对纸面 4.39~7.32:1（≥1.15 可辨线）。
+   ⚠ 选线而非「淡 accent 表头底」：表头底走 --bg-code，受 tests/panel-unify.spec.ts
+   P6 锚保护（--bg-th 接线留待后续批次），本批不动表头底。 */
+.mdc thead th {
+  background: var(--bg-code);
+  font-weight: 600;
+  color: var(--text);
+  border-block-start: 2px solid var(--accent-solid);
+}
 .mdc th.num, .mdc td.num { text-align: end; font-family: var(--font-mono); }
 /* 斑马纹已删（2026-09-29 视觉减负 D2）：外框/表头填充/斑马/行底线四件套叠出正文里最重的
    色块，与「减少正文内块状底色干扰」自抵。分区改由外框 + 表头填充 + 行底线承担，
@@ -496,12 +510,13 @@
 .mdc .task-list-item-label { cursor: pointer; }
 
 /* --- 脚注（§2.1 F2 markdown-it-footnote）--- */
-/* L1（FB-8，2026-09-30）脚注引用上标：补 accent 色（链接族，十组对纸面 6.45~9.52:1）。
+/* L1（FB-8，2026-09-30）脚注引用上标：补 accent 色（M2 起走专用墨档 --accent-ink，
+   十组对纸面 5.75~11.25:1）。
    ⚠ 类名修正：markdown-it-footnote 实际输出 `sup.footnote-ref`（tests/render.spec.ts
    同款类名锚可证），旧选择器 `.fn-ref` 从未命中 —— 上标字号/偏移/去下划线自波3 起
    一直没生效，本次一并纠正（死选择器退役）。 */
 .mdc .footnote-ref a {
-  color: var(--accent-text);
+  color: var(--accent-ink);
   font-size: .72em;
   vertical-align: .35em;
   text-decoration: none;
