@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 const app = readFileSync("src/app.css", "utf8");
 const cjk = readFileSync("src/typography/cjk.css", "utf8");
 const tokens = readFileSync("src/typography/tokens.css", "utf8");
+const hljs = readFileSync("src/typography/hljs.css", "utf8");
 const printCss = readFileSync("src/typography/print.css", "utf8");
 const main = readFileSync("src/main.ts", "utf8");
 const themeSrc = readFileSync("src/ui/theme.ts", "utf8");
@@ -101,6 +102,11 @@ describe("P0-5 宽表/大图：纸面宽度红线锚", () => {
   it("表格样式未被削弱：外框/圆角/末行线（无末行抑制规则）", () => {
     expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border:\s*1px solid var\(--border\)/);
     expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border-radius:\s*var\(--radius-2\)/);
+    // L1（Lane L，2026-09-30）：表格顶 accent 细线（2px --accent-solid）——
+    // 外框仍 1px --border（语义不放宽）、表头底/行底线不动，只多一条冠线
+    expect(cjk).toMatch(
+      /\.mdc \.table-wrap\s*\{[^}]*border-block-start:\s*2px solid var\(--accent-solid\)/,
+    );
     expect(cjk).toMatch(/\.mdc th, \.mdc td\s*\{[^}]*border-bottom:\s*1px solid var\(--border\)/);
     expect(cjk).not.toMatch(/tbody tr:last-child[^{]*\{[^}]*border-bottom:\s*0/);
   });
@@ -317,9 +323,18 @@ describe("Lane G：视觉批锚（纸列对齐 / 无结果计数 / 外移接线�
     expect(app).not.toMatch(/\.topbar > #win-min\s*,/); // 老位置不留残段
   });
 
-  it("G2/G7：暗色 --bg-subtle 提档（20% chrome）+ 淡出值 .4 → .6", () => {
+  it("G2/G7/L2：暗色 --bg-subtle 重算（hair 92% × fg 8%）+ 淡出值 .4 → .6", () => {
+    // L2（Lane L，2026-09-30，连锚裁决）：G2 原配方（20% chrome）在 K3 提亮暗色纸面后
+    // 对新纸面只剩 1.13~1.14:1 ⇒ 参照 K4·mmd 手法改为「hair 92% × fg 8%」。
+    // 旧值史（只留档在此，不留在代码）：pre-G2 45% chrome（对纸面 1.36~1.42）→ G2 20% chrome
+    // （K3 前 1.55~1.62）→ K3 后 1.13~1.14 → L2 本次（探针实测 1.515~1.555）。
+    // 语义不放宽：本 token 仍是「行内代码底 / 复制钮 hover 底」；亮色配方一字未动。
     expect(tokens).toMatch(
-      /--bg-subtle:\s*color-mix\(in oklab, var\(--pal-chrome\) 20%, var\(--pal-hair\)\)/,
+      /--bg-subtle:\s*color-mix\(in oklab, var\(--pal-hair\) 92%, var\(--pal-fg\)\)/,
+    );
+    // 反向锚：旧配方不得回归（K3 后它会重新掉回 1.13~1.14）
+    expect(tokens).not.toMatch(
+      /--bg-subtle:\s*color-mix\(in oklab, var\(--pal-chrome\) 20%/,
     );
     expect(tokens).toMatch(/--opacity-dim:\s*\.6/);
   });
@@ -354,5 +369,103 @@ describe("Lane K：主人实测三件（查找上提 / 状态栏回退 / 暗色�
     expect(tokens).not.toMatch(/--pal-paper:\s*#12151a/);
     expect(tokens).not.toMatch(/--pal-paper:\s*#15151d/);
     expect(app).not.toMatch(/\[data-theme="dark"\] #doc\s*\{[^}]*box-shadow/);
+  });
+});
+
+/* Lane L 批次（2026-09-30 第四轮·纸面主题色）：FB-8 着色（H2-H4 accent 墨 / 引用 tint /
+   表头顶线 / 脚注引用 / 勾选态 / 语言标签）+ P2-37 灰字 dim 豁免 + P2-39 --bg-subtle 连锚
+   （见上方 G2/L2）+ L4 死规则清理。所有锚钉「规则存在 / 反向不复现」；实测对比数
+   （Edge 153 探针十组）随行注明，jsdom 无布局引擎、不对数值做断言。 */
+describe("Lane L：纸面主题色（FB-8）与尾巴锚", () => {
+  /** 剥注释副本：反向断言用（注释里的留档文本不算代码） */
+  const cjkBody = cjk.replace(/\/\*[\s\S]*?\*\//g, "");
+  const appBody = app.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("L1a：H2-H4 小节标题走 accent 墨；H1/正文/公式/金额保持中性（红线）", () => {
+    expect(cjk).toMatch(/\.mdc h2, \.mdc h3, \.mdc h4\s*\{\s*color:\s*var\(--accent-text\)/);
+    const h1 = /\.mdc h1 \{[^}]*\}/.exec(cjk)?.[0] ?? "";
+    expect(h1).not.toMatch(/accent/);
+    // H4 旧灰值退役（改为 accent 墨后不得留 --text-muted 声明）
+    expect(cjkBody).not.toMatch(/\.mdc h4\s*\{[^}]*color:\s*var\(--text-muted\)/);
+    // 红线：正文段落 / 金额（td·th 含 .num 列）不得被着色逻辑命中
+    // （\b 防前缀误伤：`.mdc p` 会误命中 `.mdc pre`、`.mdc th` 会误命中 `.mdc thead`）
+    expect(cjkBody).not.toMatch(/\.mdc p\b[^{]*\{[^}]*color:\s*var\(--accent/);
+    expect(cjkBody).not.toMatch(/\.mdc (td|th)\b[^{]*\{[^}]*color:\s*var\(--accent/);
+    // 红线：公式本体（KaTeX 印刷黑 / 中文降级）不得进任何 accent
+    expect(cjkBody).not.toMatch(/\.katex[^{]*\{[^}]*color:\s*var\(--accent/);
+    expect(cjkBody).not.toMatch(/\.math-fallback[^{]*\{[^}]*color:\s*var\(--accent/);
+  });
+
+  it("L1b：引用块 = 4px accent 边条 + --tint-quote 淡底；Alert 各自语义色不动", () => {
+    expect(cjk).toMatch(
+      /\.mdc blockquote\s*\{[^}]*border-inline-start:\s*4px solid var\(--accent-solid\)/,
+    );
+    expect(cjk).toMatch(/\.mdc blockquote\s*\{[^}]*background:\s*var\(--tint-quote\)/);
+    // tint 双子（亮 7% accent-text / 暗 5% accent-solid，实测对纸面 1.164~1.232:1）
+    expect(tokens).toMatch(
+      /--tint-quote:\s*color-mix\(in oklab, var\(--bg-quote\) 93%, var\(--accent-text\)\)/,
+    );
+    expect(tokens).toMatch(
+      /--tint-quote:\s*color-mix\(in oklab, var\(--bg-quote\) 95%, var\(--accent-solid\)\)/,
+    );
+    // Alert 五类语义色不被「边条语言统一」波及（抽样 NOTE/CAUTION）
+    expect(cjk).toMatch(
+      /\.mdc blockquote\.alert-note\s*\{[^}]*border-inline-start-color:\s*var\(--alert-note-line\)/,
+    );
+    expect(cjk).toMatch(
+      /\.mdc blockquote\.alert-caution\s*\{[^}]*border-inline-start-color:\s*var\(--alert-caution-line\)/,
+    );
+    // 旧内联混色与两行兜底已退役（改走 token；兜底行在变量替换语义下从未可达）
+    expect(cjkBody).not.toMatch(/var\(--bg-quote\) 94%, var\(--accent-text\)/);
+    expect(cjkBody).not.toMatch(/background:\s*var\(--bg-quote\);\s*\n\s*background:/);
+  });
+
+  it("L1c：脚注引用上标补 accent；fn-ref 死选择器退役、真类名 footnote-ref", () => {
+    expect(cjk).toMatch(/\.mdc \.footnote-ref a\s*\{[^}]*color:\s*var\(--accent-text\)/);
+    expect(cjkBody).not.toMatch(/\.fn-ref/);
+  });
+
+  it("L1d：语言标签 accent——hljs 冻结层的唯一定向覆盖（一档特异度）", () => {
+    // hljs.css 仍是冻结层：标签色写死在那里（本锚同时钉住这层耦合）
+    expect(hljs).toMatch(
+      /\.mdc pre\[data-lang\][^{]*::before\s*\{[^}]*color:\s*var\(--text-muted\)/,
+    );
+    expect(cjk).toMatch(
+      /\.mdc\.mdc pre\[data-lang\]:not\(:has\(\.code-lang\)\)::before\s*\{\s*color:\s*var\(--accent-text\)/,
+    );
+  });
+
+  it("L1e：勾选态自绘 accent（原生 disabled 灰底实测根因）；未勾选保持中性", () => {
+    expect(cjk).toMatch(/\.mdc input\[type="checkbox"\]\s*\{[^}]*appearance:\s*none/);
+    expect(cjk).toMatch(
+      /\.mdc input\[type="checkbox"\]\s*\{[^}]*border:\s*1px solid var\(--border-strong\)/,
+    );
+    expect(cjk).toMatch(/\.mdc input\[type="checkbox"\]\s*\{[^}]*background:\s*var\(--bg-app\)/);
+    expect(cjk).toMatch(
+      /\.mdc input\[type="checkbox"\]:checked\s*\{[^}]*background:\s*var\(--accent-solid\)/,
+    );
+    expect(cjk).toMatch(
+      /\.mdc input\[type="checkbox"\]:checked::after\s*\{[^}]*border:\s*solid var\(--bg-app\)/,
+    );
+  });
+
+  it("P2-37：灰字 dim 豁免 = 定向重映射（门同四条豁免；机制与豁免规则不动）", () => {
+    const l3 =
+      /html:not\(\.panel-open\):not\(\.editing\) body\.chrome-dim[\s\S]*?\n\}/.exec(app)?.[0] ??
+      "";
+    expect(l3).toMatch(/\.topbar:not\(:hover\):not\(:focus-within\)/);
+    expect(l3).toMatch(/--text-muted:\s*var\(--text\)/);
+    expect(l3).not.toMatch(/opacity/); // 只换墨、不碰淡出机制
+    // 窄豁免：不得扩到菜单条目/窗口三钮
+    expect(l3).not.toMatch(/\.menu-item/);
+    expect(l3).not.toMatch(/#win-/);
+  });
+
+  it("L4：.settings-effective 死规则整批删除（DOM 退役、grep 零消费方）", () => {
+    expect(appBody).not.toMatch(/settings-effective/);
+    // 保留的字体行不折行档仍在
+    expect(app).toMatch(
+      /\.settings-panel \.settings-font \.settings-label\s*\{\s*white-space:\s*nowrap/,
+    );
   });
 });

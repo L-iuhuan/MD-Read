@@ -15,7 +15,8 @@
  *     的 pre/code 规则照常消费）⇒ 不必改任何 CSS 文件 ✓。
  *
  * 本文件仍**不含任何字体族名**：目录与栈都来自 index.html 骨架 + tokens.css（经
- * font-catalog 的 CSSOM 读取）；「实际生效」探测判据见 font-detect.ts。
+ * font-catalog 的 CSSOM 读取）；「· 未装」标注的探测判据见 font-detect.ts。
+ * （原「实际生效」读数行 refreshEffective 已于 2026-09-30 随三下拉回显冗余删除。）
  */
 import {
   firstFamilyOf,
@@ -24,7 +25,7 @@ import {
   type FontPickGroup,
   type FontPickOption,
 } from "./font-catalog";
-import { describeResolved, makeMeasurer, markAvailability, resolveFamilies, type MeasureText } from "./font-detect";
+import { makeMeasurer, markAvailability, type MeasureText } from "./font-detect";
 
 /** 分组键转发出口（settings.ts 的对外签名要用；定义在 font-catalog） */
 export type { FontPickGroup } from "./font-catalog";
@@ -70,7 +71,7 @@ export interface FontPickerHooks {
   onFontChange(): void;
   /**
    * 可选的量器注入点：**只给测试用**。缺省走真实 canvas（jsdom 里 getContext 返回
-   * null，探测会整体降级为「不显示读数」，所以测试必须能塞一张假字宽表进来）。
+   * null，探测会整体降级为「不标注未装」，所以测试必须能塞一张假字宽表进来）。
    * 生产调用点从不传它。
    */
   measure?: MeasureText;
@@ -79,7 +80,7 @@ export interface FontPickerHooks {
 /** 探测量器缓存：整个会话共用一块 1×1 canvas */
 let measurer: MeasureText | null = null;
 
-/** 取（或造）探测量器；拿不到 2d 上下文时返回 null，调用方降级为「不显示读数」 */
+/** 取（或造）探测量器；拿不到 2d 上下文时返回 null，调用方降级为「不标注未装」 */
 function getMeasurer(hooks: FontPickerHooks): MeasureText | null {
   if (hooks.measure !== undefined) return hooks.measure; // 测试注入优先
   if (measurer !== null) return measurer;
@@ -222,35 +223,7 @@ export function syncFontSelects(): void {
   }
 }
 
-/** 刷新「实际生效字体」：按当前正文栈在 400 / 700 两个字重上各探测一次 */
-export function refreshEffective(hooks: FontPickerHooks): void {
-  const code = document.getElementById("set-font-effective");
-  const codeBold = document.getElementById("set-font-effective-bold");
-  const hint = document.getElementById("set-font-hint");
-  if (code === null || codeBold === null || hint === null) return;
-  const measure = getMeasurer(hooks);
-  if (measure === null) {
-    code.textContent = "无法探测";
-    hint.textContent = "本机图形环境不支持字体探测，已按回退链正常显示";
-    hint.dataset.state = "fallback";
-    return;
-  }
-  const doc = hooks.getDoc();
-  const stack = doc === null ? "" : getComputedStyle(doc).fontFamily;
-  const text = describeResolved(resolveFamilies(stack, measure));
-  // ⚠ 文本**一字不改**（settings.spec.ts 的锚钉的就是这两串 ✗ 别动它们 ✓）
-  code.textContent = `400 · ${text.regular}`;
-  codeBold.textContent = `700 · ${text.bold}`;
-  // 两个字重同族时隐藏第二行（CSS 在第一行尾部补「· 700 同」）；不同才占两行
-  const boldSame = text.regular === text.bold;
-  codeBold.hidden = boldSame;
-  code.dataset.boldSame = boldSame ? "1" : "0";
-  // 提示只在有话说时显示（「选了 A、实际渲染成 B」的解释），无异常不打扰
-  hint.textContent = text.hint;
-  hint.dataset.state = text.state;
-}
-
-/** 挂载字体面板：填目录 → 恢复选择 → 接 change → 亮出实际生效 */
+/** 挂载字体面板：填目录 → 恢复选择 → 接 change（当前值由三下拉各自回显） */
 export function mountFontPicker(hooks: FontPickerHooks): void {
   renderFontPicker(hooks);
   applyFontPrefs(hooks); // 启动恢复：#doc 常驻 index.html，落容器上即可
@@ -262,16 +235,14 @@ export function mountFontPicker(hooks: FontPickerHooks): void {
     }
     select.addEventListener("change", () => setFontPref(group, select.value, hooks));
   }
-  refreshEffective(hooks);
 }
 
-/** 统一入口：应用 + 持久化（该组键）+ 回显 + 刷新读数（面板只有这一个写入口） */
+/** 统一入口：应用 + 持久化（该组键）+ 回显（面板只有这一个写入口） */
 export function setFontPref(group: FontPickGroup, id: string, hooks: FontPickerHooks): void {
   const hit = readCatalog().find((o) => o.group === group && o.id === id);
   localStorage.setItem(FONT_KEYS[group], hit === undefined ? DEFAULT_IDS[group] : hit.id);
   migrateLegacyPicks(); // 旧键退役（双源归一）
   applyFontPrefs(hooks);
   syncFontSelects();
-  refreshEffective(hooks);
   hooks.onFontChange();
 }

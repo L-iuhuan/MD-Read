@@ -16,8 +16,7 @@
      ＋ 下拉定宽 + 省略号（长名不再撑破卡片）
    · 「一个下拉框啊」⇒ 语义纠正：**三组各选一个、互不影响**，这句常显在分组标题右侧
    · 「自动保存」原先只有一个孤零零的复选框 ⇒ 说明提到常显（不再只藏 tooltip）
-   · 「实际生效」原先堆成三行灰块（行高 61px，其他行 32px ⇒ 参差）
-     ⇒ 改成一行、允许换行，提示独占次行
+   · 「实际生效」行：2026-09-30 J1 三下拉各自回显当前值后冗余 ⇒ 整行删除（本文件相关规则同批退役）
    ⚠ 全部走既有 token，无字面色值（符合 tokens 契约 ✓）
    ========================================================================== */
 /* J1（2026-09-30 用户实测）：面板 320px + 下拉 190px 把「Times New Roman」截成
@@ -62,23 +61,6 @@
   min-inline-size: 0;
 }
 .settings-panel optgroup { font-style: normal; }
-/* 「实际生效」：一行放 400/700 两个读数，提示独占次行（原先三行灰块 ✗）；
-   J1：读数允许收缩换行（min-inline-size: 0），长族名不再截断 ✗ */
-.settings-effective {
-  flex-wrap: wrap;
-  gap: var(--size-1) var(--size-2);
-  align-items: baseline;
-}
-.settings-effective > code { font-size: var(--fs-chrome-sm); min-inline-size: 0; overflow-wrap: anywhere; }
-/* D6（2026-09-29 视觉减负）：chip 底由 --bg-app（与卡面同色、只剩描边）换 --bg-subtle
-   一档，让「实际生效」这行读数从卡面上立起来；特异性对齐 app.css 的
-   `.settings-panel .settings-effective code`（同 (0,2,1)，靠本文件后加载取胜）。 */
-.settings-panel .settings-effective > code { background: var(--bg-subtle); }
-.settings-effective-hint {
-  flex-basis: 100%;
-  font-size: var(--fs-chrome-sm);
-  color: var(--fg-dim);
-}
 
 /* ==========================================================================
    控件规范化（2026-09-27 第二批，用户反馈「控件的位置、高度、大小……后面其他的控件都需要考虑上」）
@@ -115,9 +97,6 @@
   flex: 1 1 100%;
   margin-block-start: 1px;
 }
-/* 「实际生效」：读数与提示都缩进到控件列（与上面的下拉左对齐 ✓），提示独占次行 */
-.settings-effective > code { flex: 0 1 auto; }
-.settings-effective-hint { margin-inline-start: 4.5em; }
 
 /* ---- 第二批实测后又补的两条（截图 + 逐控件 rect 才看出来的 ✗）----
    实测证据（`panel-measure2.mjs`）：
@@ -129,14 +108,3 @@
    只写 `.settings-font`（0,1,0）会被它压住 ⇒ 实测 fonts 行仍竖排、行高 47 ✗ ⇒ 用同级 + 后加载取胜 ✓ */
 .settings-row.settings-font { flex-direction: row; flex-wrap: nowrap; align-items: center; }
 .settings-row { justify-content: flex-start; }
-/* ---- 阶段④-① 「实际生效」行收成一行（2026-09-27）----------------------------
-   实测：两个字重落在同一族时，两行读数把该行行高从 **32 顶到 61** ✗，
-   而面板里其他行都是 32 ⇒ 视觉参差（用户原话"控件的位置、高度、大小"都乱了 ✓）。
-   做法：JS 在**两者相同时**给第二个 code 打 `hidden`（文本不动 ⇒ settings.spec 的锚保持绿 ✓），
-        再用这里的 ::after 在第一个 code 尾部补一句「· 700 同」✓
-   只有真的不同（"选了 A 但加粗是 B"）时才占两行 —— 那正是需要看见的情况 ✓ */
-#set-font-effective[data-bold-same="1"]::after {
-  content: " · 700 同";
-  color: var(--fg-dim);
-}
-#set-font-effective-bold[hidden] { display: none; }

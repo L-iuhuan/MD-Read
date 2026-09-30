@@ -7,9 +7,9 @@
  *      选项骨架在 index.html，「对应哪个栈变量」由 data-stack-var 声明（**字体栈只在 tokens.css**）；
  *      选项文案 = 完整字体名（J1：不再截断成「Times New R.」）；
  *   ② 旧持久化值（单键 modu-font 的 sans/serif/kai/hei 与任意组内 id、更早 modu-face=serif）
- *      必须能迁移到对应组的新键，不能丢成默认值；
- *   ③ 常显「实际生效字体」：按 400 / 700 两个字重各显示一次探测结果
- *      （判据见 font-detect.spec.ts：拉丁串 + 双假名基线 + 双字重）。
+ *      必须能迁移到对应组的新键，不能丢成默认值。
+ *   （原 ③ 常显「实际生效字体」读数行：三下拉各自回显当前值后冗余，2026-09-30 整行
+ *      删除，锚同批退役；探测判据本身的单测仍在 font-detect.spec.ts。）
  *
  * jsdom 没有布局引擎、也不加载 CSS，所以本文件对两处做**显式替身**（并写清替身口径）：
  *   - canvas 字宽 → hooks.measure 注入一张「族名 + 字重」查表（生产走真实 canvas）；
@@ -64,10 +64,6 @@ function mountPanel(): void {
       ${selectSkeleton("set-font-cn")}
       ${selectSkeleton("set-font-latin")}
       ${selectSkeleton("set-font-code")}
-      <span class="settings-label">实际生效</span>
-      <code id="set-font-effective"></code>
-      <code id="set-font-effective-bold"></code>
-      <span id="set-font-hint"></span>
       <select id="set-theme">
         <option value="light">浅色</option>
         <option value="dark">深色</option>
@@ -414,70 +410,6 @@ describe("字体旧值迁移（旧单键 modu-font / 更早 modu-face → 三新
   });
 });
 
-describe("常显「实际生效字体」（D-02 第三步最关键项）", () => {
-  it("读数按 400 / 700 两个字重各显示一次，指向**真命中**的族名", async () => {
-    seedComputedStyle("--font-pick-cjk-harmonyos");
-    await freshSettings();
-    expect(document.getElementById("set-font-effective")?.textContent).toBe("400 · HarmonyOS Sans SC");
-    expect(document.getElementById("set-font-effective-bold")?.textContent).toBe("700 · HarmonyOS Sans SC");
-    expect(document.getElementById("set-font-hint")?.dataset.state).toBe("ok");
-  });
-
-  it("首选在 400 挂掉 → 读数报下一个真命中的族（选了 A 实际是 B 由此暴露）", async () => {
-    seedComputedStyle('"NoSuchFamilyZZZ__", "HarmonyOS Sans SC", sans-serif');
-    await freshSettings();
-    expect(document.getElementById("set-font-effective")?.textContent).toBe("400 · HarmonyOS Sans SC");
-  });
-
-  it("全不命中 → 读数说「系统回退」，提示走黄字态（不是静默）", async () => {
-    seedComputedStyle("system-ui, sans-serif");
-    await freshSettings();
-    expect(document.getElementById("set-font-effective")?.textContent).toBe("400 · 系统回退");
-    expect(document.getElementById("set-font-hint")?.dataset.state).toBe("fallback");
-  });
-
-  it("选出别的项后读数跟着换（400/700 各一条）", async () => {
-    seedComputedStyle("--font-pick-cjk-yahei");
-    await freshSettings();
-    expect(document.getElementById("set-font-effective")?.textContent).toBe("400 · Microsoft YaHei UI");
-    expect(document.getElementById("set-font-effective-bold")?.textContent).toBe("700 · Microsoft YaHei UI");
-  });
-
-  it("syncSettingsPanel 一并刷新读数（面板打开不陈旧）", async () => {
-    seedComputedStyle("--font-pick-cjk-harmonyos");
-    const { settings } = await freshSettings();
-    const code = document.getElementById("set-font-effective");
-    if (code !== null) code.textContent = "陈旧读数";
-    settings.syncSettingsPanel();
-    expect(code?.textContent).toBe("400 · HarmonyOS Sans SC");
-  });
-});
-
-  // ---- 阶段④-①（2026-09-27）：读数行收成一行 ------------------------------------
-  // 判据：**400/700 同族时隐藏第二行**（面板观感）但**文本一字不改**（上面三条锚仍绿 ✓）；
-  //      两者不同时必须**两行都显示**（那正是"选了 A 加粗变 B"要暴露的情况 ✓）
-  it("两个字重同族 ⇒ 隐藏第二行并打标记（文本不变 ✓）", async () => {
-    seedComputedStyle("--font-pick-cjk-harmonyos");
-    await freshSettings();
-    const code = document.getElementById("set-font-effective");
-    const bold = document.getElementById("set-font-effective-bold");
-    expect(bold?.hidden).toBe(true);
-    expect(code?.dataset.boldSame).toBe("1");
-    // ⚠ 关键：隐藏**不影响文本** ⇒ 上面那三条锚继续有效 ✓
-    expect(code?.textContent).toBe("400 · HarmonyOS Sans SC");
-    expect(bold?.textContent).toBe("700 · HarmonyOS Sans SC");
-  });
-
-  it("两个字重不同族 ⇒ 两行都显示（不隐藏 ✓）", async () => {
-    // 造"400 命中 A、700 命中 B"：resolveFamilies 逐候选取首个真命中 ⇒ 用两个字宽表分叉
-    seedComputedStyle("--font-pick-bold-only");
-    await freshSettings();
-    const bold = document.getElementById("set-font-effective-bold");
-    const code = document.getElementById("set-font-effective");
-    // 无论具体族名是什么，只要两者不同就必须两行都显示；相同则必须隐藏 ✓
-    const same = code?.textContent?.replace("400 · ", "") === bold?.textContent?.replace("700 · ", "");
-    expect(bold?.hidden).toBe(same);
-  });
 describe("主题下拉（三档接线，状态机在 ui/theme.ts）", () => {
   it("选深色 → html[data-theme=dark] + modu-theme 持久化", async () => {
     await freshSettings();

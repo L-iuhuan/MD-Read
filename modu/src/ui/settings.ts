@@ -4,9 +4,10 @@
  * 七件事：
  * ① 字号步进 14–20px：改 --fs-body（cjk.css 认定的唯一作用点），
  *   localStorage modu-fs 持久化、启动恢复；
- * ② 字体（D-02 → 2026-09-30 J1 换血）：**三个独立下拉（中文正文/西文/代码）+ 常显
- *   「实际生效字体」**，实现全部在 ui/font-picker.ts（目录来自 tokens.css，探测判据
- *   见 ui/font-detect.ts）。本文件只保留接线；持久化拆三键 modu-font-cn/-latin/-code，
+ * ② 字体（D-02 → 2026-09-30 J1 换血）：**三个独立下拉（中文正文/西文/代码，各自
+ *   回显当前值——原「实际生效」读数行已冗余删除）**，实现全部在 ui/font-picker.ts
+ *   （目录来自 tokens.css，探测判据见 ui/font-detect.ts）。本文件只保留接线；
+ *   持久化拆三键 modu-font-cn/-latin/-code，
  *   旧单键 modu-font（含更早 modu-face=serif）由 font-picker 一次性迁移回退。
  * ③ 主题三档（亮/暗/自动）入面板：状态机在 ui/theme.ts，此处只接下拉；
  *    D-01 批次再加一行「配色」下拉（5 套主题），与 ③ 正交组合出 10 组调色板；
@@ -32,7 +33,6 @@ import {
 import {
   mountFontPicker,
   readFontPref,
-  refreshEffective,
   setFontPref as applyFontPick,
   syncFontSelects,
   type FontPickGroup,
@@ -115,7 +115,7 @@ function writeFs(px: number): void {
 }
 
 /** 字体选择（D-02 → 2026-09-30 J1 三下拉）：目录/探测/组合应用全在 ui/font-picker.ts */
-export { readFontPref, refreshEffective };
+export { readFontPref };
 
 /** 统一入口（对外保留旧名 setFontPref）：应用 + 持久化（该组键）+ 回显 + 刷新读数。
  *  旧单键 modu-font / modu-face 由 font-picker 的 migrateLegacyPicks 一次性迁移。 */
@@ -209,7 +209,6 @@ export function syncSettingsPanel(): void {
   if (font !== null) {
     syncFontSelects(); // J1：三下拉各自回显各自键（面板外改过不陈旧）
   }
-  refreshEffective(fontHooks()); // 「实际生效字体」与选择同批刷新（换主题/字号都可能改变命中）
   const autosave = document.getElementById("set-autosave") as HTMLInputElement | null;
   if (autosave !== null) {
     autosave.checked = readAutosavePref();
@@ -218,19 +217,10 @@ export function syncSettingsPanel(): void {
 
 function wireFontSize(): void {
   writeFs(readFsPref()); // 启动恢复 + 回显
-  req<HTMLButtonElement>("set-fs-dec").addEventListener("click", () => {
-    writeFs(readFsPref() - 1);
-    refreshEffective(fontHooks()); // 字号变了排版要重算，读数同批刷新
-  });
-  req<HTMLButtonElement>("set-fs-inc").addEventListener("click", () => {
-    writeFs(readFsPref() + 1);
-    refreshEffective(fontHooks());
-  });
+  req<HTMLButtonElement>("set-fs-dec").addEventListener("click", () => writeFs(readFsPref() - 1));
+  req<HTMLButtonElement>("set-fs-inc").addEventListener("click", () => writeFs(readFsPref() + 1));
   // UX-6（des-5）：数值本身可点击直改（16→20 连点 4 次太磨人）
-  wireDirectEdit("set-fs-val", readFsPref, (px) => {
-    writeFs(px);
-    refreshEffective(fontHooks()); // 与 ± 钮同批刷新读数
-  });
+  wireDirectEdit("set-fs-val", readFsPref, writeFs);
 }
 
 /**
@@ -271,7 +261,7 @@ function wireDirectEdit(valId: string, read: () => number, write: (value: number
   });
 }
 
-/** 字体面板接线（D-02）：填目录 → 恢复选择 → change → 亮出「实际生效字体」 */
+/** 字体面板接线（D-02）：填目录 → 恢复选择 → 接 change（实现全在 font-picker） */
 function wireFontSelect(): void {
   mountFontPicker(fontHooks());
 }
@@ -315,7 +305,6 @@ function wireResetTypo(): void {
   req<HTMLButtonElement>("set-reset-typo").addEventListener("click", () => {
     writeFs(FS_DEFAULT);
     writeWidth(WIDTH_DEFAULT);
-    refreshEffective(fontHooks());
     hooks.notify?.("已恢复默认字号与行宽", "ok");
   });
 }

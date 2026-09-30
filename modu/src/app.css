@@ -953,37 +953,14 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
   gap: var(--size-1);
 }
 
-/* 字体行与「实际生效」行是面板最宽的两行，标签不许折行（否则「字体」竖成两行） */
-.settings-panel .settings-font .settings-label,
-.settings-panel .settings-effective .settings-label { white-space: nowrap; }
+/* 字体行是面板最宽的一行，标签不许折行（否则「字体」竖成两行）。
+   曾伴生的「实际生效」行（.settings-effective* 共 6 条规则）已随该行整批删除
+   （Lane L·L4，2026-09-30）：DOM 在 fix-26/FB-9 退役，grep 零消费方；行数回收给
+   L1 着色规则腾额度（app.css 棘轮 1452 只降不升）。 */
+.settings-panel .settings-font .settings-label { white-space: nowrap; }
 
 /* 字体下拉：满宽（现在容器已是整行，不再是「标签右边的剩余空间」） */
 .settings-panel .settings-select { inline-size: 100%; min-inline-size: 0; }
-
-/* 「实际生效字体」：面板最该读清的一行——等宽读数 + 正文色 + 白底描边 */
-.settings-panel .settings-effective {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  gap: var(--size-1) var(--size-2);
-  min-block-size: 0;
-}
-.settings-panel .settings-effective code {
-  padding: 2px var(--size-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-chrome-sm);
-  color: var(--text);
-  background: var(--bg-app);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-}
-.settings-panel .settings-effective-hint {
-  flex: 1 1 100%;
-  color: var(--fg-dim);
-  font-size: var(--fs-chrome-sm);
-}
-/* 探测不到首选（多数是没装）→ 黄字提示「选了 A 实际是 B」，这是本面板存在的理由 */
-.settings-panel .settings-effective-hint[data-state="fallback"] { color: var(--warn-text); }
-.settings-panel .settings-effective-hint[data-state="serif"] { color: var(--text-muted); }
 
 /* 下拉展开态里每一项用自己那套字体渲染：选之前先看字形（原生 option 能吃到 font-family）。
    ⚠ 字体族名只以 var(--font-pick-*) 形式出现，字面族名仍只住在 tokens.css。 */
@@ -1394,11 +1371,13 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
 /* ==========================================================================
    11. 工具条沉浸淡出（波6，M5 项）—— 纯 CSS 只做「态」与「豁免」
    ⚠ 接线不在本文件：滚动监听归 main.ts（setupProgress），豁免状态类归 ui/overlay-state.ts。
-   CSS 只管两件事：
+   CSS 只管三件事：
    ① 淡出态：body（或 html）.chrome-dim 时，顶栏降到 --opacity-dim；
    ② 豁免（任何一条命中就不淡出）：
       悬停 :hover / 含焦点 :focus-within / 浮层开着（最近菜单、Aa 面板、两个新菜单）/
       编辑态（#editor-pane 可见）。
+   ③ 灰字定向豁免（P2-37，2026-09-30 Lane L）：见本条规则末尾——① ② 一字未动，
+      只在真正处于淡出态时把顶栏灰字/字形控件的 --text-muted 临时换成 --text。
    豁免靠**书写顺序**压过淡出态：`html.panel-open .topbar` 与
    `:is(html, body).chrome-dim .topbar` 同为 (0,2,1)，本规则在文件里更靠后 ⇒ 生效
    （旧版是 `html:has(#X:not([hidden]))` 靠 (1,2,1) 的高权重取胜；2026-09-23 第二批
@@ -1426,6 +1405,23 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
 html.panel-open .topbar,
 html.editing .titlebar,
 html.editing .topbar { opacity: 1; }
+
+/* P2-37（Lane L，2026-09-30）：顶栏灰字在淡出态的可读性豁免。
+   opacity 是**合成组**——父组降到 .6 后，子元素再写 opacity:1 也亮不过父组，故只能
+   「定向重映射」：真正淡出时把顶栏灰字/字形控件内的 --text-muted 换成 --text。
+   合成对比（α=.6 叠壳层，Edge 153 探针十组）：亮 2.25~2.32 → 4.20~4.30:1；
+   暗 3.09~3.19 → 5.73~5.79:1（P2-37 目标 ≥4:1 双态达标）。
+   门与 ② 四条豁免同款（悬停/焦点/浮层开/编辑态下本就回灰——否则一悬停全条变
+   「主文字色」、层次塌）；只列灰字/字形控件，菜单条目与窗口三钮不在列；
+   淡出机制与四条豁免一字未动（panel-unify.spec.ts X1 锚）。
+   ⚠ 类位假设：chrome-dim 挂 body（main.ts），panel-open/editing 挂 html
+   （overlay-state.ts）——挪类时本规则需同步。 */
+html:not(.panel-open):not(.editing) body.chrome-dim .topbar:not(:hover):not(:focus-within)
+  :is(.tab, .tab-close, #btn-newtab, .tabs-nav > button, .actions > button,
+      .actions > .recent-wrap > button, .actions > .settings-wrap > button,
+      .actions > .overflow-wrap > button, #btn-outline) {
+  --text-muted: var(--text);
+}
 
 /* ==========================================================================
    12. 窄窗与动效降级
