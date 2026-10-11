@@ -14,6 +14,13 @@ pub fn init<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
             let granted = crate::fs::trust_all_existing(&trust, &args);
             println!("[trust] 单实例转发：注册 {granted}/{} 条参数中的 Markdown 路径", args.len());
         }
+        // 用户双击文件而主窗口最小化/被盖住时：还原并抢回焦点（2026-10-01 用户反馈
+        // 「双击后静默打开，还要手动点任务栏」）。顺序：show → unminimize → set_focus。
+        if let Some(win) = app.get_webview_window("main") {
+            let _ = win.show();
+            let _ = win.unminimize();
+            let _ = win.set_focus();
+        }
         // args 含二次启动时传入的文件路径，交由主实例前端响应
         let _ = app.emit("second-instance", args);
     })
