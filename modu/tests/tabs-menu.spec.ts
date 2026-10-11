@@ -189,7 +189,8 @@ describe("⋯ 溢出菜单", () => {
     const menu = h.el("overflow-menu");
     const items = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
     // UX-2（des-5）：「查找」居首（此前零可发现入口），其后仍是四个代理项
-    expect(items.map((el) => el.textContent)).toEqual(["查找", "最近", "Aa", "◐", "PDF"]);
+    // 2026-10-01：设置按钮 Aa → 滑杆图标，菜单 label 改「设置」（用户反馈图标与内容不符）
+    expect(items.map((el) => el.textContent)).toEqual(["查找", "最近", "设置", "◐", "PDF"]);
     expect(items.map((el) => el.textContent)).not.toContain("打开");
 
     // 逐项点一遍（i=0 是「查找」，非代理项，另有用例）：每个代理项各命中一次自己的原按钮，且点完菜单先收起

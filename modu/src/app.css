@@ -1246,20 +1246,23 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
    CM 的面板容器仍是「贴在编辑器上沿的工具条」，只是从下沿搬到上沿。
    可以也**已经**统一的是「控件语言」：输入框同宽 184px / 同高 28px / 同 1px --border /
    同 8px 圆角 / 同轻投影，按钮同高同皮，关闭钮同位同规格（24px 方钮 + 8px inset）。 */
+#editor-pane .cm-editor { position: relative; } /* 浮层面板的定位锚（CM baseTheme 亦有，双保险） */
 #editor-pane .cm-panels {
+  /* 浮层化（用户反馈 2026-10-01：面板原先占文档流位、把正文顶下去）：容器改绝对定位
+     横贯编辑器顶部 + pointer-events 穿透，只有卡片自己可交互；正文不再让位。 */
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  pointer-events: none;
   background: none;                 /* 容器让位：卡片感交给内层 .cm-search */
   border: 0;                        /* CM 默认在容器上画 1px #ddd 分隔线 */
   color: var(--text);
-  /* K1（2026-09-29）：与阅读态 findbar 同一浮层档（两者模式互斥、同在右上角，不再 +1）；
-     仍低于顶栏（--z-float + 10），不会被工具条反压 */
-  z-index: var(--z-float);
+  z-index: var(--z-float);          /* K1（2026-09-29）：与阅读态 findbar 同浮层档，仍低于顶栏 */
 }
-/* 卡片本体：与 §4/§6/§7 三处浮层同一套四件套。
-   用户反馈批次·布局留位：右内边距加宽 32px——关闭钮（绝对定位 24px 方钮 +
-   8px inset）独占右上角车道，输入框/勾选项永不钻到它底下（z 序相同也不重叠）。
-   K1（2026-09-29）：右缘与 findbar 同基准 = 纸列右缘（容器=编辑器宽，故不带
-   --paper-shift）；窄窗退 --size-4。 */
+/* 卡片本体：与 §4/§6/§7 三处浮层同一套四件套。右内边距 32px 让出关闭钮车道。
+   K1（2026-09-29）：右缘与 findbar 同基准 = 纸列右缘；窄窗退 --size-4。 */
 #editor-pane .cm-panel.cm-search {
+  pointer-events: auto;             /* 容器已穿透（2026-10-01 浮层化）：卡片自己恢复可交互 */
   inline-size: fit-content;
   max-inline-size: calc(100% - 2 * var(--size-4));
   margin: var(--size-2) max(var(--size-4), calc((100% - var(--measure) - 2 * var(--pad-page)) / 2)) 0 auto;
@@ -1321,6 +1324,7 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
   font-size: var(--fs-chrome-sm);
   color: var(--text-muted);
   white-space: nowrap;
+  block-size: var(--h-ctl); vertical-align: middle; /* 2026-10-01 对齐修复：实测勾选行比输入行高 4px —— 同高 + middle ⇒ 同心 */
 }
 #editor-pane :is(.cm-search, .cm-dialog) label:hover { color: var(--text); }
 #editor-pane .cm-search input[type="checkbox"] { accent-color: var(--accent-solid); }
@@ -1358,6 +1362,7 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
    关闭钮 rect(1055..1079) 与「跳转」按钮 rect(1033..1071) **横向重叠 16px**，
    按钮右半被关闭钮压住（截图 06 可见）。 */
 #editor-pane .cm-dialog {
+  pointer-events: auto;             /* 同 .cm-search：容器穿透后卡片自身可交互 */
   margin: var(--size-2) var(--size-4) 0 auto;
   inline-size: fit-content;
   padding: var(--size-2) calc(var(--size-3) + 32px) var(--size-2) var(--size-3);

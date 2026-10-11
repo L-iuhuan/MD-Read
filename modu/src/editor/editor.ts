@@ -13,19 +13,16 @@ import { LanguageDescription, defaultHighlightStyle, syntaxHighlighting } from "
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { liveSearchHandler } from "./live-search";
 import type { Tab } from "../app/tabs";
 import { firstVisibleLine, nearestBlockLine } from "./position-map";
 
 /** 围栏代码精选语言表（七项，懒加载；无 lang-typescript，ts 复用 lang-javascript） */
 export const CODE_LANGUAGES: LanguageDescription[] = [
-  LanguageDescription.of({ name: "typescript", alias: ["ts"],
-    load: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ typescript: true })) }),
-  LanguageDescription.of({ name: "javascript", alias: ["js"],
-    load: () => import("@codemirror/lang-javascript").then((m) => m.javascript()) }),
-  LanguageDescription.of({ name: "python", alias: ["py"],
-    load: () => import("@codemirror/lang-python").then((m) => m.python()) }),
-  LanguageDescription.of({ name: "json",
-    load: () => import("@codemirror/lang-json").then((m) => m.json()) }),
+  LanguageDescription.of({ name: "typescript", alias: ["ts"], load: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ typescript: true })) }),
+  LanguageDescription.of({ name: "javascript", alias: ["js"], load: () => import("@codemirror/lang-javascript").then((m) => m.javascript()) }),
+  LanguageDescription.of({ name: "python", alias: ["py"], load: () => import("@codemirror/lang-python").then((m) => m.python()) }),
+  LanguageDescription.of({ name: "json", load: () => import("@codemirror/lang-json").then((m) => m.json()) }),
   LanguageDescription.of({ name: "rust", alias: ["rs"],
     load: () => import("@codemirror/lang-rust").then((m) => m.rust()) }),
   LanguageDescription.of({ name: "html",
@@ -81,6 +78,8 @@ const editorTheme = EditorView.theme({
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--text)" },
 });
 
+/** 即时查找（2026-10-01）：输入即搜，150ms 防抖——实现外移 live-search.ts（本文件压 500 棘轮） */
+
 /** 组装全部扩展。crlf 决定 lineSeparator（坑1）；onDocChanged 只接用户改动 */
 function baseExtensions(crlf: boolean, onDocChanged: () => void): Extension[] {
   return [
@@ -89,6 +88,7 @@ function baseExtensions(crlf: boolean, onDocChanged: () => void): Extension[] {
     keymap.of([...defaultKeymap, ...historyKeymap]),
     keymap.of([{ key: "Mod-h", run: openSearchPanel, preventDefault: true }, ...searchKeymap]), // 坑3：自定义绑定须排在 searchKeymap 前
     search({ top: true }), // K1（2026-09-29）：查找/替换面板上提到编辑器顶部，与阅读态 #findbar 同角落
+    liveSearchHandler,
     lineNumbers(),
     highlightActiveLine(),
     EditorView.lineWrapping,

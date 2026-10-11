@@ -48,7 +48,7 @@ export interface TabMenusDeps {
 /** ⋯ 菜单里的「代理项」：文案 + 顶栏原按钮 id（点击 = 点那枚原按钮，逻辑不复制） */
 const PROXY_ITEMS: ReadonlyArray<readonly [label: string, id: string]> = [
   ["最近", "btn-recent"],
-  ["Aa", "btn-settings"],
+  ["设置", "btn-settings"],
   ["◐", "btn-theme"],
   ["PDF", "btn-export"],
 ];

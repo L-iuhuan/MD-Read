@@ -63,7 +63,17 @@
             <div id="recent-menu" class="recent-menu" hidden></div>
           </div>
           <div class="settings-wrap">
-            <button id="btn-settings" type="button" title="字体与外观设置" aria-label="打开字体与外观设置面板">Aa</button>
+            <button id="btn-settings" type="button" title="字体与外观设置" aria-label="打开字体与外观设置面板">
+              <!-- 滑杆图标（2026-10-01 用户反馈：Aa 字样与面板实际内容不符——里面还有
+                   主题/配色/自动保存/默认应用）。三行滑杆 = 「调节类设置」的通用语言，
+                   与窗口三钮同规格的内联 SVG（16×16 / currentColor）。 -->
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
+                   fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+                <path d="M2 3.5h12" /><circle cx="10.5" cy="3.5" r="1.8" fill="currentColor" stroke="none" />
+                <path d="M2 8h12" /><circle cx="5.5" cy="8" r="1.8" fill="currentColor" stroke="none" />
+                <path d="M2 12.5h12" /><circle cx="8" cy="12.5" r="1.8" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
             <!-- 「Aa」设置面板。2026-09-27 重做（用户反馈「一塌糊涂」）：
                   ① 加面板标题 + 分组小标题（原先只有一条细横线，层次看不出来）
                   ② 字体未安装标「· 未装」；2026-09-30（J1）起选项文案改**完整字体名**
@@ -304,7 +314,7 @@
               <p id="empty-first-run" class="empty-foot empty-first-run" hidden>
                 <strong>第一次用？</strong>
                 <span class="empty-first-run-step">① 打开一个 .md 试试</span>
-                <span class="empty-first-run-step">② 点右上 <code>Aa</code> → 「设为 .md 默认应用」</span>
+                <span class="empty-first-run-step">② 点右上 <code>设置</code>（滑杆图标）→ 「设为 .md 默认应用」</span>
                 <span class="empty-first-run-step">③ 在系统「默认应用」页把 .md 指给墨读（Windows 不允许应用代设，这步必须手动一次）</span>
                 <button id="empty-first-run-close" type="button">知道了</button>
               </p>
