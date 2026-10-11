@@ -52,13 +52,65 @@ describe("classifyHref：href 三分类判定", () => {
     expect(classifyHref("c:\\docs\\a.md")).toBe("relative"); // 盘符形态，不是协议
   });
 
-  it("F4：mailto/tel → 交系统默认应用；其余协议 → 不支持", () => {
+  it("F4：mailto/tel → 交系统默认应用；其余协议 → 不支持；file:/// → 本地文件（2026-10-01）", () => {
     expect(classifyHref("mailto:user@host")).toBe("mailto");
     expect(classifyHref("MAILTO:a@b.c")).toBe("mailto"); // scheme 大小写不敏感
     expect(classifyHref("tel:+8613800000000")).toBe("tel");
     expect(classifyHref("TEL:+1234")).toBe("tel");
+    expect(classifyHref("file:///D:/docs/a.md")).toBe("file");
+    expect(classifyHref("FILE:///D:/docs/a%20b.md")).toBe("file");
     expect(classifyHref("ftp://files.example.com/x.zip")).toBe("unsupported");
     expect(classifyHref("javascript:alert(1)")).toBe("unsupported"); // 陌生 scheme 一律不支持
+  });
+});
+
+describe("2026-10-01：file:/// 链接接管与片段剥离", () => {
+  function mount(html: string, handlers?: Partial<RelativeLinkHandlers>): HTMLElement {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    setupExternalLinks(container, handlers as RelativeLinkHandlers);
+    return container;
+  }
+
+  it("file:/// md 链接：preventDefault + 解码路径走 openMd（不经 opener）", () => {
+    const openMd = vi.fn();
+    const notify = vi.fn();
+    const container = mount(
+      '<a href="file:///D:/docs/%E7%9B%AE%E6%A0%87%20%E6%96%87%E6%A1%A3.md">f1</a><a href="file:///E:/x/y.MD">f2</a>',
+      { openMd, notify },
+    );
+    const [f1, f2] = Array.from(container.querySelectorAll("a"));
+    expect(clickOn(f1).defaultPrevented).toBe(true);
+    expect(openMd).toHaveBeenCalledWith("D:/docs/目标 文档.md"); // 解码后交给打开链归一
+    expect(clickOn(f2).defaultPrevented).toBe(true);
+    expect(openMd).toHaveBeenCalledWith("E:/x/y.MD");
+    expect(mocks.openUrl).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("file:/// 非 md：preventDefault + 闪示；file:/// 带片段：片段剥离后再判定", () => {
+    const openMd = vi.fn();
+    const notify = vi.fn();
+    const container = mount(
+      '<a href="file:///D:/docs/report.pdf">pdf</a><a href="file:///D:/docs/note.md#sec">frag</a>',
+      { openMd, notify },
+    );
+    const [pdf, frag] = Array.from(container.querySelectorAll("a"));
+    expect(clickOn(pdf).defaultPrevented).toBe(true);
+    expect(notify).toHaveBeenCalledWith("该链接指向应用外文件，未打开");
+    expect(clickOn(frag).defaultPrevented).toBe(true);
+    expect(openMd).toHaveBeenCalledWith("D:/docs/note.md"); // #sec 不进路径
+  });
+
+  it("相对 md 链接带片段（./b.md#sec）：路径部分判定与解析，片段丢弃", () => {
+    const openMd = vi.fn();
+    const container = mount('<a href="./b.md#section-1">带锚</a>', {
+      docPath: () => "C:\\docs\\a.md",
+      openMd,
+    });
+    expect(clickOn(container.querySelector("a") as Element).defaultPrevented).toBe(true);
+    expect(openMd).toHaveBeenCalledWith("C:\\docs\\b.md");
   });
 });
 

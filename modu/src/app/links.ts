@@ -12,15 +12,18 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { isMarkdownPath } from "./md-ext";
 
 /** 链接分类：外链走系统浏览器；mailto/tel 走系统默认应用（F4）；内锚与相对链接
- *  保持 WebView 默认行为；其余未知协议（ftp: 等）提示不支持 */
-export type HrefKind = "external" | "anchor" | "relative" | "mailto" | "tel" | "unsupported";
+ *  保持 WebView 默认行为；file:/// 本地文件（2026-10-01 全形态链接排查补）走
+ *  注入的 openMd；其余未知协议（ftp: 等）提示不支持 */
+export type HrefKind = "external" | "anchor" | "relative" | "file" | "mailto" | "tel" | "unsupported";
 
 /**
  * 纯函数：href 分类判定。
  * http:// 或 https:// 开头（大小写不敏感）→ 外链；# 开头 → 内锚；
  * mailto:/tel:（大小写不敏感）→ 交 opener（capabilities 的 opener:allow-default-urls
- * 许可清单恰为 http/https/mailto/tel）；其余带 scheme 的 → 不支持（单字母「盘符:」
- * 形态不算 scheme，仍按相对路径处理）；无 scheme → 相对。
+ * 许可清单恰为 http/https/mailto/tel）；file:/// → 本地文件（解析路径走 openMd，
+ * 受信校验在 openPath 链上 fail-closed，越权面与相对链接等同）；其余带 scheme 的 →
+ * 不支持（单字母「盘符:」形态不算 scheme，仍按相对路径处理——但绝对盘符形态在
+ * 渲染层已被 link-dest.ts 重写为 file:///，此处主要兜底）；无 scheme → 相对。
  */
 export function classifyHref(href: string): HrefKind {
   if (/^https?:\/\//i.test(href)) {
@@ -34,6 +37,9 @@ export function classifyHref(href: string): HrefKind {
   }
   if (/^tel:/i.test(href)) {
     return "tel";
+  }
+  if (/^file:\/\/\//i.test(href)) {
+    return "file"; // 2026-10-01：file:/// 绝对链接与 Windows 盘符重写形态的落点
   }
   if (/^[a-z][a-z0-9+.-]+:/i.test(href)) {
     return "unsupported"; // ftp: 等其余协议
@@ -123,6 +129,13 @@ export function setupExternalLinks(
         });
         return;
       }
+      if (kind === "file") {
+        // file:/// 本地文件（2026-10-01）：剥协议与片段 → 解码 → md 走 openMd（受信
+        // 校验 fail-closed，与相对链接同一安全面）；非 md 闪示。绝不放行 WebView 导航。
+        event.preventDefault();
+        openFileHref(href, current);
+        return;
+      }
       if (kind === "unsupported") {
         // 未知协议（ftp: 等，F4）：拦下不导航，状态栏说明
         event.preventDefault();
@@ -131,10 +144,11 @@ export function setupExternalLinks(
       }
       // 相对链接（C3）：默认导航会把整窗带走（404），一律拦截
       event.preventDefault();
-      if (isMarkdownPath(href)) {
+      const pathPart = href.split("#")[0]; // 片段（./b.md#sec）不参与路径判定与解析
+      if (isMarkdownPath(pathPart)) {
         const docPath = current.docPath?.() ?? null;
         if (docPath !== null && current.openMd !== undefined) {
-          current.openMd(resolveRelativeHref(href, docPath));
+          current.openMd(resolveRelativeHref(pathPart, docPath));
         }
         return; // 无基准/无通道（未注入的老调用方）：拦而不开
       }
@@ -142,6 +156,24 @@ export function setupExternalLinks(
     },
     true // 捕获阶段：抢在任何冒泡层处理器之前定夺
   );
+}
+
+/** file:/// href → 本地路径 → openMd/闪示（解码失败按原样，URIError 之外的错照抛） */
+function openFileHref(href: string, current: RelativeLinkHandlers): void {
+  let path = href.replace(/^file:\/\/+/i, "").split("#")[0];
+  try {
+    path = decodeURIComponent(path);
+  } catch (error) {
+    if (!(error instanceof URIError)) {
+      throw error;
+    }
+    // 裸 % 等非法序列：按原样交给打开链
+  }
+  if (isMarkdownPath(path)) {
+    current.openMd?.(path); // 正斜杠形态由 openPath 链的 normalize_path 归一
+    return;
+  }
+  current.notify?.("该链接指向应用外文件，未打开");
 }
 
 /** 事件目标到最近 <a href> 祖先（点击落在链接内嵌元素时向上找） */

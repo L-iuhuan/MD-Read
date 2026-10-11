@@ -17,6 +17,7 @@ import { md } from './markdown'
 import { sanitizeHtml } from './sanitize'
 import { renderMath } from './math'
 import { extractMath, restoreMath } from './mathprotect'
+import { encodeLinkDestSpaces } from './link-dest'
 import { applyPangu } from './pangu'
 import { wrapLongTokens } from './tokbreak'
 
@@ -69,7 +70,10 @@ export function renderDocument(src: string, opts?: RenderOptions): RenderResult 
   const needGuard = src.includes("\\(") || src.includes("\\[");
   const guards = needGuard ? extractMath(src) : null;
   t.extract = Math.round(performance.now() - s); s = performance.now();
-  const rendered = md.render(guards !== null ? guards.text : src);
+  // 链接目标裸空格编码（2026-10-01 用户反馈根因）：裸空格打断 CommonMark 链接解析，
+  // 残文被 linkify 补成 http://xn--….md → 点击跳系统浏览器。此处先编码再渲染。
+  const srcFixed = encodeLinkDestSpaces(guards !== null ? guards.text : src);
+  const rendered = md.render(srcFixed);
   t.mdRender = Math.round(performance.now() - s); s = performance.now();
   const raw = guards !== null ? restoreMath(rendered, guards) : rendered;
   t.restore = Math.round(performance.now() - s); s = performance.now();

@@ -234,6 +234,11 @@ function installAlertRule(engine: MarkdownIt): void {
 }
 export const md: MarkdownIt = new MarkdownIt({
   html: false, // D6 红线：禁止内联 HTML 直通
+  // linkify 开（2026-10-01 全形态链接排查修正）：裸 URL（https://… 与 www.…）自动成链
+  // 是 GFM 习惯、用户预期「网页链接要能打开」；但 **fuzzyLink/fuzzyEmail 关闭**（紧随
+  // 构造之后的 set 调用）——fuzzy 形态会把正文里的 `xxx.md` 当「域名.md」补链成
+  // http://xn--….md（punycode），点击跳浏览器（2026-10-01 用户反馈实害）。
+  // scheme/www 前缀仍自动成链，裸域名（含 .md TLD）不成链——两头都要。
   linkify: true,
   // 用户裁决（2026-09-23，规格级）：**关掉 typographer** —— 不静默改掉有字面含义的文本。
   // 与"禁裸 `$…$`（防 `$1,000` 被当公式）"同源：`--flag`、`1--2`、"key": value 都必须与源码一致；
@@ -248,6 +253,19 @@ export const md: MarkdownIt = new MarkdownIt({
   .use(tasklist)
   .use(cjkFriendly)
   .use((engine) => installAlertRule(engine))
+
+// linkify 的 fuzzy 口子必须在实例上关（markdown-it 不透传 linkify-it 选项）：
+// 关掉后「笔记.md」这类裸域名不成链；https:// 与 www. 前缀不受影响
+md.linkify.set({ fuzzyLink: false, fuzzyEmail: false })
+
+// validateLink 放行 file:///（2026-10-01 全形态链接排查）：markdown-it 默认只认
+// http(s)/ftp/mailto/tel/data:image 等白名单，file: 一律不成链（锚点整体消失，
+// 实测矩阵里 file:/// 与盘符重写形态全丢）。点击侧安全由 links.ts 拦截器 +
+// openPath 受信校验（fail-closed）+ nav-guard 三层兜底，渲染层放行只管「成链」。
+{
+  const defaultValidateLink = md.validateLink;
+  md.validateLink = (url: string): boolean => defaultValidateLink(url) || /^file:\/\//i.test(url);
+}
 
 installFenceRule(md)
 installTableWrapRule(md)
