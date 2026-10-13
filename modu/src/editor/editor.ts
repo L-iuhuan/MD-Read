@@ -18,6 +18,7 @@ import { insertTableSkeleton, markdownCommands, tableNoopFilter, tidyChineseText
 import { livePreview } from "./live-preview";
 import { liveSearchHandler } from "./live-search";
 import { editorPasteHandlers } from "./paste";
+import { formatCompletions } from "./snippets";
 import { mountEditorToolbar } from "./toolbar";
 import type { Tab } from "../app/tabs";
 import { firstVisibleLine, nearestBlockLine } from "./position-map";
@@ -65,6 +66,7 @@ function baseExtensions(crlf: boolean, onDocChanged: () => void, getDocPath: () 
   return [
     crlf ? EditorState.lineSeparator.of("\r\n") : [],
     history(), tableNoopFilter(), // fix-18 通用守卫：滤「无标准 userEvent 的同文替换」空事务（缘起表格包空撤销，包已随 fix-20 移除；undo/userEvent 通道永不拦）
+    formatCompletions(), // fix-24：格式补全——须在 markdownCommands 前（同为 Prec.high 时先注册先裁：Enter 先判菜单接受，见 snippets.ts 头注）
     markdownCommands(), // A1：格式命令键位——必须在 defaultKeymap 前（Ctrl-Enter 任务勾选压过其 Mod-Enter→insertBlankLine）
     keymap.of([{ key: "Shift-Mod-t", run: tidyChineseText }, ...defaultKeymap, ...historyKeymap]), // B1：中文整理（全仓核过无冲突）
     keymap.of([{ key: "Mod-h", run: openSearchPanel, preventDefault: true }, ...searchKeymap]), // 坑3：自定义绑定须排在 searchKeymap 前
