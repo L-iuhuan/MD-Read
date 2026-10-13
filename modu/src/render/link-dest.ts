@@ -9,6 +9,12 @@
  * markdown-it 的 normalizeLink 也会这么编）。**围栏内/行内代码内不动**（protectMath 尸检
  * 教训：源码变换必须上下文感知），`<...>` 包裹形态本就合法不动，无 `](` 快速跳过。
  * 引用式定义 `[a]: url` 的空格问题不在本函数范围（罕见，注释存档）。
+ *
+ * fix-22 缺陷A：目标解析按 CommonMark 链接定义语义支持 `dest "title"` 形态——
+ * 题注从目标里剥离、随片段原样保留（markdown-it 正常渲染出 title 属性）；
+ * 此前整段 `dest "题注"` 被当作一个目标，题注连空格一起被编进 href/src。
+ * 剥离只认 `"…"` / `'…'` 尾部引号题注（题注与目标之间必须隔空白，缺一即视为目标本身）；
+ * `(…)` 括号题注**不认**——与 Windows 实路径「文件夹 (2024)」撞车，误拆会把链接改错。
  */
 
 /** 找 line 中 from 起长度恰为 len 的反引号跑（行内代码闭合跑）；找不到返回 -1 */
@@ -37,8 +43,9 @@ function encodeLine(line: string): string {
       continue;
     }
     if (ch === "]" && line[i + 1] === "(") {
-      out += transformDest(line, i).text;
-      i = transformDest(line, i).next;
+      const t = transformDest(line, i);
+      out += t.text;
+      i = t.next;
       continue;
     }
     out += ch;
@@ -47,50 +54,124 @@ function encodeLine(line: string): string {
   return out;
 }
 
-/** 从 openIdx（指向 `]`）处理一个链接/图片目标；返回改写后的片段与继续扫描位 */
+/** Windows 绝对盘符形态：D:\… 或 D:/…（单字母盘符 + 冒号 + 分隔符） */
+function isWindowsAbsolute(dest: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(dest);
+}
+
+/** s[j] 位置的字面是否被奇数个反斜杠转义 */
+function isEscapedAt(s: string, j: number): boolean {
+  let backslashes = 0;
+  for (let k = j - 1; k >= 0 && s[k] === "\\"; k -= 1) backslashes += 1;
+  return backslashes % 2 === 1;
+}
+
+/** 剥离出的目标与题注（题注含原引号，如 `"题注"`） */
+interface DestTitle {
+  dest: string;
+  title: string;
+}
+
+/**
+ * run（`](` 到配对 `)` 的整段）含空白时，尝试把尾部的引号题注剥出来。
+ * 从串尾往回找**未转义**的同引号开引号（天然保证题注内部无未转义同引号）；
+ * 题注与目标之间必须隔空白，否则该引号属于目标本身（保守不拆）。
+ */
+function splitTrailingTitle(run: string): DestTitle | null {
+  if (!/\s/.test(run)) return null; // 无空白不可能夹题注
+  const trimmed = run.replace(/\s+$/, "");
+  const quote = trimmed[trimmed.length - 1];
+  if (quote !== '"' && quote !== "'") return null;
+  for (let j = trimmed.length - 2; j >= 0; j -= 1) {
+    if (trimmed[j] !== quote || isEscapedAt(trimmed, j)) continue;
+    const rawPrefix = run.slice(0, j);
+    const dest = rawPrefix.replace(/\s+$/, "");
+    // 引号贴着目标（无空白隔开）或目标为空 = 该引号属于目标本身，保守不拆
+    if (dest === "" || !/\s$/.test(rawPrefix)) return null;
+    return { dest, title: trimmed.slice(j) };
+  }
+  return null;
+}
+
+/** line[from] 起（允许前导空白）的引号题注；返回含引号原文与结束位（供 `)` 配对判定） */
+function quotedTitleAfter(line: string, from: number): { text: string; end: number } | null {
+  let i = from;
+  while (line[i] === " " || line[i] === "\t") i += 1;
+  const quote = line[i];
+  if (quote !== '"' && quote !== "'") return null;
+  for (let j = i + 1; j < line.length; j += 1) {
+    if (line[j] === "\\") { j += 1; continue; } // 转义对：整体越过
+    if (line[j] === quote) return { text: line.slice(i, j + 1), end: j + 1 };
+  }
+  return null;
+}
+
+/**
+ * 从 openIdx（指向 `]`）处理一个链接/图片目标；返回改写后的片段与继续扫描位。
+ * next 始终是**原行**坐标（此前重写分支用改写产物长度推进，改写变长时会跳过原文——顺修）。
+ */
 function transformDest(line: string, openIdx: number): { text: string; next: number } {
   let i = openIdx + 2; // 跳过 `](`
-  if (line[i] === "<") {
-    // <...> 包裹形态：本就允许空格；但 Windows 绝对盘符形态（<D:\a b.md>）会被
-    // DOMPurify 当 scheme 摘掉 href（2026-10-01 实测），同样重写为 file:/// 再放行
-    const close = line.indexOf(">", i);
-    if (close === -1) return { text: line.slice(openIdx), next: line.length };
-    const inner = line.slice(i + 1, close);
-    if (isWindowsAbsolute(inner)) {
-      const rewritten = `](<file:///${toFileUrl(inner)}>)`;
-      return { text: rewritten, next: openIdx + rewritten.length };
-    }
-    const after = line[close + 1] === ")" ? close + 2 : close + 1;
-    return { text: line.slice(openIdx, after), next: after };
-  }
+  if (line[i] === "<") return transformAngleDest(line, openIdx, i);
   let depth = 0;
   const start = i;
   while (i < line.length) {
     const c = line[i];
     if (c === "\\") { i += 2; continue; } // 转义对：整体越过
     if (c === "(") { depth += 1; i += 1; continue; }
-    if (c === ")") {
-      if (depth > 0) { depth -= 1; i += 1; continue; }
-      const dest = line.slice(start, i);
-      if (isWindowsAbsolute(dest)) {
-        // D:\a b.md / D:/a b.md（无协议）→ file:///（空格同步编码），
-        // 否则 DOMPurify 按「d: 陌生 scheme」摘 href → 死链
-        const rewritten = `](file:///${toFileUrl(dest)})`;
-        return { text: rewritten, next: openIdx + rewritten.length };
-      }
-      if (!dest.includes(" ")) return { text: line.slice(openIdx, i + 1), next: i + 1 };
-      const encoded = dest.replace(/ /g, "%20");
-      return { text: `](${encoded})`, next: i + 1 };
-    }
+    if (c === ")" && depth === 0) break;
+    if (c === ")") { depth -= 1; i += 1; continue; }
     i += 1;
   }
-  // 行内没有闭合括号：非完整链接形态，原样放行
-  return { text: line.slice(openIdx), next: line.length };
+  if (i >= line.length) {
+    // 行内没有闭合括号：非完整链接形态，原样放行
+    return { text: line.slice(openIdx), next: line.length };
+  }
+  const run = line.slice(start, i);
+  const split = splitTrailingTitle(run);
+  if (split !== null) {
+    const destOut = isWindowsAbsolute(split.dest)
+      ? `<file:///${toFileUrl(split.dest)}>`
+      : split.dest.replace(/ /g, "%20");
+    return { text: `](${destOut} ${split.title})`, next: i + 1 };
+  }
+  if (isWindowsAbsolute(run)) {
+    // D:\a b.md / D:/a b.md（无协议）→ file:///（空格同步编码），
+    // 否则 DOMPurify 按「d: 陌生 scheme」摘 href → 死链
+    return { text: `](file:///${toFileUrl(run)})`, next: i + 1 };
+  }
+  if (!run.includes(" ")) return { text: line.slice(openIdx, i + 1), next: i + 1 };
+  return { text: `](${run.replace(/ /g, "%20")})`, next: i + 1 };
 }
 
-/** Windows 绝对盘符形态：D:\… 或 D:/…（单字母盘符 + 冒号 + 分隔符） */
-function isWindowsAbsolute(dest: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(dest);
+/**
+ * `<...>` 包裹形态：本就允许空格；非盘符路径原样放行（题注字符随后续扫描自然流过）。
+ * 盘符路径重写为 file:///（否则被 DOMPurify 当 scheme 摘掉 href），
+ * `>` 之后直接 `)` 或 `ws+题注+ws+)` 才算完整链接并整体重写（fix-22 缺陷A：题注保留）；
+ * 其余残缺形态只放行 `](<…>`，与既有口径一致。
+ */
+function transformAngleDest(line: string, openIdx: number, open: number): { text: string; next: number } {
+  const close = line.indexOf(">", open);
+  if (close === -1) return { text: line.slice(openIdx), next: line.length };
+  const inner = line.slice(open + 1, close);
+  if (!isWindowsAbsolute(inner)) {
+    const after = line[close + 1] === ")" ? close + 2 : close + 1;
+    return { text: line.slice(openIdx, after), next: after };
+  }
+  let end = -1;
+  let titlePart = "";
+  if (line[close + 1] === ")") {
+    end = close + 2;
+  } else {
+    const t = quotedTitleAfter(line, close + 1);
+    if (t !== null) {
+      let e = t.end;
+      while (line[e] === " " || line[e] === "\t") e += 1;
+      if (line[e] === ")") { end = e + 1; titlePart = ` ${t.text}`; }
+    }
+  }
+  if (end === -1) return { text: line.slice(openIdx, close + 1), next: close + 1 };
+  return { text: `](<file:///${toFileUrl(inner)}>${titlePart})`, next: end };
 }
 
 /** 盘符路径 → file:/// URL 片段：反斜杠转正斜杠 + 空格编码（其余交给 normalizeLink） */

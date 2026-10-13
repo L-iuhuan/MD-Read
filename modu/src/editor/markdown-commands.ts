@@ -241,9 +241,11 @@ export function toggleTaskItem(view: EditorView): boolean {
 
 /* ---- 引用（行级）---- */
 
-const QUOTE_PREFIX = /^> /;
+/** 引用前缀（P2，fix-23）：`> ` 与无空格形态 `>x` 都算已有引用（CommonMark 里
+ *  `>x` 同样是引用）——判定漏掉它会把整块判成「未引用」，加前缀时叠成 `> >x`。 */
+const QUOTE_PREFIX = /^> ?/;
 
-/** 引用 toggle（C0）：整块统一——覆盖行**全部**已是 `> ` 打头则一并清除，否则一律
+/** 引用 toggle（C0）：整块统一——覆盖行**全部**已是 `> `/`>` 打头则一并清除，否则一律
  *  补齐到有（已有行不动，防叠成 `> > ` 二级）；嵌套引用不展开，只做一级 toggle。
  *  插入仅 `> ` 行内前缀、无换行（头注 CRLF 契约）；无默认键位，面在工具栏。 */
 export const toggleBlockquote: Command = (view: EditorView): boolean => {
@@ -252,13 +254,13 @@ export const toggleBlockquote: Command = (view: EditorView): boolean => {
   const changes: { from: number; to?: number; insert?: string }[] = [];
   const ops: LineOp[] = [];
   for (const line of lines) {
-    const has = QUOTE_PREFIX.test(line.text);
+    const prefix = QUOTE_PREFIX.exec(line.text)?.[0] ?? "";
     if (removing) {
-      if (has) {
-        changes.push({ from: line.from, to: line.from + 2, insert: "" });
-        ops.push({ at: line.from, delLen: 2, insLen: 0 });
+      if (prefix !== "") {
+        changes.push({ from: line.from, to: line.from + prefix.length, insert: "" });
+        ops.push({ at: line.from, delLen: prefix.length, insLen: 0 });
       }
-    } else if (!has) {
+    } else if (prefix === "") {
       changes.push({ from: line.from, insert: "> " });
       ops.push({ at: line.from, delLen: 0, insLen: 2 });
     }
@@ -279,9 +281,13 @@ export const moveBlockDown: Command = moveLineDown;
 /* ---- 空标记行退出（编辑回归修复 · 2026-10-13）---- */
 
 /** 纯标记行：行首到行尾仅一枚块级标记（>、-、*、+、数字.、数字)）或其任务形态
- *  （标记 + [ ]/[x]/[X]，大小写归一），后随可选空白、再无他物。有内容行、嵌套
- *  标记行（如「> > 」）、表格/公式行在文本上即不匹配；代码块内的同形行由树守卫排除。 */
-const EMPTY_MARKUP_LINE = /^(?:>|[-*+]|\d+[.)])(?: \[(?: |x|X)\])?[ \t]*$/;
+ *  （标记 + [ ]/[x]/[X]，大小写归一），后随可选空白、再无他物。有内容行、表格/
+ *  公式行在文本上即不匹配；代码块内的同形行由树守卫排除。
+ *  fix-23 P2 扩两处口径（与 live-preview 纯标记行豁免对齐）：
+ *  · 嵌套空引用 `> > `：多级 `>` 栈也算纯标记（清整行为空段落）；
+ *  · 任务形态补有序 `1. [ ]`；空白认全角（`－　` 这类全角标记行同享退出语义）。
+ *  仍不匹配：`> - `（引用套列表，非纯引用栈）、任何带内容的行。 */
+const EMPTY_MARKUP_LINE = /^(?:(?:\s*>)+|[-*+]|－|\d+[.)])(?:[ \u3000]+\[(?: |x|X)\])?[ \t\u3000]*$/;
 
 /** 树守卫名单：这些节点里的行是内容不是标记（与 live-preview.ts 整块跳过名单同源） */
 const NON_MARKUP_NODES = new Set(["FencedCode", "CodeBlock", "HTMLBlock", "Table"]);
@@ -381,6 +387,8 @@ export { tidyChineseText } from "./text-cleanup";
 /** 3×3 表骨架（3 列：表头行 + 分隔行 + 两行空数据行）；行中插入时前后自动让行
  *  （防表格贴行被吞）。CRLF（D7）：换行取 state.lineBreak；光标长度取 toText 的
  *  Text 长度——\r\n 在文档里只计 1 个行位，拿字符串 length 会越界。
+ *  非空选区（fix-23 P1-3）：以 from 为插入点，选区文本原样保留（表格插在其前、
+ *  不再吞选区）；因选区文本紧跟表格之后，trail 必让行。
  *  撤销粒度契约（2026-10-13 审计定契）：让行 + 骨架 + 光标平移必须**一个
  *  view.dispatch 单事务**（一个 changes+selection 的 spec，userEvent 标成 input）
  *  ——拆成多次 dispatch 会立两个历史事件，一次 Ctrl+Z 撤不干净（残留让行空行/
@@ -394,10 +402,13 @@ export function insertTableSkeleton(view: EditorView): boolean {
   const head = state.doc.lineAt(from);
   const tail = state.doc.lineAt(to);
   const lead = head.text.slice(0, from - head.from).trim() === "" ? "" : br;
-  const trail = tail.text.slice(to - tail.from).trim() === "" ? "" : br;
+  // trail：光标后（空选区）或选区尾之后（非空选区）还有内容 ⇒ 让行；非空选区
+  // 本身就是紧跟表格的内容 ⇒ 必让行（否则末行数据格与保留文本挤进同一行）。
+  const after = from === to ? tail.text.slice(to - tail.from).trim() : "选区";
+  const trail = after === "" ? "" : br;
   const text = state.toText(lead + rows.join(br) + trail);
   view.dispatch({
-    changes: { from, to, insert: text },
+    changes: { from, insert: text }, // 不带 to：非空选区不删除（P1-3）；空选区等价原行为
     selection: EditorSelection.cursor(from + text.length),
     userEvent: "input",
   });

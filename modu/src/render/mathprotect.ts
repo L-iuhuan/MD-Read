@@ -28,6 +28,12 @@
  *   HTML 实体转义，占位符与还原产物都不给 DOMPurify 开口子。
  * - 代码围栏内的 `$$`/`\(` 也会被摘出再原样还原（文本逐字不变，且 auto-render
  *   的 ignoredTags 含 pre/code，不会在代码里误渲公式）。
+ * - fix-22 缺陷B：占位符后**补齐等量换行**（片段占 N 行就补 N 个 `\n`），喂给
+ *   md.render 的文本行数与源文一致 ⇒ 后续块的 token.map / data-line / outline.line
+ *   不再系统性偏小（多行 `$$` 块曾使之后所有行号偏小 N）。restoreMath 匹配
+ *   「占位符+尾随换行串」并按补偿数回吐差额，故「restoreMath(text) === 原文」
+ *   的逐字节往返（mathprotect-dollar 锚）继续成立；渲染 HTML 里补偿换行已被
+ *   块级解析消费（或恰好多吞时按差额保留，如围栏内容的结构换行）。
  */
 
 /** 占位符固定前缀（渲染输出零残留的负向断言锚点） */
@@ -40,11 +46,13 @@ const MAX_SPANS = 10 ** ID_WIDTH
 
 /** extractMath / restoreMath 的成对产物 */
 export interface MathGuards {
-  /** 替换掉数学片段后的源文（喂给 md.render） */
+  /** 替换掉数学片段后的源文（喂给 md.render；占位符后带等量补偿换行，行数与原文一致） */
   readonly text: string
   /** 占位符 → 原始数学片段（含定界符原文） */
   readonly spans: Map<string, string>
-  /** 还原用定长全局正则（源为 前缀+盐+定长序号，纯字母数字无转义歧义） */
+  /** 占位符 → 替换时补偿的换行数（restoreMath 据此回吐差额；缺项按 0） */
+  readonly newlines: ReadonlyMap<string, number>
+  /** 还原用全局正则（捕获组=占位符本体，其后吞可选换行串；源为 前缀+盐+定长序号，纯字母数字无转义歧义） */
   readonly pattern: RegExp
 }
 
@@ -103,14 +111,23 @@ function openMarks(src: string): OpenMark[] {
   return marks
 }
 
+/** 串内换行计数（fix-22 缺陷B：决定占位符要补偿的换行数） */
+function countNewlines(s: string): number {
+  let n = 0;
+  for (let i = s.indexOf('\n'); i !== -1; i = s.indexOf('\n', i + 1)) n += 1;
+  return n;
+}
+
 /**
  * render 前调用：摘出全部 `$$…$$` / `\(...\)` / `\[...\]` 换成占位符。
  * 未闭合的定界符不保护（保持 md 原有行为，不吞正文）；
  * 闭定界符从开定界符**之后**开始找（`$$` 时要跳过开头那两个字符，否则自配对成空片段）。
+ * 占位符后补齐片段内的等量换行（fix-22 缺陷B：md 渲染文本行数与源文一致，data-line 不漂移）。
  */
 export function extractMath(src: string): MathGuards {
   const base = makeBase(src)
   const spans = new Map<string, string>()
+  const nlMap = new Map<string, number>()
   // P1-5：片段先收进数组、最后 join 一次（原 `text += …` 逐段累加会反复在长串上拼接）。
   const parts: string[] = []
   const marks = openMarks(src)
@@ -122,9 +139,12 @@ export function extractMath(src: string): MathGuards {
     const closeAt = src.indexOf(mark.close, mark.at + mark.close.length)
     if (closeAt === -1) break // 与原实现一致：最早的开定界符未闭合即停止保护
     const end = closeAt + mark.close.length
+    const span = src.slice(mark.at, end)
     const placeholder = base + String(id).padStart(ID_WIDTH, '0')
-    spans.set(placeholder, src.slice(mark.at, end))
-    parts.push(src.slice(cursor, mark.at), placeholder)
+    const compensated = countNewlines(span)
+    spans.set(placeholder, span)
+    nlMap.set(placeholder, compensated)
+    parts.push(src.slice(cursor, mark.at), placeholder + '\n'.repeat(compensated))
     cursor = end
     id += 1
   }
@@ -132,7 +152,8 @@ export function extractMath(src: string): MathGuards {
   return {
     text: parts.join(''),
     spans,
-    pattern: new RegExp(`${base}\\d{${ID_WIDTH}}`, 'g'),
+    newlines: nlMap,
+    pattern: new RegExp(`(${base}\\d{${ID_WIDTH}})\\n*`, 'g'),
   }
 }
 
@@ -142,12 +163,17 @@ function escapeForHtml(text: string): string {
   return text.replace(/[&<>]/g, (ch) => entities[ch] ?? ch)
 }
 
-/** render 之后、sanitize 之前调用：把占位符还原为字面 `\(…\)` / `\[…\]` 文本 */
+/** render 之后、sanitize 之前调用：把占位符还原为字面 `\(…\)` / `\[…\]` 文本。
+ *  正则连占位符后的换行串一起吞：换行串 = 渲染 HTML 里残存的补偿换行 + 原文换行
+ *  （围栏内容的结构换行），按「吞到的 − 补偿的」差额回吐 ⇒ 往返逐字节一致，
+ *  且补偿换行不会作为多余空行落进还原产物。 */
 export function restoreMath(html: string, guards: MathGuards): string {
-  if (guards.spans.size === 0) return html
-  return html.replace(guards.pattern, (match) => {
-    const original = guards.spans.get(match)
-    if (original === undefined) return match // 防御分支：前缀已校验不存在于原文，理论不可达
-    return escapeForHtml(original)
-  })
+  if (guards.spans.size === 0) return html;
+  return html.replace(guards.pattern, (match, placeholder: string) => {
+    const original = guards.spans.get(placeholder);
+    if (original === undefined) return match; // 防御分支：前缀已校验不存在于原文，理论不可达
+    const compensated = guards.newlines.get(placeholder) ?? 0;
+    const trailing = match.length - placeholder.length;
+    return escapeForHtml(original) + '\n'.repeat(Math.max(0, trailing - compensated));
+  });
 }

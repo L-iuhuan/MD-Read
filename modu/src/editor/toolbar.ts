@@ -146,7 +146,9 @@ function buildCommandButtons(
     prevGroup = item.group;
     const btn = commandButton(item, () => {
       const view = getView();
-      if (view !== null) {
+      // P1-4（fix-23）：IME 组词期（view.composing）no-op——不发命令。
+      // 组词中点工具栏钮若照发，会在拼音串上直接套标记，旁路 IME 确认流程。
+      if (view !== null && !view.composing) {
         run(view); // 命令内部自 dispatch——这里绝不碰 view.dispatch
       }
     });

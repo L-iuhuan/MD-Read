@@ -93,3 +93,32 @@ describe("链接目标裸空格编码", () => {
     expect(ms, `两段 500KB 处理耗时应远小于 1s（实测 ${Math.round(ms)}ms）`).toBeLessThan(1000);
   });
 });
+
+describe("fix-22 缺陷A：题注（dest \"title\"）按 CommonMark 链接定义语义剥离", () => {
+  it("无空格目标+题注：题注剥离，不再连空格编进目标", () => {
+    expect(encodeLinkDestSpaces('[x](https://a.com "题注")')).toBe('[x](https://a.com "题注")');
+  });
+
+  it("空格路径+题注：路径编码 %20，题注原样保留", () => {
+    expect(encodeLinkDestSpaces('![图](./a b.png "题注")')).toBe('![图](./a%20b.png "题注")');
+  });
+
+  it("Windows 盘符路径+题注：file:/// 重写且题注保留（尖括号两式）", () => {
+    expect(encodeLinkDestSpaces('[x](D:\\a b.md "题注")')).toBe('[x](<file:///D:/a%20b.md> "题注")');
+    expect(encodeLinkDestSpaces('[x](<D:\\a b.md> "题注")')).toBe('[x](<file:///D:/a%20b.md> "题注")');
+  });
+
+  it("单引号题注同剥离；括号题注不认（与实路径「文件夹 (2024)」撞车）", () => {
+    expect(encodeLinkDestSpaces("[x](a.md '题注')")).toBe("[x](a.md '题注')");
+    expect(encodeLinkDestSpaces("[x](D:\\docs (2024))")).toBe("[x](file:///D:/docs%20(2024))");
+  });
+
+  it("重写后按原行坐标推进：盘符链接后的正文不再被吞（顺修的潜在缺陷）", () => {
+    expect(encodeLinkDestSpaces("[x](D:\\a.md)尾巴")).toBe("[x](file:///D:/a.md)尾巴");
+  });
+
+  it("无题注的既有形态零回归：裸空格路径整体编码、空目标直通", () => {
+    expect(encodeLinkDestSpaces("[x](./目标 文档.md)")).toBe("[x](./目标%20文档.md)");
+    expect(encodeLinkDestSpaces("[x]()")).toBe("[x]()");
+  });
+});

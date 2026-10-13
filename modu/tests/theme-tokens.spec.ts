@@ -186,13 +186,15 @@ describe("D-02 字体栈（三层结构与死候选清理）", () => {
     expect(stack).toContain("SimSun");
   });
 
-  it("--font-mono 首选 Maple Mono NF / Maple Mono，含 ui-monospace 与 monospace", () => {
+  it("--font-mono 首选本机高概率族（Consolas/Cascadia），Maple 退后、中文回落阅读栈（des-8）", () => {
     const stack = stackOf("--font-mono");
-    expect(headOf(stack)).toBe("Maple Mono NF");
-    expect(stack).toContain("Maple Mono");
-    expect(stack).toContain("ui-monospace");
+    expect(headOf(stack)).toBe("Consolas"); // Windows 必装档打头（原 Maple 首选在未装机上乱回落）
     expect(stack).toContain("Cascadia Mono");
-    expect(stack).toContain("Consolas");
+    expect(stack).toContain("ui-monospace");
+    expect(stack).toContain("Maple Mono NF"); // 退后不删：装了 Maple 的机器仍命中
+    expect(stack.indexOf("Cascadia Mono")).toBeLessThan(stack.indexOf("Maple Mono"));
+    expect(stack).toContain("var(--font-sans)"); // 中文回落交给阅读栈
+    expect(stack).not.toContain("Microsoft YaHei UI"); // 旧硬编码等宽兜底已撤
     expect(stack.endsWith("monospace")).toBe(true);
   });
 

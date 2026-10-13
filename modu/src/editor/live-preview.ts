@@ -141,16 +141,45 @@ function expandedRanges(
   return out;
 }
 
-/** 剥掉行首引用标记后是否以 $$ 开头（display math 段守卫；项目禁裸 $，$$ 起段必为公式） */
+/** display math 段守卫（fix-23 P2）：剥掉行首「引用栈 / 缩进 / 列表标记」后
+ *  是否以 $$ 开头（项目禁裸 $，$$ 起段必为公式）——缩进与列表内的 `$$…$$` 段
+ *  与列首形态同守卫（原来只认列首与引用内）。⚠ 手写单趟扫描、不用 `(?:\s*…)*`
+ *  型正则：空白归两段共用会指数回溯（编辑热路径，「- - - - …」行能冻死渲染）。
+ *  列表标记后必须跟空白（防把 `*b*` 的 `*` 当标记）。 */
 function startsDisplayMath(lineText: string): boolean {
-  let s = lineText;
-  while (s.startsWith(">")) {
-    s = s.slice(1);
+  const s = lineText;
+  const len = s.length;
+  const isSpace = (c: string): boolean => c === " " || c === "\t" || c === "\u3000";
+  let i = 0;
+  for (;;) {
+    while (i < len && isSpace(s[i])) {
+      i++;
+    }
+    if (i >= len) {
+      return false;
+    }
+    if (s[i] === ">") {
+      i++;
+      continue; // 引用栈：单枚 > 剥完回吃空白（> > 多级由此支持）
+    }
+    let marker = 0; // 列表标记长度：-/*/+ 一位，或 数字./)
+    if (s[i] === "-" || s[i] === "+" || s[i] === "*") {
+      marker = 1;
+    } else {
+      let d = i;
+      while (d < len && s[d] >= "0" && s[d] <= "9") {
+        d++;
+      }
+      if (d > i && d < len && (s[d] === "." || s[d] === ")")) {
+        marker = d + 1 - i;
+      }
+    }
+    if (marker > 0 && i + marker < len && isSpace(s[i + marker])) {
+      i += marker + 1;
+      continue;
+    }
+    return s.startsWith("$$", i);
   }
-  if (s.startsWith(" ")) {
-    s = s.slice(1);
-  }
-  return s.startsWith("$$");
 }
 
 /** 整条引用行剥去 > 前缀与空白后无内容（空续行，如「> 」「> > 」）：QuoteMark

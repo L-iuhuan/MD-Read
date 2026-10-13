@@ -609,16 +609,16 @@ describe("exitEmptyMarkupLine：空标记行 Enter 退出（编辑回归修复�
     expect(v.state.doc.lines).toBe(3);
   });
 
-  it("非匹配上下文放行：嵌套「> > 」、有选区、代码块内「- 」零干扰", () => {
-    const v1 = makeView("> > ");
-    select(v1, 4); // 嵌套空引用行行尾
+  it("非匹配上下文放行：有选区、代码块内「- 」零干扰；「> - 」（引用套列表）不匹配", () => {
+    const v1 = makeView("> ");
+    select(v1, 2, 0); // 有选区：Enter 走替换语义，本命令不接管
     expect(exitEmptyMarkupLine(v1)).toBe(false);
-    expect(v1.state.sliceDoc()).toBe("> > ");
+    expect(v1.state.sliceDoc()).toBe("> ");
 
-    const v2 = makeView("> ");
-    select(v2, 2, 0); // 有选区：Enter 走替换语义，本命令不接管
+    const v2 = makeView("> - "); // 引用套空列表：非纯引用栈，不匹配（P2-8 口径）
+    select(v2, 4);
     expect(exitEmptyMarkupLine(v2)).toBe(false);
-    expect(v2.state.sliceDoc()).toBe("> ");
+    expect(v2.state.sliceDoc()).toBe("> - ");
 
     const v3 = mirrorView("```\n- \n```");
     select(v3, 6); // 代码块第 2 行（「- 」）行尾
@@ -626,5 +626,83 @@ describe("exitEmptyMarkupLine：空标记行 Enter 退出（编辑回归修复�
     key(v3, "Enter"); // 放行后是普通断行（不是清标记）
     expect(v3.state.sliceDoc()).toBe("```\n- \n\n```");
     expect(v3.state.doc.lines).toBe(4);
+  });
+
+  it("P2-8：嵌套空引用「> > 」「> > > 」Enter 退出（清整行为空段落，与 LP 纯标记行口径对齐）", () => {
+    for (const mark of ["> > ", "> > > ", ">\u3000> "]) {
+      const v = makeView(`> 引用\n${mark}`);
+      select(v, 5 + mark.length); // 第 2 行行尾（第 2 行起于 5）
+      expect(exitEmptyMarkupLine(v)).toBe(true);
+      expect(v.state.sliceDoc()).toBe("> 引用\n");
+      expect(v.state.selection.main.head).toBe(5); // 清空后的第 2 行行首
+      v.destroy();
+      view = null;
+    }
+  });
+
+  it("P2-7：空标记补形态——有序任务 `1. [ ]` 与全角 `－　` 同享退出语义", () => {
+    for (const mark of ["1. [ ] ", "1. [x]", "2) [X] ", "－　", "－", "－ "]) {
+      const v = makeView(`甲\n${mark}`);
+      select(v, 2 + mark.length);
+      expect(exitEmptyMarkupLine(v)).toBe(true);
+      expect(v.state.sliceDoc()).toBe("甲\n");
+      v.destroy();
+      view = null;
+    }
+  });
+});
+
+describe("fix-23 P1-3：插表非空选区不再吞选区（以 from 为插入点，文本保留）", () => {
+  it("行中选一段文字插表：表格插在 from 处，前后文与选区文本全保留", () => {
+    const v = makeView("ABCDEF");
+    select(v, 6, 3); // 选区 [3,6)＝「DEF」
+    insertTableSkeleton(v);
+    const doc = v.state.sliceDoc();
+    expect(doc).toContain("| 表头1 | 表头2 | 表头3 |");
+    expect(doc).toContain("DEF"); // 选区文本保留（不再被表格替换吞掉）
+    expect(doc).toContain("ABC"); // from 之前的文本保留
+    expect(doc.startsWith("ABC\n| 表头1")).toBe(true); // 前文非空 ⇒ 让行
+    expect(doc.endsWith("\nDEF")).toBe(true); // 选区文本紧跟其后 ⇒ 末行让行，不与数据行挤同行
+    expect(v.state.selection.main.from).toBe(doc.indexOf("\nDEF") + 1); // 光标落在表格末尾（选区文本之前）
+  });
+
+  it("跨行选区插表：两行内容都保留，表格落在选区首行 from 处", () => {
+    const v = makeView("一行\n二行");
+    select(v, 5, 0); // 全选两行（文档全长 5）
+    insertTableSkeleton(v);
+    const doc = v.state.sliceDoc();
+    expect(doc).toContain("| --- | --- | --- |");
+    expect(doc).toContain("一行");
+    expect(doc).toContain("二行");
+  });
+
+  it("空选区行为不变：光标处插表（既有锚回归确认）", () => {
+    const v = makeView("前文");
+    select(v, 2); // 行尾空选区
+    insertTableSkeleton(v);
+    expect(v.state.sliceDoc().startsWith("前文\n| 表头1")).toBe(true);
+  });
+});
+
+describe("fix-23 P2：toggleBlockquote 认无空格形态「>x」（防叠「> >x」）", () => {
+  it("「>x」全选再按：识别为已有引用，整块清除为「x」", () => {
+    const v = makeView(">x");
+    select(v, 2, 0);
+    toggleBlockquote(v);
+    expect(v.state.sliceDoc()).toBe("x");
+  });
+
+  it("混合「>x」与裸行：统一补齐到有，已有行不叠级", () => {
+    const v = makeView(">甲\n乙");
+    select(v, 4, 0); // 覆盖两行
+    toggleBlockquote(v);
+    expect(v.state.sliceDoc()).toBe(">甲\n> 乙"); // 「>甲」不动（没有叠成「> >甲」）
+  });
+
+  it("裸「>」行同样可清除（前缀按实际长度删）", () => {
+    const v = makeView("> >x");
+    select(v, 4, 0);
+    toggleBlockquote(v);
+    expect(v.state.sliceDoc()).toBe(">x"); // 只删一级（一级 toggle 语义，嵌套不展开）
   });
 });

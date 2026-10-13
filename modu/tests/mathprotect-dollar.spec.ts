@@ -110,3 +110,33 @@ describe("P1-1 · 金额串红线（裸 $ 永不参与匹配）", () => {
     }
   });
 });
+
+describe("fix-22 缺陷B：占位符保行数（data-line/outline 不漂移）", () => {
+  it("多行 $$ 块：占位文本行数与原文一致，往返逐字节无损", () => {
+    const src = "前\n\n$$\na\nb\n$$\n\n后";
+    const guards = extractMath(src);
+    expect(guards.text.split("\n").length).toBe(src.split("\n").length);
+    expect(restoreMath(guards.text, guards)).toBe(src);
+  });
+
+  it("单行片段零补偿：占位文本与原文逐字节一致", () => {
+    const src = "前 $$x$$ 后 \\( y \\) 再 \\[ z \\]";
+    const guards = extractMath(src);
+    expect(guards.newlines.get([...guards.spans.keys()][0]!)).toBe(0);
+    expect(restoreMath(guards.text, guards)).toBe(src);
+  });
+
+  it("围栏内多行 $$：行数一致且往返无损（补偿换行不落进还原产物）", () => {
+    const src = "```text\n$$\nnot math\n$$\ncode\n```\n";
+    const guards = extractMath(src);
+    expect(guards.text.split("\n").length).toBe(src.split("\n").length);
+    expect(restoreMath(guards.text, guards)).toBe(src);
+  });
+
+  it("多片段累计补偿：每个多行块各自保行数", () => {
+    const src = "$$\na\n$$\n\n$$\nb\nc\n$$\n\n# 标题";
+    const guards = extractMath(src);
+    expect(guards.text.split("\n").length).toBe(src.split("\n").length);
+    expect(restoreMath(guards.text, guards)).toBe(src);
+  });
+});

@@ -44,9 +44,9 @@ function recorder(keys: readonly string[]): Recorder {
   return { cmds, calls };
 }
 
-/** 命令参数只被透传、不被读属性 ⇒ 空壳转换即可（不引 CM 真实现） */
-function fakeView(): EditorView {
-  return {} as EditorView;
+/** 命令参数只被透传（外加读 composing 标志，P1-4），空壳转换即可（不引 CM 真实现） */
+function fakeView(composing = false): EditorView {
+  return { composing } as unknown as EditorView;
 }
 
 let container: HTMLElement;
@@ -127,6 +127,23 @@ describe("命令分发与禁用态", () => {
     const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
     button("toggleBold").dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("P1-4：view.composing（IME 组词期）点击命令钮 → no-op，不发命令", () => {
+    const { cmds, calls } = recorder(ALL_KEYS);
+    const composingView = fakeView(true); // jsdom 置 composing 标志（真实 CM 为组词态）
+    handle = mountEditorToolbar(container, cmds, () => composingView);
+    for (const key of ALL_KEYS) {
+      button(key).click();
+    }
+    expect(Object.values(calls).flat()).toHaveLength(0); // 一个命令都不发
+    // 组词结束后恢复：composing=false 的 view 照常发
+    const idleView = fakeView(false);
+    handle.unmount();
+    handle = mountEditorToolbar(container, cmds, () => idleView);
+    button("toggleBold").click();
+    expect(calls.toggleBold).toHaveLength(1);
+    expect(calls.toggleBold?.[0]).toBe(idleView);
   });
 
   it("getView()=null ⇒ 命令钮全 disabled、点不动；恢复后 focusin 重新同步", () => {

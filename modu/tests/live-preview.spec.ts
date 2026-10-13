@@ -329,3 +329,34 @@ describe("Live Preview · 纯标记行豁免（QuoteMark 隐藏退场，编辑�
     expect(hiddenAt(decos, L(2).from, L(2).from + 2)).toBe(true); // 「> -」的前缀照常隐藏
   });
 });
+
+describe("Live Preview · display math 守卫扩口径（fix-23 P2：缩进/列表内 $$ 段零装饰）", () => {
+  /** 列首 / 缩进 / 列表内 三形态：段内都带 *斜体*——无守卫会误上装饰，
+   *  有守卫则整段零装饰（与 SAMPLE 行18-20 的列首 $$ 段同口径）。 */
+  const MATH_FORMS = [
+    { name: "列首（既有口径回归）", doc: "$$\na *b* c\n$$" },
+    { name: "缩进两格", doc: "  $$\n  a *b* c\n  $$" },
+    { name: "列表项内", doc: "- $$\n  a *b* c\n  $$" },
+    { name: "有序列表项内", doc: "1. $$\n   a *b* c\n   $$" },
+  ];
+
+  it.each(MATH_FORMS)("「$name」的 $$ 段：整段零装饰", ({ doc }) => {
+    const view = makeView(doc + "\n\n正常段 **粗**");
+    const L = (n: number) => view.state.doc.line(n);
+    view.dispatch({ selection: { anchor: 0 } }); // 光标放 $$ 首行（豁免它无妨：*b* 行才是真考）
+    const decos = decosOf(view);
+    for (let n = 1; n < view.state.doc.lines; n++) {
+      expect(anyInLine(decos, L(n))).toBe(false); // $$ 段各行（含 *b* 行）零装饰
+    }
+    expect(clsInLine(decos, L(view.state.doc.lines), "cm-lp-strong")).toBe(true); // 前置：装饰器活着
+    expect(view.state.sliceDoc()).toBe(doc + "\n\n正常段 **粗**"); // 源码保真
+  });
+
+  it("负对照：金额行与普通斜体段照常装饰（守卫不误伤）", () => {
+    const view = makeView("金额 $1,000 与 $2,000。\n\n正常 *斜体*");
+    const L = (n: number) => view.state.doc.line(n);
+    view.dispatch({ selection: { anchor: 0 } }); // 光标行1，行3 非光标
+    const decos = decosOf(view);
+    expect(clsInLine(decos, L(3), "cm-lp-em")).toBe(true);
+  });
+});

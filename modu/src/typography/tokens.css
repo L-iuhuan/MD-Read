@@ -118,8 +118,15 @@
                "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
                system-ui, sans-serif;
   --font-serif: "Noto Serif SC", Georgia, "Times New Roman", 宋体, SimSun, serif;
-  --font-mono: "Maple Mono NF", "Maple Mono", ui-monospace, "Cascadia Mono", Consolas,
-               "Microsoft YaHei UI", monospace;
+  /* des-8（2026-10-13）--font-mono 默认链治理：等宽**全站默认值**改为「Windows 高概率存在」
+     优先——Consolas 随 Windows 必装；Cascadia Mono 随 Windows Terminal/VS，本机注册表探测
+     （Consolas/Cascadia Mono/FiraCode 在、Maple 全系不在）佐证；Maple 退后保留（装了的用户
+     仍命中；面板默认档 mono-maple-nf 走自己的 --font-pick-* 链，不受影响）。中文回落**交给
+     阅读栈**（var(--font-sans)），撤掉硬编码的「Microsoft YaHei UI」等宽兜底——编辑态正文
+     已改走 --font-sans（editor.ts editorTheme）。⚠ 面板的 --font-pick-* 预设链是用户显式选择，
+     一字不动（选中即覆写 #doc 子树上的 --font-mono，显式优先）。 */
+  --font-mono: Consolas, "Cascadia Mono", ui-monospace, "Maple Mono NF", "Maple Mono",
+               var(--font-sans), monospace;
 
   /* ==========================================================================
      D-02 字体面板 · 推荐列表（语义三组）
