@@ -153,6 +153,11 @@ function startsDisplayMath(lineText: string): boolean {
   return s.startsWith("$$");
 }
 
+/** 整条引用行剥去 > 前缀与空白后无内容（空续行，如「> 」「> > 」）：QuoteMark
+ *  隐藏的豁免形态（2026-10-13 编辑回归修复）——空续行显示源码「> 」，不再是
+ *  视觉上的「自动插入空白行」；有内容的引用行照常隐藏渲染。 */
+const EMPTY_QUOTE_LINE = /^(?:\s*>)+\s*$/;
+
 /** 装饰主构建：语法树 iterate（每个计算范围一次），一次 RangeSetBuilder 收口 */
 export function buildLivePreviewDecorations(
   state: EditorState,
@@ -282,8 +287,10 @@ export function buildLivePreviewDecorations(
               hide(node.from, node.to);
             }
             return true;
-          case "QuoteMark":
-            hide(node.from, markEnd(node.to));
+          case "QuoteMark": // 纯标记行豁免：空续行（「> 」「> > 」）不隐藏、显示源码
+            if (!EMPTY_QUOTE_LINE.test(doc.lineAt(node.from).text)) {
+              hide(node.from, markEnd(node.to));
+            }
             return true;
           case "LinkMark":
           case "URL":

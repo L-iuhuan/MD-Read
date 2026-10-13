@@ -13,22 +13,15 @@ import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language"
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
-import { markdownTables } from "codemirror-markdown-tables";
 // markdown-commands 的 A1 命令族 + B1 追加（insertTableSkeleton/tidyChineseText）：工具栏注册表要用
-import { insertTableSkeleton, markdownCommands, tidyChineseText, toggleBlockquote, toggleBold, toggleHeading, toggleInlineCode, toggleItalic, toggleLink, toggleStrikethrough, toggleTaskItem } from "./markdown-commands";
+import { insertTableSkeleton, markdownCommands, tableNoopFilter, tidyChineseText, toggleBlockquote, toggleBold, toggleHeading, toggleInlineCode, toggleItalic, toggleLink, toggleStrikethrough, toggleTaskItem } from "./markdown-commands";
 import { livePreview } from "./live-preview";
 import { liveSearchHandler } from "./live-search";
 import { editorPasteHandlers } from "./paste";
 import { mountEditorToolbar } from "./toolbar";
-import { editorTableTheme } from "./tables-theme"; // C0：表格主题全槽接 tokens.css（亮暗一套，免 Compartment）
 import type { Tab } from "../app/tabs";
 import { firstVisibleLine, nearestBlockLine } from "./position-map";
 import { CODE_LANGUAGES } from "./code-langs";
-
-/* 表格扩展建态探测 matchMedia("(any-hover:none)")（触屏判定）；jsdom 无该 API（真机恒有）——补恒 false 垫片＝非触屏，不改真机行为 */
-if (typeof window.matchMedia !== "function") {
-  window.matchMedia = (query: string): MediaQueryList => ({ matches: false, media: query, onchange: null, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false }) as MediaQueryList;
-}
 
 export { CODE_LANGUAGES }; // 语言表外移 code-langs.ts（B1 腾棘轮行数）；re-export 保对外引用面（phrases.ts 先例）
 
@@ -68,7 +61,7 @@ const editorTheme = EditorView.theme({
 function baseExtensions(crlf: boolean, onDocChanged: () => void, getDocPath: () => string | null): Extension[] {
   return [
     crlf ? EditorState.lineSeparator.of("\r\n") : [],
-    history(),
+    history(), tableNoopFilter(), // fix-18 通用守卫：滤「无标准 userEvent 的同文替换」空事务（缘起表格包空撤销，包已随 fix-20 移除；undo/userEvent 通道永不拦）
     markdownCommands(), // A1：格式命令键位——必须在 defaultKeymap 前（Ctrl-Enter 任务勾选压过其 Mod-Enter→insertBlankLine）
     keymap.of([{ key: "Shift-Mod-t", run: tidyChineseText }, ...defaultKeymap, ...historyKeymap]), // B1：中文整理（全仓核过无冲突）
     keymap.of([{ key: "Mod-h", run: openSearchPanel, preventDefault: true }, ...searchKeymap]), // 坑3：自定义绑定须排在 searchKeymap 前
@@ -79,8 +72,7 @@ function baseExtensions(crlf: boolean, onDocChanged: () => void, getDocPath: () 
     highlightActiveLine(),
     EditorView.lineWrapping,
     markdown({ base: markdownLanguage, codeLanguages: CODE_LANGUAGES }), // B1：GFM 基座（A2 遗留②：Task/Strikethrough/Table 节点路径激活）
-    livePreview(), // B1 总装：A2 实时渲染（装配位次＝markdown() 之后，A2 建议位）
-    markdownTables({ theme: editorTableTheme }), // B1 表格交互 + C0 主题变量化：全槽接 tokens.css，亮暗随 data-theme 翻转
+    livePreview(), // B1 总装：A2 实时渲染（装配位次＝markdown() 之后，A2 建议位）；表格编辑包已随 fix-20 退役，插表走 insertTableSkeleton
     syntaxHighlighting(defaultHighlightStyle),
     editorTheme,
     EditorView.updateListener.of((update) => {

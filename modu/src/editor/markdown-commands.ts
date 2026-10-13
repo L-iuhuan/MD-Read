@@ -20,7 +20,7 @@
  * 键位表（IME 红线：无 Ctrl+Alt / Alt+字母）：
  *  Ctrl-B 粗体｜Ctrl-I 斜体｜Ctrl-K 链接｜Ctrl-Shift-K 行内代码｜
  *  Ctrl-Shift-X 删除线｜Ctrl-1..6 标题｜Ctrl-0 清标题｜Ctrl-Enter 任务勾选｜
- *  Alt-↑/↓ 块移动。
+ *  Alt-↑/↓ 块移动｜Enter 空标记行退出（Prec.high，2026-10-13 编辑回归修复）。
  *  ⚠ 与任务书原键的两处偏差（2026-10-12 全仓核查）：
  *  ① 删除线 Ctrl-Shift-S：editor.ts 的 Ctrl+S 捕获层不看 shiftKey，
  *    Ctrl+Shift+S 在 document 捕获相即被截停成「保存」，CM 永远收不到
@@ -30,8 +30,9 @@
  *    改走下方 domEventHandlers 截停通道；Ctrl-Shift-0 在多数布局下
  *    event.key 不是 "0"，不可用。
  */
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { moveLineDown, moveLineUp } from "@codemirror/commands";
-import { EditorSelection, type EditorState, type Extension, type Line, type SelectionRange } from "@codemirror/state";
+import { EditorSelection, EditorState, Prec, Transaction, type Extension, type Line, type SelectionRange } from "@codemirror/state";
 import { type Command, EditorView, keymap } from "@codemirror/view";
 
 /* ---- 行内标记：toggle 家族 ---- */
@@ -275,12 +276,66 @@ export const toggleBlockquote: Command = (view: EditorView): boolean => {
 export const moveBlockUp: Command = moveLineUp;
 export const moveBlockDown: Command = moveLineDown;
 
+/* ---- 空标记行退出（编辑回归修复 · 2026-10-13）---- */
+
+/** 纯标记行：行首到行尾仅一枚块级标记（>、-、*、+、数字.、数字)）或其任务形态
+ *  （标记 + [ ]/[x]/[X]，大小写归一），后随可选空白、再无他物。有内容行、嵌套
+ *  标记行（如「> > 」）、表格/公式行在文本上即不匹配；代码块内的同形行由树守卫排除。 */
+const EMPTY_MARKUP_LINE = /^(?:>|[-*+]|\d+[.)])(?: \[(?: |x|X)\])?[ \t]*$/;
+
+/** 树守卫名单：这些节点里的行是内容不是标记（与 live-preview.ts 整块跳过名单同源） */
+const NON_MARKUP_NODES = new Set(["FencedCode", "CodeBlock", "HTMLBlock", "Table"]);
+
+/** 树守卫：行落在代码/HTML/表格块内则不接管——代码块里的「- 」是代码不是标记
+ *  （CM 自带的续标记命令同样在代码区放行）。树不完整时同步补解析（同 live-preview 口径）。 */
+function markupLineEditable(state: EditorState, line: Line): boolean {
+  const tree = ensureSyntaxTree(state, line.to, 100) ?? syntaxTree(state);
+  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(line.from, 1);
+  while (node !== null) {
+    if (NON_MARKUP_NODES.has(node.name)) return false;
+    node = node.parent;
+  }
+  return true;
+}
+
+/** Enter · 空标记行退出：光标行是纯标记行（空引用/空列表/空任务项）→ 整行清除
+ *  标记、光标停行首（Typora 惯例——CM 自带的 insertNewlineContinueMarkup 对首个
+ *  空「> 」行会再续一个「> 」，视觉上「Enter 自动插空白行、永不退出」）。
+ *  其余一律返回 false 放行，续标记行为零变化；纯删除不插入文本（头注 CRLF 契约）。 */
+export const exitEmptyMarkupLine: Command = (view: EditorView): boolean => {
+  const { state } = view;
+  if (!state.selection.ranges.every((r) => r.empty)) {
+    return false; // 有选区：Enter 走默认的替换语义
+  }
+  const seen = new Set<number>();
+  const changes: { from: number; to?: number; insert?: string }[] = [];
+  for (const range of state.selection.ranges) {
+    const line = state.doc.lineAt(range.head);
+    if (!EMPTY_MARKUP_LINE.test(line.text) || !markupLineEditable(state, line)) {
+      return false; // 任一光标不匹配即整体放行（多光标不做混合行为）
+    }
+    if (!seen.has(line.from)) { // 多光标同行只清一次（重叠 change 会被 CM 拒绝）
+      seen.add(line.from);
+      changes.push({ from: line.from, to: line.to });
+    }
+  }
+  const sel = state.selection;
+  view.dispatch({
+    changes,
+    selection: EditorSelection.create(changes.map((c) => EditorSelection.cursor(c.from)), Math.min(sel.mainIndex, changes.length - 1)),
+  });
+  return true;
+};
+
 /* ---- 组装：键位 + Ctrl-0 截停 ---- */
 
 /** 键位全家 + 命令扩展，进 baseExtensions。⚠ 必须排在 defaultKeymap 的 keymap
- *  之前：Ctrl-Enter 任务勾选要压过 defaultKeymap 的 Mod-Enter→insertBlankLine。 */
+ *  之前：Ctrl-Enter 任务勾选要压过其 Mod-Enter→insertBlankLine。Enter（空标记
+ *  行退出）必须 Prec.high：markdown() 在其后装配、其 markdownKeymap 绑 Enter=
+ *  insertNewlineContinueMarkup——Prec.high 保证先裁决（返回 false 照常放行）。 */
 export function markdownCommands(): Extension {
   return [
+    Prec.high(keymap.of([{ key: "Enter", run: exitEmptyMarkupLine }])),
     keymap.of([
       { key: "Mod-b", run: toggleBold },
       { key: "Mod-i", run: toggleItalic },
@@ -325,7 +380,12 @@ export { tidyChineseText } from "./text-cleanup";
 
 /** 3×3 表骨架（3 列：表头行 + 分隔行 + 两行空数据行）；行中插入时前后自动让行
  *  （防表格贴行被吞）。CRLF（D7）：换行取 state.lineBreak；光标长度取 toText 的
- *  Text 长度——\r\n 在文档里只计 1 个行位，拿字符串 length 会越界。 */
+ *  Text 长度——\r\n 在文档里只计 1 个行位，拿字符串 length 会越界。
+ *  撤销粒度契约（2026-10-13 审计定契）：让行 + 骨架 + 光标平移必须**一个
+ *  view.dispatch 单事务**（一个 changes+selection 的 spec，userEvent 标成 input）
+ *  ——拆成多次 dispatch 会立两个历史事件，一次 Ctrl+Z 撤不干净（残留让行空行/
+ *  骨架尾巴）。回归锚：tests/markdown-commands.spec.ts「撤销粒度」describe
+ *  （含 editor.ts 全栈镜像：markdownTables 不另立事务）。 */
 export function insertTableSkeleton(view: EditorView): boolean {
   const state = view.state;
   const br = state.lineBreak;
@@ -339,6 +399,35 @@ export function insertTableSkeleton(view: EditorView): boolean {
   view.dispatch({
     changes: { from, to, insert: text },
     selection: EditorSelection.cursor(from + text.length),
+    userEvent: "input",
   });
   return true;
+}
+
+/* ---- fix-18：表格包「同文替换」事务过滤（真机 WebView2 插表后两步空撤销）----
+ * 机理（包源码 + @codemirror/commands history 源码核实）：codemirror-markdown-tables
+ *  的 table.format/table.correct 会派发格式化事务，其中「已是规范格式」的表产出
+ *  同文替换——ChangeSet 非空（HistEvent.fromTransaction 只看 changes.empty，照栛建
+ *  历史事件）但新文与旧文逐字节相同 ⇒ Ctrl+Z 先弹零效果步、文档纹丝不动。
+ *  包的 userEvent 是**私有 Annotation**（Annotation.define()，未导出，不是
+ *  Transaction.userEvent）且其派发点一律不带标准 userEvent ⇒ 从外部只能以
+ *  「无标准 userEvent」近似圈定表格包来源（undo/redo/input 均带标准 userEvent，
+ *  永不入拦截面——拦 undo 会卡死撤销栈）。
+ *  红线：带选区变化的事务绝不拦（断光标）；带 effects 的事务不拦（副作用丢失）；
+ *  真实变更的事务不拦（格式化真改动仍可撤销）。
+ *  覆盖面：transactionFilter 只见 dispatch 级事务（table.format/table.edit 等）；
+ *  transactionExtender 追加的 table.correct 事务不经此 facet（@codemirror/state
+ *  实测：extender 输出直接 mergeTransaction，不再过滤）——属本过滤器盲区。
+ *  回归锚：tests/markdown-commands.spec.ts「fix-18」describe（含无过滤负对照）。 */
+export function tableNoopFilter(): Extension {
+  return EditorState.transactionFilter.of(
+    (tr) =>
+      !tr.changes.empty &&
+      tr.annotation(Transaction.userEvent) === undefined &&
+      tr.effects.length === 0 &&
+      (tr.selection === undefined || tr.startState.selection.eq(tr.selection)) &&
+      tr.newDoc.eq(tr.startState.doc)
+        ? []
+        : tr,
+  );
 }

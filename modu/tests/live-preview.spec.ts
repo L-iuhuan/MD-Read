@@ -304,3 +304,28 @@ describe("Live Preview · 性能", () => {
     expect(ms).toBeLessThan(800); // 全量是极端上界（滚动只算窗口）；防退化锚
   }, 90000);
 });
+
+describe("Live Preview · 纯标记行豁免（QuoteMark 隐藏退场，编辑回归修复）", () => {
+  it("非光标「> 」纯标记行：前缀不隐藏（源码可见）；有内容引用行照常隐藏", () => {
+    const view = makeView("> 引用\n> \n> 另一句\n正文");
+    const L = (n: number) => view.state.doc.line(n);
+    view.dispatch({ selection: { anchor: L(4).from } }); // 光标放正文行，引用行全非光标
+    const decos = decosOf(view);
+
+    expect(hiddenAt(decos, L(1).from, L(1).from + 2)).toBe(true); // 「> 引用」：前缀隐藏
+    expect(hiddenAt(decos, L(2).from, L(2).from + 2)).toBe(false); // 「> 」纯标记行：源码可见
+    expect(hiddenAt(decos, L(3).from, L(3).from + 2)).toBe(true); // 「> 另一句」：照常隐藏
+    expect(clsInLine(decos, L(2), "cm-lp-quote")).toBe(true); // 引用着色仍在（只豁免隐藏）
+    expect(view.state.sliceDoc()).toBe("> 引用\n> \n> 另一句\n正文"); // 源码保真
+  });
+
+  it("嵌套空引用「> > 」同样豁免；「> -」等有内容行照常隐藏", () => {
+    const view = makeView("> > \n> -\n正文");
+    const L = (n: number) => view.state.doc.line(n);
+    view.dispatch({ selection: { anchor: L(3).from } });
+    const decos = decosOf(view);
+
+    expect(hiddenAt(decos, L(1).from, L(1).from + 2)).toBe(false); // 「> > 」整行显示源码
+    expect(hiddenAt(decos, L(2).from, L(2).from + 2)).toBe(true); // 「> -」的前缀照常隐藏
+  });
+});
