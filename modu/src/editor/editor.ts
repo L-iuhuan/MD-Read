@@ -8,53 +8,36 @@
  * ——Mod-h 绑 openSearchPanel，自定义 keymap 排在 searchKeymap 之前。
  */
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
-import { LanguageDescription, defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { markdownTables } from "codemirror-markdown-tables";
+// markdown-commands 的 A1 命令族 + B1 追加（insertTableSkeleton/tidyChineseText）：工具栏注册表要用
+import { insertTableSkeleton, markdownCommands, tidyChineseText, toggleBlockquote, toggleBold, toggleHeading, toggleInlineCode, toggleItalic, toggleLink, toggleStrikethrough, toggleTaskItem } from "./markdown-commands";
+import { livePreview } from "./live-preview";
 import { liveSearchHandler } from "./live-search";
+import { editorPasteHandlers } from "./paste";
+import { mountEditorToolbar } from "./toolbar";
+import { editorTableTheme } from "./tables-theme"; // C0：表格主题全槽接 tokens.css（亮暗一套，免 Compartment）
 import type { Tab } from "../app/tabs";
 import { firstVisibleLine, nearestBlockLine } from "./position-map";
+import { CODE_LANGUAGES } from "./code-langs";
 
-/** 围栏代码精选语言表（七项，懒加载；无 lang-typescript，ts 复用 lang-javascript） */
-export const CODE_LANGUAGES: LanguageDescription[] = [
-  LanguageDescription.of({ name: "typescript", alias: ["ts"], load: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ typescript: true })) }),
-  LanguageDescription.of({ name: "javascript", alias: ["js"], load: () => import("@codemirror/lang-javascript").then((m) => m.javascript()) }),
-  LanguageDescription.of({ name: "python", alias: ["py"], load: () => import("@codemirror/lang-python").then((m) => m.python()) }),
-  LanguageDescription.of({ name: "json", load: () => import("@codemirror/lang-json").then((m) => m.json()) }),
-  LanguageDescription.of({ name: "rust", alias: ["rs"],
-    load: () => import("@codemirror/lang-rust").then((m) => m.rust()) }),
-  LanguageDescription.of({ name: "html",
-    load: () => import("@codemirror/lang-html").then((m) => m.html()) }),
-  LanguageDescription.of({ name: "css",
-    load: () => import("@codemirror/lang-css").then((m) => m.css()) }),
-];
+/* 表格扩展建态探测 matchMedia("(any-hover:none)")（触屏判定）；jsdom 无该 API（真机恒有）——补恒 false 垫片＝非触屏，不改真机行为 */
+if (typeof window.matchMedia !== "function") {
+  window.matchMedia = (query: string): MediaQueryList => ({ matches: false, media: query, onchange: null, addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false }) as MediaQueryList;
+}
 
-/** CM6 界面短语全量汉化（search 面板 + goto line，17 键） */
-export const PHRASES_ZH: Readonly<Record<string, string>> = {
-  Find: "查找",
-  Replace: "替换",
-  next: "下一个",
-  previous: "上一个",
-  all: "全部",
-  "match case": "区分大小写",
-  regexp: "正则表达式",
-  "by word": "全字匹配",
-  replace: "替换",
-  "replace all": "全部替换",
-  close: "关闭",
-  "current match": "当前匹配",
-  "on line": "于行",
-  "replaced $ matches": "已替换 $ 处匹配",
-  "replaced match on line $": "已替换第 $ 行的匹配",
-  "Go to line": "跳转到行",
-  go: "跳转",
-};
+export { CODE_LANGUAGES }; // 语言表外移 code-langs.ts（B1 腾棘轮行数）；re-export 保对外引用面（phrases.ts 先例）
 
-/** 主题与阅读态同源：全走 tokens.css 的 CSS 变量，亮暗自动跟随。
- *  D3/D4（2026-09-29 视觉减负）：编辑态与阅读态同基准——纸色列（--measure + 2×--pad-page）
- *  居中、两侧露画布色，切态纸缘不横跳；行号槽贴正文左缘，只差一个 gutter 宽。 */
+/** CM6 界面短语汉化（17 键）已外移 phrases.ts（编辑增强 A1 腾棘轮行数）；re-export 保对外引用面 */
+import { PHRASES_ZH } from "./phrases";
+export { PHRASES_ZH };
+
+/** 主题与阅读态同源：全走 tokens.css 的 CSS 变量，亮暗自动跟随。D3/D4（2026-09-29 视觉减负）：
+ *  纸色列（--measure + 2×--pad-page）居中、两侧露画布色，切态纸缘不横跳；行号槽贴正文左缘。 */
 const editorTheme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "var(--bg-canvas)", color: "var(--text)" },
   ".cm-scroller": { fontFamily: "var(--font-mono)", fontSize: "var(--fs-body)", lineHeight: "1.7" },
@@ -80,19 +63,24 @@ const editorTheme = EditorView.theme({
 
 /** 即时查找（2026-10-01）：输入即搜，150ms 防抖——实现外移 live-search.ts（本文件压 500 棘轮） */
 
-/** 组装全部扩展。crlf 决定 lineSeparator（坑1）；onDocChanged 只接用户改动 */
-function baseExtensions(crlf: boolean, onDocChanged: () => void): Extension[] {
+/** 组装全部扩展。crlf 决定 lineSeparator（坑1）；onDocChanged 只接用户改动；
+ *  getDocPath 供粘贴图片通道取当前文档绝对路径（无文档返回 null）。 */
+function baseExtensions(crlf: boolean, onDocChanged: () => void, getDocPath: () => string | null): Extension[] {
   return [
     crlf ? EditorState.lineSeparator.of("\r\n") : [],
     history(),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    markdownCommands(), // A1：格式命令键位——必须在 defaultKeymap 前（Ctrl-Enter 任务勾选压过其 Mod-Enter→insertBlankLine）
+    keymap.of([{ key: "Shift-Mod-t", run: tidyChineseText }, ...defaultKeymap, ...historyKeymap]), // B1：中文整理（全仓核过无冲突）
     keymap.of([{ key: "Mod-h", run: openSearchPanel, preventDefault: true }, ...searchKeymap]), // 坑3：自定义绑定须排在 searchKeymap 前
     search({ top: true }), // K1（2026-09-29）：查找/替换面板上提到编辑器顶部，与阅读态 #findbar 同角落
     liveSearchHandler,
+    editorPasteHandlers(getDocPath), // B1：粘贴双通道（图片落盘 / HTML→MD）
     lineNumbers(),
     highlightActiveLine(),
     EditorView.lineWrapping,
-    markdown({ codeLanguages: CODE_LANGUAGES }),
+    markdown({ base: markdownLanguage, codeLanguages: CODE_LANGUAGES }), // B1：GFM 基座（A2 遗留②：Task/Strikethrough/Table 节点路径激活）
+    livePreview(), // B1 总装：A2 实时渲染（装配位次＝markdown() 之后，A2 建议位）
+    markdownTables({ theme: editorTableTheme }), // B1 表格交互 + C0 主题变量化：全槽接 tokens.css，亮暗随 data-theme 翻转
     syntaxHighlighting(defaultHighlightStyle),
     editorTheme,
     EditorView.updateListener.of((update) => {
@@ -103,16 +91,16 @@ function baseExtensions(crlf: boolean, onDocChanged: () => void): Extension[] {
   ];
 }
 
-function docState(text: string, crlf: boolean, report: () => void): EditorState {
+function docState(text: string, crlf: boolean, report: () => void, getDocPath: () => string | null): EditorState {
   return EditorState.create({
     doc: text,
-    extensions: [baseExtensions(crlf, report), EditorState.phrases.of(PHRASES_ZH)],
+    extensions: [baseExtensions(crlf, report, getDocPath), EditorState.phrases.of(PHRASES_ZH)],
   });
 }
 
 /** 纯建态（无 DOM）：测试直接验证 lineSeparator / sliceDoc 往返 */
 export function createDocState(text: string, crlf: boolean): EditorState {
-  return docState(text, crlf, () => {});
+  return docState(text, crlf, () => {}, () => null);
 }
 
 export interface RevealTarget { line?: number; scrollTop?: number }
@@ -160,8 +148,12 @@ export interface EditorHandle {
   focus(): void;
 }
 
-/** 用户改动回调（docChanged）；setDoc/restoreState 换档期间的触发不计 */
-export interface EditorHost { onDocChanged(): void }
+/** 用户改动回调（docChanged）；setDoc/restoreState 换档期间的触发不计。
+ *  getDocPath（B1 粘贴图片通道）：当前文档绝对路径，无文档返回 null；缺省视为恒 null。 */
+export interface EditorHost {
+  onDocChanged(): void;
+  getDocPath?(): string | null;
+}
 
 export function createEditor(container: HTMLElement, host: EditorHost): EditorHandle {
   container.style.height = "100%";
@@ -171,7 +163,14 @@ export function createEditor(container: HTMLElement, host: EditorHost): EditorHa
       host.onDocChanged();
     }
   };
-  const view = new EditorView({ parent: container, state: docState("", false, report) });
+  const getDocPath = host.getDocPath ?? (() => null);
+  const view = new EditorView({ parent: container, state: docState("", false, report, getDocPath) });
+  // B1 总装·B2 工具栏：键名对齐 toolbar.ts 的 ITEMS（insertTable/tidySpacing 为其查表键；C0 补 toggleBlockquote ⇒「引用」钮点亮）
+  mountEditorToolbar(container, {
+    toggleBold, toggleItalic, toggleStrikethrough, toggleInlineCode, toggleLink,
+    toggleHeading1: toggleHeading(1), toggleHeading2: toggleHeading(2), toggleHeading3: toggleHeading(3),
+    toggleTaskItem, toggleBlockquote, insertTable: insertTableSkeleton, tidySpacing: tidyChineseText,
+  }, () => view);
 
   function scrollToLine(line: number): void {
     const clamped = Math.min(Math.max(1, line), view.state.doc.lines);
@@ -181,7 +180,7 @@ export function createEditor(container: HTMLElement, host: EditorHost): EditorHa
 
   function setDoc(text: string, crlf: boolean): void {
     silent = true;
-    view.setState(docState(text, crlf, report));
+    view.setState(docState(text, crlf, report, getDocPath));
     silent = false;
   }
 
@@ -332,6 +331,7 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
         }
       }
     },
+    getDocPath: () => deps.getTab()?.path ?? null, // B1 粘贴图片通道：docPath=当前标签 canonical 绝对路径
   });
 
   /** 编辑器同步到目标标签；返回是否从存量档恢复 */

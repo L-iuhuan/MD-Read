@@ -57,6 +57,7 @@ import "./app/workspace-panel.css"; // D-11b 工作区面板（2026-09-27 外移
 import "./app/settings-panel.css"; // 设置面板重做（2026-09-27 外移）
 import "./app/shell-tail.css";
 import "./ui/export-state.css"; // H 批：导出冻结层——独立新文件，绝不进 app.css（其棘轮 1455 满载）
+import "./editor/toolbar.css"; // B2 编辑工具栏容器皮（B1 总装接线；须在 app.css 分片之后）
 import "./typography/tokens.css";
 import "./typography/cjk.css";
 import "./typography/print.css";
@@ -360,10 +361,9 @@ function setupGlobalKeys(): void {
   });
 }
 
-/* ---- 标签快捷键（用户反馈批次）：Ctrl+W 关标签、Ctrl+Tab(±Shift) 循环切换。
+/* ---- 标签快捷键（用户反馈批次）：Ctrl+W 关标签、Ctrl+Tab(±Shift) 循环切换（实现外移 tab-hotkeys.ts）。
  *      capture 阶段全局拦截（Ctrl+Tab 放行会先被 CM 键位吃掉）；编辑态照常工作。 ---- */
 
-/** 循环切换：delta=1 下一个（Ctrl+Tab），-1 上一个（Ctrl+Shift+Tab），环回 */
 /** C6：非 Markdown 文件不静默丢弃——状态栏闪示被忽略数（通道复用 flashStatus） */
 function notifyIgnoredDrops(count: number): void {
   flashStatus(`已忽略 ${count} 个非 Markdown 文件`, "warn");

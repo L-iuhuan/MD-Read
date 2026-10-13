@@ -59,6 +59,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2.5.5
         version: 2.5.5
+      codemirror-markdown-tables:
+        specifier: ^1.0.1
+        version: 1.0.1(@codemirror/autocomplete@6.20.3)(@codemirror/commands@6.11.1)(@codemirror/lang-markdown@6.5.2)(@codemirror/language@6.12.4)(@codemirror/state@6.7.5)(@codemirror/view@6.43.12)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@lezer/markdown@1.7.2)
       dompurify:
         specifier: 3.4.15
         version: 3.4.15
@@ -86,6 +89,9 @@ importers:
       mermaid:
         specifier: 11.17.2
         version: 11.17.2
+      turndown:
+        specifier: ^7.2.4
+        version: 7.2.4
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2
@@ -96,6 +102,9 @@ importers:
       '@types/node':
         specifier: ^26.6.2
         version: 26.6.2
+      '@types/turndown':
+        specifier: ^5.0.6
+        version: 5.0.6
       eslint:
         specifier: ^10.11.0
         version: 10.11.0
@@ -264,6 +273,15 @@ packages:
       '@noble/hashes':
         optional: true
 
+  '@floating-ui/core@1.8.0':
+    resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
+
+  '@floating-ui/dom@1.8.0':
+    resolution: {integrity: sha512-yXSrzeHZBTZadLOlfyhCkJHNeLJnHRnRInwdZ40L7ZiaAtrBwoYlsDrX3v5zB1Utk7CLfzcOVnVVWoXEky7Ceg==}
+
+  '@floating-ui/utils@0.2.12':
+    resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
+
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
     engines: {node: '>=18.18.0'}
@@ -318,6 +336,9 @@ packages:
   '@lezer/highlight@1.2.3':
     resolution: {integrity: sha512-qXdH7UqTvGfdVBINrgKhDsVTJTxactNNxLk7+UMwZhU13lMHaOBlJe9Vqp907ya56Y3+ed2tlqzys7jDkTmW0g==}
 
+  '@lezer/highlight@1.2.5':
+    resolution: {integrity: sha512-O1GMVKgtf5YspFaRzpmqkVgMtIk2HG9uMAbH6wdAIdNh3TVzCsch/+cRi+6l2//UGDKe6NB9BW3cvuR5ezMQ0w==}
+
   '@lezer/html@1.3.13':
     resolution: {integrity: sha512-oI7n6NJml729m7pjm9lvLvmXbdoMoi2f+1pwSDJkl9d68zGr7a9Btz8NdHTGQZtW2DA25ybeuv/SyDb9D5tseg==}
 
@@ -353,6 +374,9 @@ packages:
 
   '@mermaid-js/parser@1.2.1':
     resolution: {integrity: sha512-n12NohV3mrUyUL2o93IgG/ifeW9FTyeJn3zDxkhwa8MJ9Fxg3HQMlA3RiGmD/3UnJvheztkjjQAjA2T4LmUcpw==}
+
+  '@mixmark-io/domino@2.2.0':
+    resolution: {integrity: sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw==}
 
   '@oxc-project/types@0.150.0':
     resolution: {integrity: sha512-rDS5/31E9HfPl/CIzGrn0DOlvBbXFseQ5URJ9sYMfstbKLD/c6Gm9vmRzRGDdAXyOIL4zmO37lc9RIwYqVruZw==}
@@ -667,6 +691,9 @@ packages:
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
+  '@types/turndown@5.0.6':
+    resolution: {integrity: sha512-ru00MoyeeouE5BX4gRL+6m/BsDfbRayOskWqUvh7CLGW+UXxHQItqALa38kKnOiZPqJrtzJUgAC2+F0rL1S4Pg==}
+
   '@typescript-eslint/eslint-plugin@8.70.1':
     resolution: {integrity: sha512-nDNrUQ/4ruSNYbu749TRY7cfrzPtoLHEXSNBI8aaNY32LlZCajixqRf3FqcKC4p5Cam4VOHYx/t+i5+nKXvrqA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -780,6 +807,23 @@ packages:
   chai@6.2.2:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
     engines: {node: '>=18'}
+
+  clsx@2.1.1:
+    resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
+    engines: {node: '>=6'}
+
+  codemirror-markdown-tables@1.0.1:
+    resolution: {integrity: sha512-2iGE78f7d3p4q4y++CW5I+bbrosMGX9qnpH7GkMQ50ehtxhMmcCYqHjUcDIlrOCj9eFor3LCEHl5QATRbusNTA==}
+    peerDependencies:
+      '@codemirror/autocomplete': ^6.18.0
+      '@codemirror/commands': ^6.7.1
+      '@codemirror/lang-markdown': ^6.3.1
+      '@codemirror/language': ^6.10.4
+      '@codemirror/state': ^6.4.1
+      '@codemirror/view': ^6.35.0
+      '@lezer/common': ^1.2.3
+      '@lezer/highlight': ^1.2.1
+      '@lezer/markdown': ^1.3.2
 
   commander@7.0.0:
     resolution: {integrity: sha512-ovx/7NkTrnPuIV8sqk/GjUIIM1+iUQeqA3ye2VNpq9sVoiZsooObWlQy+OPWGI17GDaEoybuAGJm6U8yC077BA==}
@@ -1521,6 +1565,10 @@ packages:
     resolution: {integrity: sha512-JfJeIHke7y2egdGGgRAvpCwYFUsHlM2gPcrVOxFkznt/4uzQ7HFmvE63iFHVLBJNDuyDOQgijDK/tXH/f6Msjg==}
     engines: {node: '>=6.10'}
 
+  turndown@7.2.4:
+    resolution: {integrity: sha512-I8yFsfRzmzK0WV1pNNOA4A7y4RDfFxPRxb3t+e3ui14qSGOxGtiSP6GjeX+Y6CHb7HYaFj7ECUD7VE5kQMZWGQ==}
+    engines: {node: '>=18', npm: '>=9'}
+
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
@@ -1888,6 +1936,17 @@ snapshots:
 
   '@exodus/bytes@1.15.1': {}
 
+  '@floating-ui/core@1.8.0':
+    dependencies:
+      '@floating-ui/utils': 0.2.12
+
+  '@floating-ui/dom@1.8.0':
+    dependencies:
+      '@floating-ui/core': 1.8.0
+      '@floating-ui/utils': 0.2.12
+
+  '@floating-ui/utils@0.2.12': {}
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -1941,6 +2000,10 @@ snapshots:
     dependencies:
       '@lezer/common': 1.5.2
 
+  '@lezer/highlight@1.2.5':
+    dependencies:
+      '@lezer/common': 1.5.2
+
   '@lezer/html@1.3.13':
     dependencies:
       '@lezer/common': 1.5.2
@@ -1966,7 +2029,7 @@ snapshots:
   '@lezer/markdown@1.7.2':
     dependencies:
       '@lezer/common': 1.5.2
-      '@lezer/highlight': 1.2.3
+      '@lezer/highlight': 1.2.5
 
   '@lezer/python@1.1.19':
     dependencies:
@@ -1990,6 +2053,8 @@ snapshots:
   '@mermaid-js/parser@1.2.1':
     dependencies:
       '@chevrotain/types': 11.1.2
+
+  '@mixmark-io/domino@2.2.0': {}
 
   '@oxc-project/types@0.150.0': {}
 
@@ -2245,6 +2310,8 @@ snapshots:
   '@types/trusted-types@2.0.7':
     optional: true
 
+  '@types/turndown@5.0.6': {}
+
   '@typescript-eslint/eslint-plugin@8.70.1(@typescript-eslint/parser@8.70.1(eslint@10.11.0)(typescript@6.0.3))(eslint@10.11.0)(typescript@6.0.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
@@ -2388,6 +2455,22 @@ snapshots:
       qified: 0.10.1
 
   chai@6.2.2: {}
+
+  clsx@2.1.1: {}
+
+  codemirror-markdown-tables@1.0.1(@codemirror/autocomplete@6.20.3)(@codemirror/commands@6.11.1)(@codemirror/lang-markdown@6.5.2)(@codemirror/language@6.12.4)(@codemirror/state@6.7.5)(@codemirror/view@6.43.12)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@lezer/markdown@1.7.2):
+    dependencies:
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/commands': 6.11.1
+      '@codemirror/lang-markdown': 6.5.2
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.5
+      '@codemirror/view': 6.43.12
+      '@floating-ui/dom': 1.8.0
+      '@lezer/common': 1.5.2
+      '@lezer/highlight': 1.2.3
+      '@lezer/markdown': 1.7.2
+      clsx: 2.1.1
 
   commander@7.0.0: {}
 
@@ -3120,6 +3203,10 @@ snapshots:
       typescript: 6.0.3
 
   ts-dedent@2.3.0: {}
+
+  turndown@7.2.4:
+    dependencies:
+      '@mixmark-io/domino': 2.2.0
 
   type-check@0.4.0:
     dependencies:

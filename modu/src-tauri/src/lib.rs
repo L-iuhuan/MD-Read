@@ -1,4 +1,5 @@
 pub mod fs;
+pub mod paste;
 mod print;
 mod single;
 pub mod trust;
@@ -283,6 +284,9 @@ pub fn run() {
             fs::register_markdown_default,
             // 路径形态归一（拖放入口用）：唯一实现在 fs::normalize_path，前端只是调用者
             fs::canonical_path,
+            // 图片粘贴落盘（编辑增强 A3 · 2026-10-12 主人批准）：
+            // 爆炸半径＝仅受信目录内新建图片文件、白名单扩展、永不覆盖（见 paste.rs 裁决记录）
+            paste::save_paste_image,
             take_pending_files,
             allow_asset_paths,
             print::spike_log,

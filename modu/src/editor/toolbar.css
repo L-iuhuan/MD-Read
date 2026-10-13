@@ -1,0 +1,118 @@
+/* ==========================================================================
+   墨读 MoDu · editor/toolbar.css —— 编辑态格式工具栏的皮（编辑增强 B2）
+   --------------------------------------------------------------------------
+   它是**容器 chrome**（不是编辑器内容）⇒ 不进 EditorView.theme；由 B1 在
+   main.ts import（与 app.css 同批接线，本文件不自证接线）。
+
+   几何（为什么让位不用 sibling 选择器去压 .cm-editor）：
+   · 挂载时 TS 给宿主容器（#editor-pane）挂 `.md-toolbar-host`；条目条绝对定位
+     覆盖宿主的 padding-block-start（= --md-tb-h，34px）。CM 的
+     `.cm-editor{height:100%}` 按宿主**内容盒**解析 ⇒ padding 一加它自动缩短
+     34px，零特异性对抗（CM theme 走构造样式表，同特异性会赢过本文件）。
+   · 折叠态：宿主 padding 归零、条目条高 0，只留 16px 把手浮在编辑器右上缘
+     （不占行高；把手自身绝对定位）。
+
+   色值零字面：全部走 tokens.css 变量（--bg-surface / --border / --text-muted /
+   --text-dim / --bg-subtle / --bg-active / --line / --accent-ink / --focus-ring）。
+   动效 ≤100ms（--duration-1）；prefers-reduced-motion 由 app.css §12 的全局降级
+   统一接管；focus-visible 由 app.css 全控件规则（#app button:focus-visible）提供，
+   本文件不重复写轮廓。
+   ========================================================================== */
+
+.md-toolbar-host {
+  --md-tb-h: 34px;   /* 条目条高度：宿主让位与条高同源，全文件只此一处字面值 */
+  position: relative; /* 条目条 / 折叠把手的定位上下文 */
+}
+/* 展开态给条目条让位（内容盒缩短 ⇒ CM 高度自动跟随；折叠态无此 padding） */
+.md-toolbar-host:not(.md-toolbar-host--collapsed) {
+  padding-block-start: var(--md-tb-h);
+}
+
+.md-toolbar {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 2;             /* 高于编辑器内容；低于 --z-float(20) 的浮层（查找卡等） */
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  block-size: var(--md-tb-h, 34px);
+  padding-inline: var(--size-1);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-ctl);
+  user-select: none;
+  font-size: var(--fs-chrome);
+}
+
+/* 命令钮 / 把手：28px 方形，与 #findbar 按钮同族（透明底、图标走 --text-muted、
+   radius-2；hover 面按本批规格用 --bg-subtle） */
+.md-toolbar-btn,
+.md-toolbar-handle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: var(--h-ctl);
+  block-size: var(--h-ctl);
+  padding: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.md-toolbar-btn svg,
+.md-toolbar-handle svg { display: block; }
+.md-toolbar-btn:hover:not(:disabled),
+.md-toolbar-handle:hover:not(:disabled) { background: var(--bg-subtle); color: var(--text); }
+.md-toolbar-btn:active:not(:disabled),
+.md-toolbar-handle:active:not(:disabled) { background: var(--bg-active); }
+.md-toolbar-btn:disabled { color: var(--text-dim); opacity: .55; cursor: default; }
+
+/* 组间分隔线（装饰） */
+.md-toolbar-sep {
+  flex: none;
+  inline-size: 1px;
+  block-size: 14px;
+  margin-inline: 3px;
+  background: var(--line);
+}
+
+/* 把手：展开态 = 行尾钮（推到右缘）；悬停取 accent 墨——与命令钮的一点区分 */
+.md-toolbar-handle { margin-inline-start: auto; }
+.md-toolbar-handle:hover:not(:disabled) { color: var(--accent-ink); }
+
+/* --- 折叠态：条目条退场，只留 16px 把手浮在编辑器右上缘（不占行高） --- */
+.md-toolbar.is-collapsed {
+  block-size: 0;
+  padding-inline: 0;
+  background: transparent;
+  border-bottom: 0;
+  box-shadow: none;
+}
+.md-toolbar.is-collapsed > :not(.md-toolbar-handle) { display: none; }
+.md-toolbar.is-collapsed > .md-toolbar-handle {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 6px;
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: 4px;                /* 16px 方块的小圆角（--radius-2 对 16px 太大） */
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-ctl);
+  color: var(--text-muted);
+}
+.md-toolbar.is-collapsed > .md-toolbar-handle svg {
+  inline-size: 10px;
+  block-size: 10px;
+  transform: rotate(180deg);         /* 展开=箭朝上（收起），折叠=箭朝下（展开） */
+}
+.md-toolbar.is-collapsed > .md-toolbar-handle:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  color: var(--accent-ink);
+}
