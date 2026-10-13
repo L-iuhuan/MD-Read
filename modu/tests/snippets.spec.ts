@@ -3,15 +3,40 @@
  * 表格内不出——语法安全）、apply 骨架与光标位（CRLF 保真一例）、键位裁决
  * （Enter 先裁菜单接受、菜单关时空标记行退出原路放行、Escape 关闭）、
  * IME 组词期不弹。装配位次镜像 editor.ts：formatCompletions 在 markdownCommands 之前。
+ * fix-26 增：validFor 快打稳定（零抖动）、退格重弹、emoji 菜单（触发/收窄/apply）、
+ * 单字符触发前移（$ / 裸列表标记）、配对协同（apply 吃自动闭符）。
+ * fix-27 增：裸标记前移回撤（行首 -/+/1./> 不弹）、$ 不再配对（平插触发）、
+ * emoji 数据源对齐锚（编辑器候选键集 == 渲染 EMOJI_DEFS 键集）。
  */
-import { CompletionContext, completionStatus, startCompletion, type CompletionResult } from "@codemirror/autocomplete";
+import {
+  CompletionContext,
+  completionStatus,
+  currentCompletions,
+  startCompletion,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
 import { history, undo, undoDepth } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { EditorState, EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markdownCommands } from "../src/editor/markdown-commands";
 import { formatCompletionSource, formatCompletions } from "../src/editor/snippets";
+import { EMOJI_ENTRIES } from "../src/editor/snippets-emoji";
+
+/** jsdom 的 Range 无 getClientRects：配对事务带 scrollIntoView → CM requestMeasure
+ *  → rAF 里取 rect 抛未捕获错（vitest 记 error）。补空列表＝「量不到」，走 CM 降级路径。 */
+(function polyfillRangeRects(): void {
+  const proto = Range.prototype as Range & { getClientRects?: () => DOMRectList };
+  if (typeof proto.getClientRects === "function") {
+    return;
+  }
+  const emptyList = { length: 0, item: () => null } as unknown as DOMRectList;
+  Object.defineProperty(proto, "getClientRects", { value: () => emptyList, configurable: true });
+})();
 
 let host: HTMLElement;
 let view: EditorView | null = null;
@@ -43,17 +68,42 @@ function labels(r: CompletionResult | null): string[] {
   return r === null ? [] : r.options.map((o) => o.label);
 }
 
-/** 应用指定 label 的补全项（apply 为函数形态，本源全部如此） */
+/** 应用指定 label 的补全项（函数 apply 直调；字符串 apply＝替换 from..to，emoji 用） */
 function applyLabel(v: EditorView, pos: number, label?: string): void {
   const r = query(v, pos);
   const opt = r === null ? undefined : label === undefined ? r.options[0] : r.options.find((o) => o.label === label);
   if (r === null || opt === undefined) {
     throw new Error(`无补全项：${label ?? "(首个)"}`);
   }
-  if (typeof opt.apply !== "function") {
-    throw new Error(`apply 非函数：${label}`);
+  if (typeof opt.apply === "function") {
+    opt.apply(v, opt, r.from, r.to ?? pos); // to 缺省回退光标位（CM applyCompletion 同口径；本源恒给出 to）
+  } else if (typeof opt.apply === "string") {
+    v.dispatch({ changes: { from: r.from, to: r.to ?? pos, insert: opt.apply }, userEvent: "input.complete" });
+  } else {
+    throw new Error(`apply 形态未识别：${label}`);
   }
-  opt.apply(v, opt, r.from, r.to ?? pos); // to 缺省回退光标位（CM applyCompletion 同口径；本源恒给出 to）
+}
+
+/** 模拟打字：逐字符走 inputHandler facet（语境门禁→官方配对），全 false 再平插 */
+function typeText(v: EditorView, text: string): void {
+  for (const ch of text) {
+    const pos = v.state.selection.main.head;
+    const fallback = () => v.state.update({ changes: { from: pos, insert: ch } }); // 原生默认事务（兜底用）
+    let handled = false;
+    for (const handler of v.state.facet(EditorView.inputHandler)) {
+      if (handler(v, pos, pos, ch, fallback)) {
+        handled = true;
+        break;
+      }
+    }
+    if (!handled) {
+      v.dispatch({
+        changes: { from: pos, insert: ch },
+        selection: { anchor: pos + ch.length },
+        userEvent: "input.type",
+      });
+    }
+  }
 }
 
 function select(v: EditorView, head: number, anchor?: number): void {
@@ -120,8 +170,8 @@ describe("上下文触发命中", () => {
     expect(labels(query(makeView("x["), 2))).toEqual(["链接"]);
   });
 
-  it("行首 > → 引用；行中 > 不出（typeahead 限行首）", () => {
-    expect(labels(query(makeView(">"), 1))).toEqual(["引用"]);
+  it("行首 > 不再弹引用菜单（fix-27 回撤单字符触发）；行中 > 同样不出", () => {
+    expect(query(makeView(">"), 1)).toBeNull();
     expect(query(makeView("正文 >"), 4)).toBeNull();
   });
 
@@ -213,11 +263,8 @@ describe("apply 骨架与光标位", () => {
     expect(v2.state.selection.main.head).toBe(4);
   });
 
-  it("引用：> 后补空格、光标行尾", () => {
-    const v = makeView(">");
-    applyLabel(v, 1);
-    expect(v.state.sliceDoc()).toBe("> ");
-    expect(v.state.selection.main.head).toBe(2);
+  it("缩进行 > 也不弹（原 ^\\s*>$ 缩进形态随 fix-27 一并回撤）", () => {
+    expect(query(makeView("  >"), 3)).toBeNull();
   });
 
   it("撤销粒度：一次补全 = 一个历史事件，Ctrl+Z 一步撤净", () => {
@@ -264,5 +311,157 @@ describe("键位裁决（真实键派发）", () => {
     await vi.waitFor(() => expect(completionStatus(v.state)).toBe("active"));
     key(v, "Escape");
     expect(completionStatus(v.state)).toBeNull();
+  });
+});
+
+describe("fix-26：validFor 快打稳定（零抖动，本地过滤不重查）", () => {
+  it("$ → $ 续打：菜单不关，选项不变（不重查源）", async () => {
+    const v = makeView("");
+    select(v, 0);
+    typeText(v, "$"); // fix-27 后 $ 平插单字符（光标 1）；单 $ 前移触发菜单
+    await vi.waitFor(() => expect(completionStatus(v.state)).toBe("active"));
+    typeText(v, "$"); // 第二键平插成 $$（光标 2）——文本自 from 起仍命中 /^\$+$/
+    await new Promise((r) => setTimeout(r, 100)); // 过 interactionDelay（75ms）保护窗
+    expect(completionStatus(v.state)).toBe("active");
+    expect((currentCompletions(v.state) ?? []).map((c) => c.label)).toEqual(["块公式"]);
+  });
+
+  it(":t 续打 ada：菜单保持并收窄到唯一（emoji filter:true）", async () => {
+    const v = makeView("");
+    select(v, 0);
+    typeText(v, ":t");
+    await vi.waitFor(() => expect(completionStatus(v.state)).toBe("active"));
+    expect((currentCompletions(v.state) ?? []).map((c) => c.label)).toContain(":tada:");
+    typeText(v, "ada");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(completionStatus(v.state)).toBe("active"); // 不重查不关
+    expect((currentCompletions(v.state) ?? []).map((c) => c.label)).toEqual([":tada:"]);
+  });
+});
+
+describe("fix-26：退格重弹（delete 事务后语境命中即重开）", () => {
+  it("$$ 退一格回 $：菜单重开，块公式候选仍在", async () => {
+    const v = makeView("");
+    select(v, 0);
+    typeText(v, "$$");
+    await vi.waitFor(() => expect(completionStatus(v.state)).toBe("active"));
+    key(v, "Escape");
+    expect(completionStatus(v.state)).toBeNull();
+    v.dispatch({ changes: { from: 1, to: 2 }, selection: { anchor: 1 }, userEvent: "delete.backward" });
+    await vi.waitFor(() => expect(completionStatus(v.state)).toBe("active"));
+    expect((currentCompletions(v.state) ?? []).map((c) => c.label)).toEqual(["块公式"]);
+  });
+
+  it("- [ 逐步退回：全程不弹（「- 」与裸「-」均非触发位——fix-27 回撤后）", async () => {
+    const v = makeView("- [");
+    select(v, 3);
+    startCompletion(v);
+    await vi.waitFor(() => expect(completionStatus(v.state)).toBe("active"));
+    key(v, "Escape");
+    v.dispatch({ changes: { from: 2, to: 3 }, selection: { anchor: 2 }, userEvent: "delete.backward" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(completionStatus(v.state)).toBeNull(); // 「- 」非触发位：不弹
+    v.dispatch({ changes: { from: 1, to: 2 }, selection: { anchor: 1 }, userEvent: "delete.backward" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(completionStatus(v.state)).toBeNull(); // 裸「-」也非触发位（回撤后不再重弹）
+  });
+});
+
+describe("fix-26：emoji 菜单", () => {
+  it("冒号＋≥1 字符触发：from 落在冒号，选项含 :smile:", () => {
+    const r = query(makeView(":s"), 2);
+    expect(r).not.toBeNull();
+    expect(r?.from).toBe(0);
+    expect(labels(r)).toContain(":smile:");
+  });
+
+  it("裸冒号不触发；filter:true＋validFor 配置在位（收窄交给插件）", () => {
+    expect(query(makeView(":"), 1)).toBeNull();
+    const r = query(makeView(":smile"), 6);
+    expect(r?.filter).toBe(true);
+    expect(r?.validFor).toEqual(/^:[\w+-]*$/);
+  });
+
+  it("apply：:smile 整段替换为 emoji 本体", () => {
+    const v = makeView(":smile");
+    applyLabel(v, 6, ":smile:");
+    expect(v.state.sliceDoc()).toBe("😄");
+  });
+});
+
+describe("fix-27：裸标记前移回撤（行首单字符不弹菜单）", () => {
+  it("$ 单字符 → 块公式（from 盖 $）——唯一保留的前移路径", () => {
+    const r = query(makeView("$"), 1);
+    expect(labels(r)).toEqual(["块公式"]);
+    expect(r?.from).toBe(0);
+    expect(r?.to).toBe(1);
+  });
+
+  it("行首 - / + / 1. / > 不再弹菜单（列表起手不闪、Enter 不被劫持）", () => {
+    expect(query(makeView("-"), 1)).toBeNull();
+    expect(query(makeView("+"), 1)).toBeNull();
+    expect(query(makeView("1."), 2)).toBeNull();
+    expect(query(makeView(">"), 1)).toBeNull();
+  });
+
+  it("日期起手 2026. 同形不弹；行中 - 同样不出", () => {
+    expect(query(makeView("2026."), 5)).toBeNull();
+    expect(query(makeView("正文 -"), 4)).toBeNull();
+  });
+
+  it("全形 - [ / 1. [ 仍出任务（apply 保留有序/无序标记）", () => {
+    expect(labels(query(makeView("- ["), 3))).toEqual(["任务"]);
+    expect(labels(query(makeView("1. ["), 4))).toEqual(["任务"]);
+  });
+});
+
+describe("fix-26：配对协同（apply 吃掉自动闭符，不留孤符）", () => {
+  it("- [ 打下成 - [|]：接受任务后无孤 ]", () => {
+    const v = makeView("");
+    select(v, 0);
+    typeText(v, "- [");
+    expect(v.state.sliceDoc()).toBe("- []"); // 输入配对在位
+    expect(labels(query(v, 3))).toEqual(["任务"]);
+    applyLabel(v, 3);
+    expect(v.state.sliceDoc()).toBe("- [ ] ");
+  });
+
+  it("$ 单键接受块公式：平插 $ → $$ 公式块（fix-27 后 $ 不配对）", () => {
+    const v = makeView("");
+    select(v, 0);
+    typeText(v, "$");
+    expect(v.state.sliceDoc()).toBe("$"); // $ 已移出配对表：平插单字符
+    applyLabel(v, 1);
+    expect(v.state.sliceDoc()).toBe("$$\n\n$$");
+  });
+});
+
+describe("fix-27：emoji 数据源对齐锚（编辑器候选 = 渲染白名单）", () => {
+  /** 从渲染侧源码抄录 EMOJI_DEFS（markdown.ts 不在本批可改清单，无法 export，
+   *  以源码文本解析作对齐面——正则见下方自证用例，防「解析失明假绿」） */
+  const markdownSource = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "render", "markdown.ts"),
+    "utf8",
+  );
+  const defsBlock = /const EMOJI_DEFS[^{]*\{([\s\S]*?)\}/.exec(markdownSource)?.[1] ?? "";
+  const renderDefs = new Map<string, string>(
+    [...defsBlock.matchAll(/(?:'([^']+)'|"([^"]+)"|([A-Za-z_$][\w$]*))\s*:\s*'([^']*)'/g)].map(
+      (m): [string, string] => [m[1] ?? m[2] ?? m[3] ?? "", m[4] ?? ""],
+    ),
+  );
+
+  it("解析自证：渲染侧 EMOJI_DEFS 抽出键非空（正则失明即红，不假绿）", () => {
+    expect(defsBlock).not.toBe("");
+    expect(renderDefs.size).toBeGreaterThan(50);
+  });
+
+  it("编辑器候选键集 == 渲染 EMOJI_DEFS 键集（补得出 ⇔ 渲染得出，防漂移）", () => {
+    expect(new Set(EMOJI_ENTRIES.map((e) => e.code))).toEqual(new Set(renderDefs.keys()));
+  });
+
+  it("emoji 本体逐键一致（编辑器插入的字形与渲染替换的字形相同）", () => {
+    for (const e of EMOJI_ENTRIES) {
+      expect(e.emoji).toBe(renderDefs.get(e.code));
+    }
   });
 });
