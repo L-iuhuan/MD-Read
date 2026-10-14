@@ -4,7 +4,10 @@
  *
  * ≥16 字符的连续 [A-Za-z0-9_-] 视为「无语义断点的技术串」（如
  * transform_request_id_20260921），包一层 span.tok-break 允许任意字符处断行。
- * 金额天然安全：逗号与小数点把数字切成 ≤3 字符短段，永远不会命中。
+ * 金额天然安全：逗号与小数点把数字切成 ≤3 字符短段。
+ * ⚠ 但**无分隔符的长数字**（≥16 位）会命中 —— 2026-10-13 审查 U5：财务场景里
+ *   它多半是账号/卡号，断在中间会被读成两段，故纯数字串**排除**（代价：超长纯数字
+ *   宁可撑出纸面也不断行；技术串靠 `_`/`-`/字母，不受影响）。
  *
  * 必须在 pangu 之后跑（demo 踩坑结论）：pangu 先把「号|t」边界切开插空，
  * 长串成为独立文本节点后再包裹；反序会让那处插空丢失。
@@ -50,6 +53,7 @@ export function wrapLongTokens(doc: Document, root: Element): number {
     let last = 0
     let m: RegExpExecArray | null
     while ((m = token.exec(text)) !== null) {
+      if (/^[0-9]+$/.test(m[0])) continue // 纯数字长串不断（账号/卡号可读性优先）
       if (m.index > last) {
         frag.appendChild(doc.createTextNode(text.slice(last, m.index)))
       }

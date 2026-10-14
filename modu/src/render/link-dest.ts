@@ -26,32 +26,87 @@ function findBacktickRun(line: string, from: number, len: number): number {
   return -1;
 }
 
-/** 单行变换：行内代码免疫 + `](dest)` 目标空格编码（平衡括号感知） */
-function encodeLine(line: string): string {
+/**
+ * 行首引用前缀剥离：`> ` / `>>` / 多层 `> > `（各层允许 ≤3 前导空格）之后的内容。
+ * 围栏检测必须看剥离后的行，否则 `> ``` ` 里的代码会被当成正文改写
+ * （实测 `> ``` `` `> code ](a b.md)` `` 的代码内容被编成 `](a%20b.md)`）。
+ */
+function stripQuotePrefix(line: string): string {
+  return line.replace(/^ {0,3}(?:> ?)*/, "");
+}
+
+/** 行首围栏标记（剥离引用前缀后）：marker=` 或 ~，len=跑长，info=标记后残余（闭合判定要它为空） */
+function fenceMarkOf(line: string): { marker: string; len: number; info: string } | null {
+  const m = /^(`{3,}|~{3,})(.*)$/.exec(stripQuotePrefix(line));
+  if (m === null) return null;
+  return { marker: m[1][0], len: m[1].length, info: m[2] };
+}
+
+/** CommonMark 闭合围栏：同字符、跑长 ≥ 开栏、其后只能是空白（` ```js ` 不是闭合） */
+function isFenceClose(mark: { marker: string; len: number; info: string }, fence: { marker: string; len: number }): boolean {
+  return mark.marker === fence.marker && mark.len >= fence.len && /^[ \t]*$/.test(mark.info);
+}
+
+/**
+ * 单行变换：行内代码免疫 + `](dest)` 目标空格编码（平衡括号感知）。
+ *
+ * labelDepth = 进入本行前**未闭合的链路标签 `[` 嵌套深度**（跨行携带，支撑
+ * `[foo\nbar](a b.md)` 这类标签跨行形态）。只有 depth>0 时 `](` 才被当作链路闭合改写：
+ * - 纯文本里的 `](a b)`（无 `[`）不再被误编成 `](a%20b)`（实测正文 `%20` 泄漏）；
+ * - 缩进代码块里的 `code ](a b.md)`（无 `[`）不再被改写。
+ * 闭合 `]` 后回吐一层深度，标签之外（depth=0）的 `]` 不动。
+ * 转义对 `\X` 整体越过：`[a\]b](x y)` 的 `\]` 不当作标签结束。
+ */
+function encodeLine(line: string, labelDepth: number): { text: string; labelDepth: number } {
   let out = "";
   let i = 0;
+  let depth = labelDepth;
   while (i < line.length) {
     const ch = line[i];
+    if (ch === "\\") {
+      out += line.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
     if (ch === "`") {
       let run = 0;
       while (line[i + run] === "`") run += 1;
       const close = findBacktickRun(line, i + run, run);
-      // 未闭合跑按 CommonMark 不构成代码——保守原样放行（不冒险改写）
-      const end = close === -1 ? line.length : close + run;
+      if (close === -1) {
+        // 未闭合反引号跑按 CommonMark 是字面文本：只照抄这段跑、继续扫描其后正文。
+        // 否则同一行的 `[x](a b.md)` 会被当成「已进代码」而漏编码（实测未闭合跑后链接不修）。
+        out += line.slice(i, i + run);
+        i += run;
+        continue;
+      }
+      const end = close + run;
       out += line.slice(i, end);
       i = end;
       continue;
     }
-    if (ch === "]" && line[i + 1] === "(") {
-      const t = transformDest(line, i);
-      out += t.text;
-      i = t.next;
+    if (ch === "[") {
+      depth += 1;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === "]") {
+      if (line[i + 1] === "(" && depth > 0) {
+        const t = transformDest(line, i);
+        out += t.text;
+        i = t.next;
+        depth -= 1;
+        continue;
+      }
+      if (depth > 0) depth -= 1;
+      out += ch;
+      i += 1;
       continue;
     }
     out += ch;
     i += 1;
   }
-  return out;
+  return { text: out, labelDepth: depth };
 }
 
 /** Windows 绝对盘符形态：D:\… 或 D:/…（单字母盘符 + 冒号 + 分隔符） */
@@ -106,6 +161,13 @@ function quotedTitleAfter(line: string, from: number): { text: string; end: numb
   return null;
 }
 
+/** 目标里的裸空白编码：空格 → %20、制表符 → %09。
+ *  （2026-10-13 审查 U4：markdown-it 会把裸 TAB 从目标里**静默吞掉** ——
+ *   `[x](a<TAB>b.md)` 实际指向 `ab.md`；编码后至少指向作者写的那串。） */
+function encodeDestBlank(s: string): string {
+  return s.replace(/[ \t]/g, (c) => (c === " " ? "%20" : "%09"));
+}
+
 /**
  * 从 openIdx（指向 `]`）处理一个链接/图片目标；返回改写后的片段与继续扫描位。
  * next 始终是**原行**坐标（此前重写分支用改写产物长度推进，改写变长时会跳过原文——顺修）。
@@ -132,7 +194,7 @@ function transformDest(line: string, openIdx: number): { text: string; next: num
   if (split !== null) {
     const destOut = isWindowsAbsolute(split.dest)
       ? `<file:///${toFileUrl(split.dest)}>`
-      : split.dest.replace(/ /g, "%20");
+      : encodeDestBlank(split.dest);
     return { text: `](${destOut} ${split.title})`, next: i + 1 };
   }
   if (isWindowsAbsolute(run)) {
@@ -140,8 +202,8 @@ function transformDest(line: string, openIdx: number): { text: string; next: num
     // 否则 DOMPurify 按「d: 陌生 scheme」摘 href → 死链
     return { text: `](file:///${toFileUrl(run)})`, next: i + 1 };
   }
-  if (!run.includes(" ")) return { text: line.slice(openIdx, i + 1), next: i + 1 };
-  return { text: `](${run.replace(/ /g, "%20")})`, next: i + 1 };
+  if (!/[ \t]/.test(run)) return { text: line.slice(openIdx, i + 1), next: i + 1 };
+  return { text: `](${encodeDestBlank(run)})`, next: i + 1 };
 }
 
 /**
@@ -176,7 +238,7 @@ function transformAngleDest(line: string, openIdx: number, open: number): { text
 
 /** 盘符路径 → file:/// URL 片段：反斜杠转正斜杠 + 空格编码（其余交给 normalizeLink） */
 function toFileUrl(dest: string): string {
-  return dest.replace(/\\/g, "/").replace(/ /g, "%20");
+  return encodeDestBlank(dest.replace(/\\/g, "/"));
 }
 
 /** 围栏 + 行内代码免疫的链接目标空格编码（纯函数；无 `](` 时零成本直通） */
@@ -184,22 +246,31 @@ export function encodeLinkDestSpaces(src: string): string {
   if (!src.includes("](")) return src;
   const lines = src.split("\n");
   let fence: { marker: string; len: number } | null = null;
+  let labelDepth = 0;
   const out: string[] = [];
   for (const line of lines) {
-    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
     if (fence !== null) {
       out.push(line);
-      if (fenceMatch !== null && fenceMatch[1][0] === fence.marker && fenceMatch[1].length >= fence.len) {
-        fence = null;
-      }
+      const mark = fenceMarkOf(line);
+      if (mark !== null && isFenceClose(mark, fence)) fence = null;
       continue;
     }
-    if (fenceMatch !== null) {
-      fence = { marker: fenceMatch[1][0], len: fenceMatch[1].length };
+    const mark = fenceMarkOf(line);
+    if (mark !== null) {
+      fence = { marker: mark.marker, len: mark.len };
+      labelDepth = 0;
       out.push(line);
       continue;
     }
-    out.push(encodeLine(line));
+    if (/^[ \t]*$/.test(line)) {
+      // 空行断段：链路标签不可能跨空行
+      labelDepth = 0;
+      out.push(line);
+      continue;
+    }
+    const r = encodeLine(line, labelDepth);
+    out.push(r.text);
+    labelDepth = r.labelDepth;
   }
   return outLines(out);
 }

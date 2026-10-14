@@ -65,9 +65,12 @@ function extractOutline(root: Element): OutlineItem[] {
 export function renderDocument(src: string, opts?: RenderOptions): RenderResult {
   const t: Record<string, number> = {};
   let s = performance.now();
-  // 性能早退（P3 基线诊断）：源文无 \( 与 \[ 时跳过保护（$$ 无反斜杠不需保护）
-  // ——1MB 级无公式文档实测 extract 约 0.9s，indexOf 预检近乎零成本
-  const needGuard = src.includes("\\(") || src.includes("\\[");
+  // 性能早退（P3 基线诊断）：源文无任何定界符时跳过保护，indexOf 预检近乎零成本。
+  // ⚠ `$$` 必须计入（2026-10-13 审查修正）：原注释「$$ 无反斜杠不需保护」**实测不成立** ——
+  //   breaks:true 把多行 `$$…$$` 的换行渲染成 <br>，而 KaTeX auto-render 按**单个文本节点**
+  //   匹配定界符 ⇒ 开/闭定界符被劈进两个文本节点，整块退化成纯文本（`$$` 字面残留）；
+  //   同一原因还会让 `$$a *b* c$$` 的块体被 emphasis 拆掉。
+  const needGuard = src.includes("$$") || src.includes("\\(") || src.includes("\\[");
   const guards = needGuard ? extractMath(src) : null;
   t.extract = Math.round(performance.now() - s); s = performance.now();
   // 链接目标裸空格编码（2026-10-01 用户反馈根因）：裸空格打断 CommonMark 链接解析，

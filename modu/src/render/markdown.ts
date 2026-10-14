@@ -232,13 +232,149 @@ function installAlertRule(engine: MarkdownIt): void {
     }
   })
 }
+/**
+ * 未引用的脚注定义不再整行消失（2026-10-13 审查 D3）。
+ *
+ * markdown-it-footnote 的 `footnote_tail` 会把**所有** `[^a]: …` 区块的 token 从正文里摘走，
+ * 只有被 `[^a]` 引用过的才重新拼到文末脚注区 —— 没引用的那份**直接丢弃**（GFM 同行为）。
+ * 对「阅读器」来说这是实害：用户写的整行不见了。
+ *
+ * 本规则插在 `footnote_tail` **之前**：此时 inline 解析已完成，`env.footnotes.refs[label]`
+ * 为 `-1` 就是「定义了但没被引用」。把这类定义的 `footnote_reference_open/close`
+ * **拆掉**（只去标记、内容块留在原 token 流里）⇒ 它按作者写的位置渲染成普通块；
+ * 被引用的定义一律不动，照旧进文末脚注区。
+ * 口径：与其它块级标记一致（`#`、`-`、`>` 也不显示），保留的是**内容与位置**。
+ */
+function installFootnoteKeepRule(engine: MarkdownIt): void {
+  engine.core.ruler.before('footnote_tail', 'modu_keep_unreferenced_footnotes', (state) => {
+    const refs = (state.env as { footnotes?: { refs?: Record<string, number> } }).footnotes?.refs
+    if (refs === undefined) return
+    const kept: typeof state.tokens = []
+    let unwrapDepth = 0
+    for (const token of state.tokens) {
+      if (token.type === 'footnote_reference_open') {
+        const label = (token.meta as { label?: string } | null)?.label ?? ''
+        if (refs[`:${label}`] === -1) {
+          unwrapDepth += 1
+          continue // 去掉开标记；定义内容留在原位
+        }
+      } else if (token.type === 'footnote_reference_close' && unwrapDepth > 0) {
+        unwrapDepth -= 1
+        continue // 去掉闭标记
+      }
+      kept.push(token)
+    }
+    state.tokens = kept
+  })
+}
+
+/**
+ * `www.` 前缀自动成链（2026-10-13 审查新增）。
+ *
+ * 为什么必须单独一条规则：原注释写「scheme/www 前缀仍自动成链」，**实测不成立** ——
+ * linkify-it 的 `www.` 匹配与裸域名同属 **fuzzyLink 路径**（`re.host_fuzzy_test` =
+ * `localhost|www\.|\.\d{1,3}\.|\....TLD`），所以 2026-10-01 关掉 fuzzyLink 时把 `www.`
+ * 一起关掉了：`www.example.com` 在正文里一直是字面文本（render 侧证据见测试锚）。
+ *
+ * 口径（用户 2026-10-01 裁决不复活）：**只收 `www.` 前缀**，裸域名
+ * （`笔记.md` → `http://xn--….md` punycode 实害）仍然不成链。做法是另起一个
+ * LinkifyIt 实例（构造器从现成实例上取，不引新依赖）并临时开 fuzzyLink，
+ * 复用它的 TLD 表与校验，再按 `www.` 前缀过滤。
+ *
+ * 挂在 core 的 `linkify` 之后：此时 markdown-it 已把 `https://…` 等成链，
+ * 剩下的 text token 里带 `www.` 的就是漏网的；`link_open` 之后的内容整段跳过，
+ * 不会在链接里套链接（行内码 token 是 code_inline，本就不在 text 分支）。
+ */
+function installWwwAutolink(engine: MarkdownIt): void {
+  const LinkifyItCtor = engine.linkify.constructor as unknown as new () => typeof engine.linkify
+  const matcher = new LinkifyItCtor()
+  matcher.set({ fuzzyLink: true, fuzzyEmail: false, fuzzyIP: false })
+  engine.core.ruler.after('linkify', 'www_autolink', (state) => {
+    for (const blockToken of state.tokens) {
+      if (blockToken.type !== 'inline' || blockToken.children === null) continue
+      const tokens: NonNullable<typeof blockToken.children> = blockToken.children
+      if (!tokens.some((t) => t.type === 'text' && t.content.includes('www.'))) continue
+      const out: NonNullable<typeof blockToken.children> = []
+      let linkDepth = 0
+      for (const token of tokens) {
+        if (token.type === 'link_open') {
+          linkDepth += 1
+          out.push(token)
+          continue
+        }
+        if (token.type === 'link_close') {
+          if (linkDepth > 0) linkDepth -= 1
+          out.push(token)
+          continue
+        }
+        if (token.type !== 'text' || linkDepth > 0) {
+          out.push(token)
+          continue
+        }
+        const text = token.content
+        if (!text.includes('www.')) {
+          out.push(token)
+          continue
+        }
+        const hits = (matcher.match(text) ?? []).filter((m) => /^www\./i.test(m.text))
+        if (hits.length === 0) {
+          out.push(token)
+          continue
+        }
+        let lastPos = 0
+        let emitted = false
+        for (const hit of hits) {
+          const fullUrl = engine.normalizeLink(hit.url)
+          if (!engine.validateLink(fullUrl)) continue
+          if (hit.index > lastPos) {
+            const before = new state.Token('text', '', 0)
+            before.content = text.slice(lastPos, hit.index)
+            before.level = token.level
+            out.push(before)
+          }
+          const open = new state.Token('link_open', 'a', 1)
+          open.attrs = [['href', fullUrl]]
+          open.level = token.level
+          open.markup = 'linkify'
+          open.info = 'auto'
+          out.push(open)
+          const label = new state.Token('text', '', 0)
+          label.content = engine.normalizeLinkText(hit.text)
+          label.level = token.level + 1
+          out.push(label)
+          const close = new state.Token('link_close', 'a', -1)
+          close.level = token.level
+          close.markup = 'linkify'
+          close.info = 'auto'
+          out.push(close)
+          lastPos = hit.lastIndex
+          emitted = true
+        }
+        if (!emitted) {
+          out.push(token)
+          continue
+        }
+        if (lastPos < text.length) {
+          const after = new state.Token('text', '', 0)
+          after.content = text.slice(lastPos)
+          after.level = token.level
+          out.push(after)
+        }
+      }
+      blockToken.children = out
+    }
+  })
+}
+
 export const md: MarkdownIt = new MarkdownIt({
   html: false, // D6 红线：禁止内联 HTML 直通
   // linkify 开（2026-10-01 全形态链接排查修正）：裸 URL（https://… 与 www.…）自动成链
   // 是 GFM 习惯、用户预期「网页链接要能打开」；但 **fuzzyLink/fuzzyEmail 关闭**（紧随
   // 构造之后的 set 调用）——fuzzy 形态会把正文里的 `xxx.md` 当「域名.md」补链成
   // http://xn--….md（punycode），点击跳浏览器（2026-10-01 用户反馈实害）。
-  // scheme/www 前缀仍自动成链，裸域名（含 .md TLD）不成链——两头都要。
+  // ⚠ 但 linkify-it 的 `www.` 规则本身就在 fuzzy 路径里 ⇒ 关掉 fuzzyLink 会把 www 一起关掉
+  // （2026-10-13 审查实测：原注释「scheme/www 前缀仍自动成链」是错的，www 一直是字面文本）。
+  // 现在由 installWwwAutolink 单独把 www 一种补回；裸域名（含 .md TLD）仍然不成链——两头都要。
   linkify: true,
   // 用户裁决（2026-09-23，规格级）：**关掉 typographer** —— 不静默改掉有字面含义的文本。
   // 与"禁裸 `$…$`（防 `$1,000` 被当公式）"同源：`--flag`、`1--2`、"key": value 都必须与源码一致；
@@ -270,3 +406,5 @@ md.linkify.set({ fuzzyLink: false, fuzzyEmail: false })
 installFenceRule(md)
 installTableWrapRule(md)
 installDataLineRule(md)
+installWwwAutolink(md)
+installFootnoteKeepRule(md)

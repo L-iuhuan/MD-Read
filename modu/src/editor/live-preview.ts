@@ -146,7 +146,7 @@ function expandedRanges(
  *  与列首形态同守卫（原来只认列首与引用内）。⚠ 手写单趟扫描、不用 `(?:\s*…)*`
  *  型正则：空白归两段共用会指数回溯（编辑热路径，「- - - - …」行能冻死渲染）。
  *  列表标记后必须跟空白（防把 `*b*` 的 `*` 当标记）。 */
-function startsDisplayMath(lineText: string): boolean {
+export function startsDisplayMath(lineText: string): boolean {
   const s = lineText;
   const len = s.length;
   const isSpace = (c: string): boolean => c === " " || c === "\t" || c === "\u3000";
@@ -195,6 +195,9 @@ export function buildLivePreviewDecorations(
   const doc = state.doc;
   const ranges = expandedRanges(doc, visible);
   const exempt = exemptedRanges(state);
+  /** 段落内 $$…$$ 实际跨度（task-4：只豁免公式本身，跨度外同段正文照常装饰）。
+   *  迭代中由 Paragraph 分支推入；add() 据此过滤，避免「$$ 起段整段零装饰」过宽。 */
+  const mathExempt: { from: number; to: number }[] = [];
   const pending: PendingDeco[] = [];
   const inCompute = (from: number): boolean =>
     ranges.some((r) => from >= r.from && from <= r.to);
@@ -204,6 +207,9 @@ export function buildLivePreviewDecorations(
     }
     if (exempt.some((e) => to > e.from && from <= e.to)) {
       return; // 光标/选区行：装饰退场
+    }
+    if (mathExempt.some((e) => to > e.from && from < e.to)) {
+      return; // $$…$$ 实际跨度：公式体内不上装饰（同段跨度外照常）
     }
     pending.push({ from, to, deco });
   };
@@ -217,6 +223,26 @@ export function buildLivePreviewDecorations(
   const markEnd = (pos: number): number => (doc.sliceString(pos, pos + 1) === " " ? pos + 1 : pos);
   const taskAt = (from: number, to: number, marker: string): void => {
     add(from, to, Decoration.replace({ widget: new TaskCheckboxWidget(marker !== " ") }));
+  };
+  /** 阅读侧 @mdit/plugin-tasklist 的识别条件比 lezer GFM 严格：「]」后必须是半角
+   *  空格，且行内还要有非空白标签（空任务项「- [ ] 」「- [ ]」「- [x]已办」、
+   *  tab 分隔在阅读态都只是字面文本）。两处任务分支都要过这道闸，否则编辑态
+   *  显示勾选框、切阅读态变回字面（「编辑里看起来对了、切阅读却变了」）。
+   *  对照锚：tests/editor-audit-live-preview.spec.ts。 */
+  const taskRenderable = (markerFrom: number, markerTo: number): boolean => {
+    if (doc.sliceString(markerTo, markerTo + 1) !== " ") {
+      return false;
+    }
+    const line = doc.lineAt(markerFrom);
+    return line.text.slice(markerTo - line.from + 1).trim() !== "";
+  };
+
+  /** 段落内「$$」…「$$」的实际跨度：从段首「$$」起找下一个「$$」（与 mathprotect 的
+   *  indexOf(close) 同口径；多行块按整段源码跨度收）。找不到闭合返回 null。
+   *  仅在同段内配对——跨段（空行后）闭合属边缘形态，阅读侧本身也走退化路径。 */
+  const mathSpanOf = (paraFrom: number, paraTo: number): { from: number; to: number } | null => {
+    const closeRel = doc.sliceString(paraFrom + 2, paraTo).indexOf("$$");
+    return closeRel === -1 ? null : { from: paraFrom, to: paraFrom + 2 + closeRel + 2 };
   };
 
   // 树获取：优先 ensure（至多 100ms 同步补解析，CM forceParsing 同款预算）——
@@ -240,9 +266,21 @@ export function buildLivePreviewDecorations(
           case "SetextHeading1":
           case "SetextHeading2":
             return false;
-          case "Paragraph":
-            // $$ 起段（含引用内）：整段按公式处理，零装饰
-            return !startsDisplayMath(doc.lineAt(node.from).text);
+          case "Paragraph": {
+            // 非 $$ 起段：正常装饰
+            if (!startsDisplayMath(doc.lineAt(node.from).text)) {
+              return true;
+            }
+            // $$ 起段（含引用/列表内）：豁免收敛到 $$…$$ 实际跨度（与 mathprotect「取下一个 $$」同口径）。
+            // 未闭合 ⇒ 无跨度、不豁免（正文照常装饰，与阅读态一致）；
+            // 整段就是一个 $$ 块 ⇒ 仍零装饰（既有设计意图，源码可编辑）。
+            const span = mathSpanOf(node.from, node.to);
+            if (span === null || span.to >= node.to) {
+              return span === null; // 未闭合＝可装饰；整段公式＝零装饰
+            }
+            mathExempt.push(span);
+            return true;
+          }
           case "ATXHeading1":
           case "ATXHeading2":
           case "ATXHeading3":
@@ -289,14 +327,14 @@ export function buildLivePreviewDecorations(
             if (node.node.getChildren("Task").length === 0) {
               const para = node.node.getChildren("Paragraph")[0];
               const marker = para === undefined ? "" : doc.sliceString(para.from, para.from + 3);
-              if (para !== undefined && (marker === "[ ]" || marker === "[x]" || marker === "[X]")) {
+              if (para !== undefined && (marker === "[ ]" || marker === "[x]" || marker === "[X]") && taskRenderable(para.from, para.from + 3)) {
                 taskAt(para.from, para.from + 3, marker[1]);
               }
             }
             return true;
           }
           case "TaskMarker": // GFM base：Task > TaskMarker
-            if (parent === "Task") {
+            if (parent === "Task" && taskRenderable(node.from, node.to)) {
               taskAt(node.from, node.to, doc.sliceString(node.from + 1, node.to - 1));
             }
             return false;

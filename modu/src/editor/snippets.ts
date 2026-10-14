@@ -130,8 +130,11 @@ const TASK_OPTION: Completion = {
 const LINK_OPTION: Completion = {
   label: "链接",
   detail: "插入 [文字](地址)",
+  // 占位文字「文字」= 2 个汉字宽 ⇒ 选区 [1,3)（半开区间）恰盖住占位、不含 `]`。
+  // ⚠ 曾误写 4：会连 `]` 一起选中，用户接受后直接打字得 `[新(地址)`（链接损坏）。
+  // 对照锚：tests/snippets.spec.ts「链接/图片：占位文字被选中」+ editor-audit 行为锚。
   apply: (view, _completion, from, to) =>
-    dispatchInsert(view, from, eatAutoClose(view, to, "]"), "[文字](地址)", 1, 4),
+    dispatchInsert(view, from, eatAutoClose(view, to, "]"), "[文字](地址)", 1, 3),
 };
 
 const IMAGE_OPTION: Completion = {

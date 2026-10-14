@@ -34,7 +34,7 @@
 import { moveLineDown, moveLineUp } from "@codemirror/commands";
 import { EditorSelection, EditorState, Prec, Transaction, type Extension, type Line, type SelectionRange } from "@codemirror/state";
 import { type Command, EditorView, keymap } from "@codemirror/view";
-import { backspaceExitMarkupLine, exitEmptyMarkupLine } from "./markup-exit";
+import { backspaceExitMarkupLine, exitEmptyMarkupLine, markupLineEditable } from "./markup-exit";
 
 /* ---- 行内标记：toggle 家族 ---- */
 
@@ -131,7 +131,12 @@ export function toggleLink(view: EditorView): boolean {
 
 /* ---- 行级命令公共件 ---- */
 
-const HEADING_PREFIX = /^(#{1,6})\s+/;
+/** ATX 标题前缀：CommonMark 允许最多 3 个前导空格，且 `#`/`##`… 可单独成行
+ *  （空标题，允许行尾）。旧式 `^(#{1,6})\s+` 不认缩进标题与空标题 ⇒ 命令会在
+ *  既有 `#` 前再叠一层（`  # 甲` → `##   # 甲`、`#` → `# #`），与阅读态
+ *  「同样是标题」相悖。分组：1=缩进、2=井号、3=井号后的空白或行尾。
+ *  对照锚：tests/editor-audit-markdown-commands.spec.ts。 */
+const HEADING_PREFIX = /^( {0,3})(#{1,6})([ \t]+|$)/;
 
 /** 选区覆盖的全部行（升序去重；多光标同行只取一次——重叠 change 会被 CM 拒绝） */
 function coveredLines(state: EditorState): Line[] {
@@ -190,18 +195,21 @@ function dispatchLineOps(view: EditorView, changes: { from: number; to?: number;
 export function toggleHeading(level: number): Command {
   return (view: EditorView): boolean => {
     const lines = coveredLines(view.state);
-    const levelOf = (text: string): number => HEADING_PREFIX.exec(text)?.[1].length ?? 0;
+    const levelOf = (text: string): number => HEADING_PREFIX.exec(text)?.[2].length ?? 0;
     const target = lines.every((l) => levelOf(l.text) === level) ? 0 : level;
     const desired = target > 0 ? `${"#".repeat(target)} ` : "";
     const changes: { from: number; to?: number; insert?: string }[] = [];
     const ops: LineOp[] = [];
     for (const line of lines) {
-      const prefix = HEADING_PREFIX.exec(line.text)?.[0] ?? "";
+      const match = HEADING_PREFIX.exec(line.text);
+      const indent = match?.[1] ?? "";
+      const prefix = match === null ? "" : match[0].slice(indent.length); // 井号＋分隔空白（不含缩进）
       if (prefix === desired) {
         continue;
       }
-      changes.push({ from: line.from, to: line.from + prefix.length, insert: desired });
-      ops.push({ at: line.from, delLen: prefix.length, insLen: desired.length });
+      const from = line.from + indent.length; // 缩进保留：只换井号段
+      changes.push({ from, to: from + prefix.length, insert: desired });
+      ops.push({ at: from, delLen: prefix.length, insLen: desired.length });
     }
     if (changes.length === 0) {
       return false;
@@ -213,22 +221,42 @@ export function toggleHeading(level: number): Command {
 
 /* ---- 任务项（行级）---- */
 
-/** 任务项 toggle（Ctrl-Enter）：行首无任务标记 → 插 `- [ ] `（行首已有普通列表
- *  标记则地升级为任务项，不重复插列表符）；已有任务项 → `[ ]`↔`[x]` 勾选切换。 */
+/** 引用栈前缀（各层 > ＋其后可选空白；每层允许最多 3 空格缩进）。 */
+const TASK_QUOTE_PREFIX = /^(?:[ \t]{0,3}>[ \t]?)+/;
+/** 列表标记（无序/有序）＋其后空白：已有标记时任务标记插在其后、保留原标记。 */
+const TASK_LIST_MARKER = /^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)/;
+/** 任务标记本体：[ ]/[x]/[X] 且 ] 后跟空白（与阅读侧 tasklist 同条件）。 */
+const TASK_BOX = /^\[( |x|X)\]([ \t])/;
+
+/** 任务项 toggle（Ctrl-Enter）口径（task-4 Lead 定）：
+ *  - 围栏代码/缩进代码/表格/HTML 块内 ⇒ no-op（树守卫同 markup-exit）；
+ *  - 引用行 ⇒ 插在引用标记之后（「> 甲」→「> - [ ] 甲」，层级不变）；
+ *  - 有序项 ⇒ 保留有序标记（「1. 甲」→「1. [ ] 甲」；实测阅读态认它，见报告）；
+ *  - 普通段落 ⇒ 行首（缩进后）插「- [ ] 」；
+ *  - 已是任务项 ⇒ [ ]↔[x] 既有勾选语义（引用/有序形态一并支持）。
+ *  产出必须能被阅读态渲染成勾选框——对照锚见 editor-audit 任务项 describe。 */
 export function toggleTaskItem(view: EditorView): boolean {
+  const { state } = view;
   const changes: { from: number; to?: number; insert?: string }[] = [];
   const ops: LineOp[] = [];
-  for (const line of coveredLines(view.state)) {
-    const task = /^(\s*)([-*+]) \[( |x|X)\] /.exec(line.text);
-    if (task !== null) {
-      const box = line.from + task[1].length + task[2].length + 2; // 「[」之后一格＝勾选位
-      changes.push({ from: box, to: box + 1, insert: task[3] === " " ? "x" : " " });
+  for (const line of coveredLines(state)) {
+    if (!markupLineEditable(state, line)) {
+      return false; // 代码/表格/HTML 内整体放行（多行任一命中即不接管）
+    }
+    const text = line.text;
+    const quote = TASK_QUOTE_PREFIX.exec(text)?.[0] ?? "";
+    const body = text.slice(quote.length);
+    const list = TASK_LIST_MARKER.exec(body);
+    const markerLen = list === null ? 0 : list[0].length;
+    const box = TASK_BOX.exec(body.slice(markerLen));
+    if (box !== null) {
+      const boxAt = line.from + quote.length + markerLen; // 「[」位置
+      changes.push({ from: boxAt + 1, to: boxAt + 2, insert: box[1] === " " ? "x" : " " });
       continue;
     }
-    const list = /^(\s*)([-*+]) /.exec(line.text);
-    const at = list !== null
-      ? line.from + list[0].length
-      : line.from + (line.text.match(/^\s*/)?.[0] ?? "").length;
+    // 无任务标记：列表标记后插「[ ] 」；引用/普通段落前置「- [ ] 」
+    const indent = list !== null ? markerLen : (/^[ \t]*/.exec(body)?.[0].length ?? 0);
+    const at = line.from + quote.length + indent;
     const insert = list !== null ? "[ ] " : "- [ ] ";
     changes.push({ from: at, insert });
     ops.push({ at, delLen: 0, insLen: insert.length });
@@ -239,7 +267,6 @@ export function toggleTaskItem(view: EditorView): boolean {
   dispatchLineOps(view, changes, ops);
   return true;
 }
-
 /* ---- 引用（行级）---- */
 
 /** 引用前缀（P2，fix-23）：`> ` 与无空格形态 `>x` 都算已有引用（CommonMark 里

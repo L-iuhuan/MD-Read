@@ -109,6 +109,57 @@ function degradeCjkMath(doc: Document, root: Element): void {
   for (const node of nodes) degradeNode(doc, node)
 }
 
+/** breaks:true 把软换行渲染成 <br>，而 KaTeX auto-render 按**单个文本节点**匹配定界符 ⇒
+ *  跨行的 `$$…$$` 会被劈进两个文本节点、整块漏渲。mathprotect 已把「两端行级独占」的
+ *  规范块收走，但下面这族**非典型写法**仍会走到这里、落到本函数修：
+ *    · `$$E` / `= mc^2$$`（定界符与内容同行）
+ *    · `$$\nE = mc^2$$`（只有开定界符独占一行）
+ *  做法：只把**落在成对 `$$` 区间内**的直接子 <br> 换成 `\n` 再 normalize()。
+ *  ⚠ 作用域被限定在**一个块元素内部** ⇒ 绝不可能把标题/列表/围栏这些块结构吞进公式
+ *  （这正是 mathprotect 不敢放宽配对的原因：那种吞并是跨块的、不可逆的）。
+ *  ⚠ 只处理 `$$`：`\(` `\[` 一律由 mathprotect 在 render 前收走，不走这条路径。 */
+function joinDollarAcrossBreaks(doc: Document): void {
+  const brs = doc.body.querySelectorAll('br')
+  if (brs.length === 0) return
+  const hosts = new Set<Element>()
+  for (const br of Array.from(brs)) {
+    const parent = br.parentElement
+    if (parent !== null) hosts.add(parent)
+  }
+  for (const host of hosts) {
+    const text = host.textContent ?? ''
+    if (!text.includes('$$')) continue // 该块内没有美元定界符：整块跳过
+    const pairs: Array<[number, number]> = []
+    for (let cursor = 0; ; ) {
+      const at = text.indexOf('$$', cursor)
+      if (at === -1) break
+      const close = text.indexOf('$$', at + 2)
+      if (close === -1) break
+      pairs.push([at, close + 2])
+      cursor = close + 2
+    }
+    if (pairs.length === 0) continue
+    // textContent 不含 <br> 自身（<br> 是空元素），故偏移口径与上面的 text 一致
+    let offset = 0
+    const doomed: Element[] = []
+    for (const node of Array.from(host.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        offset += (node.textContent ?? '').length
+        continue
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) continue
+      const el = node as Element
+      if (el.tagName.toLowerCase() === 'br') {
+        if (pairs.some(([s, e]) => offset > s && offset < e)) doomed.push(el)
+      }
+      offset += (el.textContent ?? '').length
+    }
+    if (doomed.length === 0) continue
+    for (const br of doomed) br.replaceWith(doc.createTextNode('\n'))
+    host.normalize() // 相邻文本节点合并 ⇒ 成对定界符回到同一个文本节点
+  }
+}
+
 /** 对 detached 文档的 body 做公式渲染；CJK 伪公式先降级，真解析失败的单个公式保留原文 */
 export function renderMath(doc: Document): void {
   // 性能早退（P3 基线诊断）：全文无任何定界符时跳过 CJK 预检与 auto-render
@@ -117,6 +168,8 @@ export function renderMath(doc: Document): void {
   if (!txt.includes("$$") && !txt.includes("\\(") && !txt.includes("\\[")) {
     return
   }
+  // $$ 跨行合并必须最先做：CJK 预检与 auto-render 都按**单个文本节点**匹配定界符
+  joinDollarAcrossBreaks(doc)
   degradeCjkMath(doc, doc.body)
   renderMathInElement(doc.body, {
     delimiters: DELIMITERS,

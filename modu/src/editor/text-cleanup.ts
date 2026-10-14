@@ -18,6 +18,7 @@
  * CRLF（D7）：纯插入（只插空格、零删改既有字节），行分隔符天然保真。
  */
 import { type Command, EditorView } from "@codemirror/view";
+import { startsDisplayMath } from "./live-preview";
 import type { Line } from "@codemirror/state";
 
 /** CJK 侧字符（与 render/pangu.ts 的 RE_BOUNDARY 同源：部首~汉字 + 兼容表意） */
@@ -98,9 +99,13 @@ function lineInserts(line: Line, from: number, to: number): Array<{ from: number
   return out;
 }
 
-/** 是否 $$ 公式行（块级 display math 的开/关行，或 $$…$$ 单行） */
+/** 是否 $$ 公式行（块级 display math 的开/关行，或 $$…$$ 单行）。
+ *  守卫与 live-preview 同源（startsDisplayMath）：剥掉引用栈/缩进/列表标记后
+ *  以 $$ 开头——`> $$`、`- $$`、`1. $$` 与列首同判。旧实现只认 trimStart 后
+ *  的列首形态，会往引用/列表内的公式体插空格（切阅读态公式被改写）；
+ *  对照锚：tests/editor-audit-text-cleanup.spec.ts。 */
 function isMathFenceLine(text: string): boolean {
-  return text.trimStart().startsWith("$$");
+  return startsDisplayMath(text);
 }
 
 /** $$ 出现次数为奇数 ⇒ 块级公式从此行开启（单行 $$…$$ 为偶数，不开启） */

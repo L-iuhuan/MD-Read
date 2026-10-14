@@ -55,9 +55,13 @@ const NON_MARKUP_NODES = new Set(["FencedCode", "CodeBlock", "HTMLBlock", "Table
 
 /** 树守卫：行落在代码/HTML/表格块内则不接管——代码块里的「- 」是代码不是标记
  *  （CM 自带的续标记命令同样在代码区放行）。树不完整时同步补解析（同 live-preview 口径）。 */
-function markupLineEditable(state: EditorState, line: Line): boolean {
+export function markupLineEditable(state: EditorState, line: Line): boolean {
   const tree = ensureSyntaxTree(state, line.to, 100) ?? syntaxTree(state);
-  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(line.from, 1);
+  // 探针取行内首个非空白字符：缩进代码块（CodeBlock）节点从内容起算、不覆盖行首缩进，
+  // 用 line.from 会落在节点之外（resolveInner(line.from, 1) 得 Document）⇒ 守卫漏判。
+  const indent = /^[ \t]*/.exec(line.text)?.[0].length ?? 0;
+  const probe = line.from + indent;
+  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(probe < line.to ? probe : line.from, 1);
   while (node !== null) {
     if (NON_MARKUP_NODES.has(node.name)) return false;
     node = node.parent;

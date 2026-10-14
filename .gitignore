@@ -48,3 +48,7 @@ docs/demo/
 # 审查汇总类入仓（2026-09-29 主人指示：问题清单+修法+file:line 证据须提交供开发机接续；
 # 内容纪律＝不含攻击面细节，入库前过 check-sensitive）
 !docs/tasks/*审查问题汇总*.md
+
+# 2026-10-14：外部 agent 构建验证副本（265MB）与生成的预览 HTML 不入库
+mdread-buildcheck/
+docs/验收/渲染结果预览.html

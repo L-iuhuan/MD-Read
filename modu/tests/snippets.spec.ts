@@ -241,15 +241,32 @@ describe("apply 骨架与光标位", () => {
     expect(v2.state.sliceDoc()).toBe("1. [ ] ");
   });
 
-  it("链接/图片：占位文字被选中（直接敲字即替换）", () => {
+  it("链接/图片：占位文字被选中且不含 `]`；直接敲字替换后仍是合法链接", () => {
     const v1 = makeView("[");
     applyLabel(v1, 1);
     expect(v1.state.sliceDoc()).toBe("[文字](地址)");
-    expect(EditorSelection.range(1, 4).eq(v1.state.selection.main)).toBe(true);
+    // 新锚①：选区逐字等于占位片段「文字」（半开区间 [1,3)），不含 `]`
+    expect(v1.state.selection.main.from).toBe(1);
+    expect(v1.state.selection.main.to).toBe(3);
+    expect(v1.state.sliceDoc(v1.state.selection.main.from, v1.state.selection.main.to)).toBe("文字");
+    expect(v1.state.sliceDoc(v1.state.selection.main.from, v1.state.selection.main.to)).not.toContain("]");
+    // 新锚②（原锚的失败条件）：接受补全后直接打字 —— 旧锚 range(1,4) 会连 `]` 选中，
+    // 打字得 `[新(地址)`（没有 `]` 的坏链）；修后占位整段被替换 ⇒ `[新](地址)`。
+    const sel = v1.state.selection.main;
+    v1.dispatch({
+      changes: { from: sel.from, to: sel.to, insert: "新" },
+      selection: { anchor: sel.from + 1 },
+    });
+    expect(v1.state.sliceDoc()).toBe("[新](地址)"); // 设计值：占位「文字」被整段替换
+    expect(v1.state.sliceDoc()).not.toBe("[新(地址)");
+    // 图片分支保持正确：占位「题注」被选中、不含 `]`
     const v2 = makeView("![");
     applyLabel(v2, 2);
     expect(v2.state.sliceDoc()).toBe("![题注](路径)");
-    expect(EditorSelection.range(2, 4).eq(v2.state.selection.main)).toBe(true);
+    expect(v2.state.selection.main.from).toBe(2);
+    expect(v2.state.selection.main.to).toBe(4);
+    expect(v2.state.sliceDoc(v2.state.selection.main.from, v2.state.selection.main.to)).toBe("题注");
+    expect(v2.state.sliceDoc(v2.state.selection.main.from, v2.state.selection.main.to)).not.toContain("]");
   });
 
   it("围栏：ts / 无语言，光标落围栏内空行", () => {

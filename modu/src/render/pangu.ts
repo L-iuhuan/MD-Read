@@ -4,7 +4,9 @@
  *
  * 与 demo 的差异：
  * - 所有节点/片段由传入的 Document 创建（detached 文档自洽，不碰全局 document）；
- * - 跳过名单在 demo 基础上按任务书补了 a（链接文本不插空，保持链接可读性）。
+ * - 跳过名单在 demo 基础上按任务书补了 a（链接文本不插空，保持链接可读性）；
+ *   2026-10-13 审查 U6 再补 .math-fallback（CJK 降级公式体：KaTeX 渲染的公式从不插空，
+ *   降级形态也不该插，否则同一个公式「有时有空格有时没有」）。
  *
  * 红线（D2 金额保真）：货币符号 $¥€£＄￥ 只在「CJK ↔ 货币」边界参与匹配，
  * 与「货币 ↔ 数字」永不相邻配对——$1,000 与 ¥12,345.67 全程贴紧。
@@ -27,6 +29,7 @@ function shouldSkip(node: Node): boolean {
     if (SKIP_TAGS.has(p.tagName)) return true
     if (
       p.classList.contains('katex') ||
+      p.classList.contains('math-fallback') ||
       p.classList.contains('mermaid') ||
       p.hasAttribute('data-no-pangu')
     ) {
