@@ -20,7 +20,8 @@
  * 键位表（IME 红线：无 Ctrl+Alt / Alt+字母）：
  *  Ctrl-B 粗体｜Ctrl-I 斜体｜Ctrl-K 链接｜Ctrl-Shift-K 行内代码｜
  *  Ctrl-Shift-X 删除线｜Ctrl-1..6 标题｜Ctrl-0 清标题｜Ctrl-Enter 任务勾选｜
- *  Alt-↑/↓ 块移动｜Enter 空标记行退出（Prec.high，2026-10-13 编辑回归修复）。
+ *  Alt-↑/↓ 块移动｜Enter 空标记行退出（Prec.high，2026-10-13 编辑回归修复）｜
+ *  Backspace 空标记行智能退出（Prec.high，fix-29——裁决链见 ./markup-exit.ts）。
  *  ⚠ 与任务书原键的两处偏差（2026-10-12 全仓核查）：
  *  ① 删除线 Ctrl-Shift-S：editor.ts 的 Ctrl+S 捕获层不看 shiftKey，
  *    Ctrl+Shift+S 在 document 捕获相即被截停成「保存」，CM 永远收不到
@@ -30,10 +31,10 @@
  *    改走下方 domEventHandlers 截停通道；Ctrl-Shift-0 在多数布局下
  *    event.key 不是 "0"，不可用。
  */
-import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { moveLineDown, moveLineUp } from "@codemirror/commands";
 import { EditorSelection, EditorState, Prec, Transaction, type Extension, type Line, type SelectionRange } from "@codemirror/state";
 import { type Command, EditorView, keymap } from "@codemirror/view";
+import { backspaceExitMarkupLine, exitEmptyMarkupLine } from "./markup-exit";
 
 /* ---- 行内标记：toggle 家族 ---- */
 
@@ -278,70 +279,21 @@ export const toggleBlockquote: Command = (view: EditorView): boolean => {
 export const moveBlockUp: Command = moveLineUp;
 export const moveBlockDown: Command = moveLineDown;
 
-/* ---- 空标记行退出（编辑回归修复 · 2026-10-13）---- */
-
-/** 纯标记行：行首到行尾仅一枚块级标记（>、-、*、+、数字.、数字)）或其任务形态
- *  （标记 + [ ]/[x]/[X]，大小写归一），后随可选空白、再无他物。有内容行、表格/
- *  公式行在文本上即不匹配；代码块内的同形行由树守卫排除。
- *  fix-23 P2 扩两处口径（与 live-preview 纯标记行豁免对齐）：
- *  · 嵌套空引用 `> > `：多级 `>` 栈也算纯标记（清整行为空段落）；
- *  · 任务形态补有序 `1. [ ]`；空白认全角（`－　` 这类全角标记行同享退出语义）。
- *  仍不匹配：`> - `（引用套列表，非纯引用栈）、任何带内容的行。 */
-const EMPTY_MARKUP_LINE = /^(?:(?:\s*>)+|[-*+]|－|\d+[.)])(?:[ \u3000]+\[(?: |x|X)\])?[ \t\u3000]*$/;
-
-/** 树守卫名单：这些节点里的行是内容不是标记（与 live-preview.ts 整块跳过名单同源） */
-const NON_MARKUP_NODES = new Set(["FencedCode", "CodeBlock", "HTMLBlock", "Table"]);
-
-/** 树守卫：行落在代码/HTML/表格块内则不接管——代码块里的「- 」是代码不是标记
- *  （CM 自带的续标记命令同样在代码区放行）。树不完整时同步补解析（同 live-preview 口径）。 */
-function markupLineEditable(state: EditorState, line: Line): boolean {
-  const tree = ensureSyntaxTree(state, line.to, 100) ?? syntaxTree(state);
-  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(line.from, 1);
-  while (node !== null) {
-    if (NON_MARKUP_NODES.has(node.name)) return false;
-    node = node.parent;
-  }
-  return true;
-}
-
-/** Enter · 空标记行退出：光标行是纯标记行（空引用/空列表/空任务项）→ 整行清除
- *  标记、光标停行首（Typora 惯例——CM 自带的 insertNewlineContinueMarkup 对首个
- *  空「> 」行会再续一个「> 」，视觉上「Enter 自动插空白行、永不退出」）。
- *  其余一律返回 false 放行，续标记行为零变化；纯删除不插入文本（头注 CRLF 契约）。 */
-export const exitEmptyMarkupLine: Command = (view: EditorView): boolean => {
-  const { state } = view;
-  if (!state.selection.ranges.every((r) => r.empty)) {
-    return false; // 有选区：Enter 走默认的替换语义
-  }
-  const seen = new Set<number>();
-  const changes: { from: number; to?: number; insert?: string }[] = [];
-  for (const range of state.selection.ranges) {
-    const line = state.doc.lineAt(range.head);
-    if (!EMPTY_MARKUP_LINE.test(line.text) || !markupLineEditable(state, line)) {
-      return false; // 任一光标不匹配即整体放行（多光标不做混合行为）
-    }
-    if (!seen.has(line.from)) { // 多光标同行只清一次（重叠 change 会被 CM 拒绝）
-      seen.add(line.from);
-      changes.push({ from: line.from, to: line.to });
-    }
-  }
-  const sel = state.selection;
-  view.dispatch({
-    changes,
-    selection: EditorSelection.create(changes.map((c) => EditorSelection.cursor(c.from)), Math.min(sel.mainIndex, changes.length - 1)),
-  });
-  return true;
-};
-
 /* ---- 组装：键位 + Ctrl-0 截停 ---- */
 
 /** 键位全家 + 命令扩展，进 baseExtensions。⚠ 必须排在 defaultKeymap 的 keymap
  *  之前：Ctrl-Enter 任务勾选要压过其 Mod-Enter→insertBlankLine。Enter（空标记
  *  行退出）必须 Prec.high：markdown() 在其后装配、其 markdownKeymap 绑 Enter=
- *  insertNewlineContinueMarkup——Prec.high 保证先裁决（返回 false 照常放行）。 */
+ *  insertNewlineContinueMarkup——Prec.high 保证先裁决（返回 false 照常放行）。
+ *  Backspace（空标记行智能退出，fix-29）同表 Prec.high：markdownKeymap 亦绑
+ *  Backspace=deleteMarkupBackward；input-pairs 的 deleteBracketPair 在更前
+ *  （同为 Prec.high，扩展数组在前者先裁）——触发面互不相交，见 markup-exit.ts。 */
 export function markdownCommands(): Extension {
   return [
-    Prec.high(keymap.of([{ key: "Enter", run: exitEmptyMarkupLine }])),
+    Prec.high(keymap.of([
+      { key: "Enter", run: exitEmptyMarkupLine },
+      { key: "Backspace", run: backspaceExitMarkupLine }, // fix-29：退格整行退出＋惰性延续空行分离
+    ])),
     keymap.of([
       { key: "Mod-b", run: toggleBold },
       { key: "Mod-i", run: toggleItalic },
@@ -383,6 +335,10 @@ export function markdownCommands(): Extension {
 /** 中文整理（源码文本级 CJK↔拉丁补间距）：实现与豁免规则见 ./text-cleanup；
  *  键位 Ctrl-Shift-T 绑在 editor.ts 的 baseExtensions。再导出保工具栏 lane 的单一导入面。 */
 export { tidyChineseText } from "./text-cleanup";
+
+/** 空标记行退出家族（Enter · exitEmptyMarkupLine / Backspace · backspaceExitMarkupLine，
+ *  fix-29 起实现迁 ./markup-exit）：再导出保既有导入面（tests 与键位同源）。 */
+export { backspaceExitMarkupLine, exitEmptyMarkupLine } from "./markup-exit";
 
 /** 3×3 表骨架（3 列：表头行 + 分隔行 + 两行空数据行）；行中插入时前后自动让行
  *  （防表格贴行被吞）。CRLF（D7）：换行取 state.lineBreak；光标长度取 toText 的

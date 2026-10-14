@@ -20,7 +20,10 @@ import {
 import { renderDocument } from "../src/render/pipeline";
 import corpusSrc from "./corpus/全格式矩阵.md?raw";
 
-const src: string = corpusSrc;
+// fix-28：语料读入即归一 LF——检出形态随平台/core.autocrlf 漂移（autocrlf 检出 CRLF 时曾三红：
+// 含 \n 的 lineOf 标记查不到 / src.indexOf 偏移 ≠ CM6 位置 / doc.toString() ≠ src）。
+// 此后一切断言与定位（lineOf 标记、indexOf 偏移、LP doc 对拍）只认 LF；.gitattributes 已钉语料 LF 检出。
+const src: string = corpusSrc.replace(/\r\n/g, "\n");
 
 function parse(html: string): Document {
   return new DOMParser().parseFromString(html, "text/html");
