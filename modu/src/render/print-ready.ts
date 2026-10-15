@@ -18,7 +18,7 @@
  */
 
 import { renderMermaidEl } from './mermaid'
-import { restoreSlicedTables, sliceTableWrap } from './table-slice'
+import { type SliceMeasurement, measureForSlice, restoreSlicedTables, sliceTableWrap } from './table-slice'
 
 export interface PrintReadyResult {
   timedOut: boolean
@@ -268,7 +268,14 @@ export function markPrintBlocks(root: ParentNode): PrintBlockCounts {
   restoreSlicedTables(root) // 幂等前置：还原上轮 T4 切片（原表一直在 DOM，重测口径不变）
   const counts: PrintBlockCounts = { wrap: 0, zoom: 0, squeeze: 0, slice: 0, tall: 0 }
   for (const box of Array.from(root.querySelectorAll<HTMLElement>('.table-wrap'))) {
-    applyTableTier(box, blockContentWidth(box), counts)
+    const width = blockContentWidth(box)
+    // ⭐ 次序铁律（fix 2026-10-15 真机「一根线」教训）：**所有测量先于一切类应用**——
+    // 逐列宽在 wrap 还没挂任何档类时量好缓存，applyTableTier/sliceTableWrap 只做纯落类
+    // 与纯 DOM 变换（零布局读取）。「先落类再量宽」在 display:none 下读数全 0、
+    // 贪心分组退化，jsdom 等宽回退恰好绕开 ⇒ 测试绿而真机死。tests/table-slice.spec.ts
+    // 有守卫锚（量宽时 wrap 已挂 table-sliced 即抛错）。
+    const pre = printTier(width) === 4 ? measureForSlice(box, width) : null
+    applyTableTier(box, width, pre, counts)
   }
   for (const el of Array.from(root.querySelectorAll<HTMLElement>('.mermaid svg, img'))) {
     const fit = printFitScale(el.getBoundingClientRect().height, PORTRAIT_PRINTABLE_HEIGHT_PX)
@@ -283,8 +290,14 @@ export function markPrintBlocks(root: ParentNode): PrintBlockCounts {
   return counts
 }
 
-/** 单表落档：四类互斥；先摘全部档类与内联变量再落新档（换档/变窄不残留）。 */
-function applyTableTier(box: HTMLElement, width: number, counts: PrintBlockCounts): void {
+/** 单表落档：四类互斥；先摘全部档类与内联变量再落新档（换档/变窄不残留）。
+ *  只消费已量好的缓存（pre），自身不做任何布局测量。 */
+function applyTableTier(
+  box: HTMLElement,
+  width: number,
+  pre: SliceMeasurement | null,
+  counts: PrintBlockCounts,
+): void {
   const tier = printTier(width)
   // 'wide-page' 是三档时代遗产类，这里顺带摘除以防旧标记残留（本函数不再产生它）
   box.classList.remove('print-wrap', 'print-zoom', 'print-bleed', 'squeeze-page', 'wide-page')
@@ -303,7 +316,7 @@ function applyTableTier(box: HTMLElement, width: number, counts: PrintBlockCount
   // T3/T4 共用 squeeze-page：page:wide（自 wide-page 迁移）+ 261mm 压列
   box.classList.add('squeeze-page')
   counts.squeeze += 1
-  if (tier === 4 && sliceTableWrap(box, width) > 0) {
+  if (tier === 4 && sliceTableWrap(box, pre) > 0) {
     counts.slice += 1
   }
 }

@@ -1,8 +1,9 @@
 /**
  * 隔离表格评测集的配套断言（fix-31 任务二，2026-10-15 扩充四档）。
  *
- * 语料：tests/corpus/隔离表格评测集.md（T1–T12，十二张表，覆盖普通表/对齐三式/无表体表/
- * 单元格特殊内容/列表后表/围栏邻接/宽表/超宽表/公式共存/十列中宽/窄长表/十六列巨宽）。
+ * 语料：tests/corpus/隔离表格评测集.md（T1–T13，十三张表，覆盖普通表/对齐三式/无表体表/
+ * 单元格特殊内容/列表后表/围栏邻接/宽表/超宽表/公式共存/十列中宽/窄长表/十六列巨宽/
+ * 十一列 T3 判别表）。
  * 本 spec 三层：
  *   ① 渲染层 golden —— 逐表列数/表头/单元格文本比对（DOMParser 解析 renderDocument 产物）；
  *   ② 打印分类 —— markPrintBlocks 对渲染产物**桩宽**四档分类（jsdom 无真实布局，
@@ -35,9 +36,9 @@ function headOf(t: Element): string[] {
 }
 
 describe("① 渲染层 golden：十二张表逐格比对", () => {
-  it("表数与包裹层：12 张 table、12 个 .table-wrap、每表都在 wrap 内", () => {
-    expect(tables.length).toBe(12);
-    expect(wraps.length).toBe(12);
+  it("表数与包裹层：13 张 table、13 个 .table-wrap、每表都在 wrap 内", () => {
+    expect(tables.length).toBe(13);
+    expect(wraps.length).toBe(13);
     for (const t of tables) expect(t.closest(".table-wrap")).toBeTruthy();
   });
 
@@ -175,23 +176,33 @@ describe("① 渲染层 golden：十二张表逐格比对", () => {
     expect(cellsOf(t)[0]).toContain("dim_val_aa_1001");
     expect(cellsOf(t)[1]).toContain("dim_val_kl_2016");
   });
+
+  it("T13 十一列中宽表：表头 11 列、2 行逐格一致（四档下应落 T3 横排压列；无切片判别表）", () => {
+    const t = tables[12]!;
+    expect(headOf(t).length).toBe(11);
+    expect(headOf(t)[0]).toBe("release_tag_a01");
+    expect(headOf(t)[10]).toBe("release_tag_k11");
+    expect(cellsOf(t).length).toBe(2);
+    expect(cellsOf(t)[0]).toContain("rel_2026_10_a");
+    expect(cellsOf(t)[1]).toContain("hotfix_112_k");
+  });
 });
 
 describe("② markPrintBlocks 四档分类（jsdom 桩宽；真实阈值落点见语料头注）", () => {
   /** 按档位给每张渲染产物桩 scrollWidth（同 print-overflow.spec.ts 口径），再整档分类 */
   function classifiedDoc(): Document {
     const d = new DOMParser().parseFromString(renderDocument(corpus).html, "text/html");
-    //                 T1  T2  T3  T4  T5  T6    T7   T8   T9   T10  T11   T12
-    const widths = [600, 600, 600, 600, 600, 600, 1000, 1500, 600, 850, 600, 1900];
+    //                 T1  T2  T3  T4  T5  T6    T7   T8   T9   T10  T11   T12   T13
+    const widths = [600, 600, 600, 600, 600, 600, 1000, 1500, 600, 850, 600, 1900, 1200];
     d.querySelectorAll("table").forEach((t, i) => {
       Object.defineProperty(t, "scrollWidth", { value: widths[i], configurable: true });
     });
     return d;
   }
 
-  it("十二张表分四档：T1 压列 8 张、T2 缩放 2 张（T7/T10）、T3 0 张、T4 切片 2 张（T8/T12）", () => {
+  it("十三张表分四档：T1 压列 8 张、T2 缩放 2 张（T7/T10）、T3 横排 1 张（T13，不切片）、T4 切片 2 张（T8/T12）", () => {
     const d = classifiedDoc();
-    expect(markPrintBlocks(d)).toEqual({ wrap: 8, zoom: 2, squeeze: 2, slice: 2, tall: 0 });
+    expect(markPrintBlocks(d)).toEqual({ wrap: 8, zoom: 2, squeeze: 3, slice: 2, tall: 0 });
     const ws = [...d.querySelectorAll(".table-wrap")];
     const tier = (i: number): string =>
       ["print-wrap", "print-zoom", "squeeze-page"].find((c) => ws[i]!.classList.contains(c)) ?? "无";
@@ -208,6 +219,8 @@ describe("② markPrintBlocks 四档分类（jsdom 桩宽；真实阈值落点�
       expect(tier(i), `#${i} 应落 T4 横排切片`).toBe("squeeze-page");
       expect(ws[i]!.classList.contains("table-sliced"), `#${i} 应已切片`).toBe(true);
     }
+    expect(tier(12), "#12 应落 T3 横排压列").toBe("squeeze-page");
+    expect(ws[12]!.classList.contains("table-sliced"), "#12 T3 不切片").toBe(false);
   });
 
   it("T2 内联缩放比 --print-zoom = clamp(0.75, 771/w, 1)：T7(1000)→0.771、T10(850)→0.907", () => {

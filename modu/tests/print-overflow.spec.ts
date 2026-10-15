@@ -194,9 +194,9 @@ describe("print.css 打印契约锚（四档 + 红线同层）", () => {
     expect(css).not.toMatch(/transform:\s*scale/);
   });
 
-  it("T4 切片段：原表退场、stack 打印显现、段标题不孤悬页尾", () => {
+  it("T4 切片段：原表退场、stack 打印显现（!important 加固，真机「一根线」轮）、段标题不孤悬页尾", () => {
     expect(css).toMatch(/\.mdc \.table-sliced > table:not\(\.slice-seg\)\s*\{[^}]*display:\s*none/);
-    expect(css).toMatch(/\.mdc \.slice-stack\[hidden\]\s*\{[^}]*display:\s*block/);
+    expect(css).toMatch(/\.mdc \.slice-stack\[hidden\]\s*\{[^}]*display:\s*block\s*!important/);
     expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*break-after:\s*avoid/);
   });
 

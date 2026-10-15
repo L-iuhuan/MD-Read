@@ -14,6 +14,9 @@
  * 幂等/还原：restoreSlicedTables 清掉 stack 与 `table-sliced` 类（markPrintBlocks 每轮
  * 开头调用，先还原再重判 ⇒ 重跑不叠加）；sliceTableWrap 自身入口也先清本 wrap 旧产物。
  * 导出取消后 DOM 里只剩 hidden 的 stack（屏显零影响），下一轮标记或换文档重渲时清干净。
+ *
+ * 测量/变换分离（fix 2026-10-15）：measureForSlice（预测量）必须先于任何档类应用；
+ * sliceTableWrap（切片）只消费缓存、零布局读取。两段职责不许再合并。
  */
 
 /** 每段目标宽上限：261mm（横版可印宽）≈ 987px@96dpi，留 ~37px≈10mm 余量防四舍五入贴边
@@ -169,21 +172,26 @@ function buildCaption(index: number, total: number): HTMLElement {
 /**
  * 给一个 T4 wrap 建切片（wrap 需已是 .squeeze-page：横排页＋261mm 压列对每段同样生效，
  * print.css 的 `.mdc .squeeze-page table` 选择器天然覆盖 stack 内的段表）。
- * 返回段数；列数 <2 或一段就装得下时返回 0（不切，退回 T3 形态）。
+ *
+ * **缓存制（fix 2026-10-15 真机「一根线」教训）**：本函数是**纯 DOM 变换**——逐列宽由
+ * measureForSlice 在**任何档类应用之前**量好缓存传入（markPrintBlocks 负责次序），
+ * 本函数零布局读取（tests/table-slice.spec.ts 有 spy 锚）；缓存缺位（null）一律拒绝
+ * 切片退回 T3 形态——结构性禁止「先落类（原表被藏）再量宽」的旧次序，那时量宽全 0、
+ * 贪心分组退化、PDF 只剩空 wrap 边框。取舍：缓存让测量与变换解耦（单次布局 pass、
+ * 切片可测），代价是 T4 候选表多一次网格+逐列预计算（非 T4 不付）。
+ * 返回段数；一段就装得下时返回 0（不切，退回 T3 形态）。
  */
-export function sliceTableWrap(wrap: HTMLElement, naturalWidth: number): number {
+export function sliceTableWrap(wrap: HTMLElement, premeasured: SliceMeasurement | null): number {
   wrap.querySelector('.slice-stack')?.remove() // 自幂等：重切先清本 wrap 旧产物
   wrap.classList.remove('table-sliced')
-  const table = wrap.querySelector('table')
-  if (!(table instanceof HTMLTableElement)) {
+  if (premeasured === null || premeasured.grid.columnCount < 2) {
     return 0
   }
-  const grid = flattenToGrid(table)
-  if (grid.columnCount < 2) {
-    return 0
-  }
-  const widths = measureColumnWidths(table, grid.columnCount, naturalWidth)
-  const groups = groupColumns(widths, SLICE_SEGMENT_BUDGET_PX, widths[0] ?? 0)
+  const groups = groupColumns(
+    premeasured.widths,
+    SLICE_SEGMENT_BUDGET_PX,
+    premeasured.widths[0] ?? 0,
+  )
   if (groups.length < 2) {
     return 0
   }
@@ -194,11 +202,33 @@ export function sliceTableWrap(wrap: HTMLElement, naturalWidth: number): number 
     if (i > 0) {
       stack.appendChild(buildCaption(i + 1, groups.length))
     }
-    stack.appendChild(buildSegmentTable(grid, columns, i > 0))
+    stack.appendChild(buildSegmentTable(premeasured.grid, columns, i > 0))
   })
   wrap.appendChild(stack)
   wrap.classList.add('table-sliced')
   return groups.length
+}
+
+/** 切片预测量：网格拆平＋逐列 min-content 宽（归一到表自然宽；jsdom 全 0 ⇒ 等宽回退）。
+ *  **必须在任何档类应用到 wrap 之前调用**（display:none 下量宽全 0）；只读不写类/DOM。 */
+export interface SliceMeasurement {
+  grid: TableGrid
+  widths: number[]
+}
+
+export function measureForSlice(
+  wrap: HTMLElement,
+  naturalWidth: number,
+): SliceMeasurement | null {
+  const table = wrap.querySelector('table')
+  if (!(table instanceof HTMLTableElement)) {
+    return null
+  }
+  const grid = flattenToGrid(table)
+  if (grid.columnCount < 2) {
+    return null
+  }
+  return { grid, widths: measureColumnWidths(table, grid.columnCount, naturalWidth) }
 }
 
 /** 幂等还原：清掉全部切片产物（stack 整体移除＋table-sliced 类摘除）。原表从未被动过。

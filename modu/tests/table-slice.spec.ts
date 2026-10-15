@@ -13,9 +13,16 @@ import { describe, expect, it } from "vitest";
 import {
   SLICE_SEGMENT_BUDGET_PX,
   groupColumns,
+  measureForSlice,
   restoreSlicedTables,
   sliceTableWrap,
 } from "../src/render/table-slice";
+import { markPrintBlocks } from "../src/render/print-ready";
+
+/** 旧签名的等价替身：先预测量（类应用前）再切片——生产代码 markPrintBlocks 的调用形态 */
+function sliceAt(wrap: HTMLElement, naturalWidth: number): number {
+  return sliceTableWrap(wrap, measureForSlice(wrap, naturalWidth));
+}
 
 /** 手工造含 colspan/rowspan 的表（GFM 产不出跨格；切片器输入契约是 DOM 表）。
  *  网格（3 列 3 行）：head[合并A(colspan2), B]；body r1[锚(rowspan2), x, y]；r2[锚复制, z, w] */
@@ -77,7 +84,7 @@ describe("groupColumns 纯函数（贪心列分组）", () => {
 describe("sliceTableWrap DOM 变换（跨格拆平 / thead 克隆 / 标识列重复 / 段标题）", () => {
   it("3 列等宽（自然宽 1900 ⇒ 每列 ~633）切 3 段：stack hidden、原表保留、段数与小标题齐备", () => {
     const wrap = spannedWrap();
-    expect(sliceTableWrap(wrap, 1900)).toBe(3);
+    expect(sliceAt(wrap, 1900)).toBe(3);
     expect(wrap.classList.contains("table-sliced")).toBe(true);
     const stack = wrap.querySelector(".slice-stack") as HTMLElement;
     expect(stack.hidden).toBe(true);
@@ -94,7 +101,7 @@ describe("sliceTableWrap DOM 变换（跨格拆平 / thead 克隆 / 标识列重
 
   it("跨格拆平：colspan/rowspan 占位格拿到内容复制件并标 data-slice-flatten", () => {
     const wrap = spannedWrap();
-    sliceTableWrap(wrap, 1900);
+    sliceAt(wrap, 1900);
     const segs = [...wrap.querySelectorAll("table.slice-seg")];
     // 第 1 段（列 0）：thead=[合并A]；tbody r2 首格 = 「锚」的 rowspan 复制（flatten）
     expect(segs[0]!.querySelectorAll("thead th").length).toBe(1);
@@ -118,7 +125,7 @@ describe("sliceTableWrap DOM 变换（跨格拆平 / thead 克隆 / 标识列重
 
   it("第 3 段（末段）：thead=[合并A(重复), B]；tbody r1 标识列重复", () => {
     const wrap = spannedWrap();
-    sliceTableWrap(wrap, 1900);
+    sliceAt(wrap, 1900);
     const seg3 = [...wrap.querySelectorAll("table.slice-seg")][2]!;
     const head3 = [...seg3.querySelectorAll("thead th")];
     expect(head3.map((c) => c.textContent)).toEqual(["合并A", "B"]);
@@ -131,8 +138,8 @@ describe("sliceTableWrap DOM 变换（跨格拆平 / thead 克隆 / 标识列重
 
   it("自幂等：同 wrap 重切不叠加（入口先清旧产物）；restoreSlicedTables 还原原表跨格", () => {
     const wrap = spannedWrap();
-    expect(sliceTableWrap(wrap, 1900)).toBe(3);
-    expect(sliceTableWrap(wrap, 1900)).toBe(3);
+    expect(sliceAt(wrap, 1900)).toBe(3);
+    expect(sliceAt(wrap, 1900)).toBe(3);
     expect(wrap.querySelectorAll(".slice-stack").length).toBe(1);
     expect(wrap.querySelectorAll("table.slice-seg").length).toBe(3);
     restoreSlicedTables(wrap);
@@ -145,8 +152,64 @@ describe("sliceTableWrap DOM 变换（跨格拆平 / thead 克隆 / 标识列重
 
   it("列数 <2 或一段装得下时拒绝切片（退回 T3 压列形态）", () => {
     const wrap = spannedWrap();
-    // 自然宽 1000（每列 ~333）：3 列 + 无重复 → 999 ≈ 1000 仍超预算吗？用 900 保证单段
-    expect(sliceTableWrap(wrap, 900)).toBe(0);
+    // 自然宽 900（每列 300）：3 列同段 900 ≤ 950 ⇒ 单段装得下，拒绝切片
+    expect(sliceAt(wrap, 900)).toBe(0);
+    expect(wrap.querySelector(".slice-stack")).toBeNull();
+    expect(wrap.classList.contains("table-sliced")).toBe(false);
+  });
+});
+
+describe("次序铁律锚（fix 2026-10-15 真机「一根线」：所有测量先于一切类应用）", () => {
+  /** 守卫桩（模拟真机 display:none 效应）：若量宽发生在 wrap 挂上 table-sliced 之后
+   *  （旧次序回归），读宽抛错 ⇒ 本锚变红；正常次序下量宽时无任何档类 ⇒ 每列 633。 */
+  function guardWidthStub(wrap: HTMLElement): void {
+    const table = wrap.querySelector("table") as HTMLTableElement;
+    Object.defineProperty(table, "getBoundingClientRect", {
+      value: () => ({ width: 1900, height: 100 }),
+      configurable: true,
+    });
+    for (const cell of wrap.querySelectorAll("th, td")) {
+      Object.defineProperty(cell, "getBoundingClientRect", {
+        value: () => {
+          if (wrap.classList.contains("table-sliced")) {
+            throw new Error("旧次序回归：原表被藏后才量宽——真机读数全 0，切片退化成一根线");
+          }
+          return { width: 633, height: 20 };
+        },
+        configurable: true,
+      });
+    }
+  }
+
+  it("markPrintBlocks 全程无「藏后再量」：守卫桩下三列表切 3 段（真机量宽路径被真实消费）", () => {
+    const root = document.createElement("div");
+    const wrap = spannedWrap();
+    root.appendChild(wrap);
+    guardWidthStub(wrap);
+    expect(markPrintBlocks(root)).toEqual({ wrap: 0, zoom: 0, squeeze: 1, slice: 1, tall: 0 });
+    expect(wrap.querySelectorAll("table.slice-seg").length).toBe(3);
+  });
+
+  it("sliceTableWrap 零布局读取：预测量后换计数桩，切片期间读取数恒 0（切片=纯 DOM 变换）", () => {
+    const wrap = spannedWrap();
+    const pre = measureForSlice(wrap, 1900);
+    let reads = 0;
+    for (const cell of wrap.querySelectorAll("th, td")) {
+      Object.defineProperty(cell, "getBoundingClientRect", {
+        value: () => {
+          reads += 1;
+          return { width: 633, height: 20 };
+        },
+        configurable: true,
+      });
+    }
+    expect(sliceTableWrap(wrap, pre)).toBe(3);
+    expect(reads).toBe(0);
+  });
+
+  it("缓存缺位一律拒绝切片（结构性禁止「落类后再补量」）：sliceTableWrap(wrap, null) → 0", () => {
+    const wrap = spannedWrap();
+    expect(sliceTableWrap(wrap, null)).toBe(0);
     expect(wrap.querySelector(".slice-stack")).toBeNull();
     expect(wrap.classList.contains("table-sliced")).toBe(false);
   });

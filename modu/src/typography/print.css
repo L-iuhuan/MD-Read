@@ -144,12 +144,18 @@
      .slice-stack（hidden，屏显退场）；打印态 stack 显现、原表退场。每段是独立
      <table class="slice-seg">（完整 thead ⇒ 跨页表头重复由全局 thead 规则原生接管），
      段前小标题「续表 N/共 M」（取舍：细线只在同页相邻时才有意义，段会各自分页，
-     小标题在任何落页形态下都自解释）。段表仍落在 .squeeze-page 下（上方 261mm 规则覆盖）。 */
+     小标题在任何落页形态下都自解释）。段表仍落在 .squeeze-page 下（上方 261mm 规则覆盖）。
+     ⚠ 小标题与段表同在 stack 内、不依赖任何动态类——stack 显现即同现（tests 有锚）。 */
   .mdc .table-sliced > table:not(.slice-seg) {
     display: none;
   }
+  /* ⚠ !important 加固（fix 2026-10-15 真机「一根线」轮）：真机导出 T4 表整表消失、
+     只剩 wrap 边框线——stack 在打印态未显现是首要嫌疑。作者层普通声明按级联本应压过
+     UA 的 [hidden]{display:none}，但真机结果与此矛盾 ⇒ 升级 !important（作者层
+     !important 压过 UA 层与任何内联，级联地位无歧义）。若 !important 后真机仍一根线，
+     嫌疑转段表自身塌缩/横排命名页分片，用 T13（T3 代表表，无切片）做判别。 */
   .mdc .slice-stack[hidden] {
-    display: block; /* 压过 UA 的 [hidden]{display:none}（作者层 > UA 层） */
+    display: block !important;
   }
   .mdc .slice-caption {
     font-size: 0.85em;
