@@ -200,6 +200,26 @@ describe("print.css 打印契约锚（四档 + 红线同层）", () => {
     expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*break-after:\s*avoid/);
   });
 
+  it("案 A（真机复验）：打印态表格竖线退场——wrap 外框整退（border/radius 归零），只留表格自身横向线", () => {
+    expect(css).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border:\s*0/);
+    expect(css).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border-radius:\s*0/);
+    // 语义裁决：屏显「外框三边/圆角」锚在 cjk.css 层（css-fixes.spec），打印态退场不破坏
+  });
+
+  it("案 B（真机复验）：续表段起新页——.slice-caption break-before 双语法（首段随流不动）", () => {
+    expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*break-before:\s*page/);
+    expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*page-break-before:\s*always/);
+  });
+
+  it("案 C（真机复验）：行/格避裂双语法＋打印态 border-collapse:separate/spacing:0（段表同享）", () => {
+    expect(css).toMatch(/tr\s*\{[^}]*break-inside:\s*avoid/);
+    expect(css).toMatch(/tr\s*\{[^}]*page-break-inside:\s*avoid/);
+    expect(css).toMatch(/th,\s*td\s*\{[^}]*break-inside:\s*avoid/);
+    expect(css).toMatch(/th,\s*td\s*\{[^}]*page-break-inside:\s*avoid/);
+    expect(css).toMatch(/\.mdc table\s*\{[^}]*border-collapse:\s*separate/);
+    expect(css).toMatch(/\.mdc table\s*\{[^}]*border-spacing:\s*0/);
+  });
+
   it("红线仍在：行级分页 + 表头重复 + 默认 @page A4/18mm", () => {
     expect(css).toMatch(/tr\s*\{[^}]*break-inside:\s*avoid/);
     expect(css).toMatch(/thead\s*\{[^}]*display:\s*table-header-group/);
