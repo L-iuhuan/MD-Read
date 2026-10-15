@@ -250,18 +250,23 @@
 - `.katex-mathml { display: none }` 防 PDF 鬼影重复文字
 - 打印前必须 await 渲染完全部懒加载块
 - print.css 是 cjk.css 的唯一覆盖层，**禁止出现第三份打印样式**
-- **宽表打印三层**（用户裁决 2026-09-23，已实施；判据在 `src/render/print-ready.ts` 的 `markPrintBlocks`，
-  **导出流程里调用**，屏显零影响）：判据量的是**表自身的 `min-content` 宽**（临时 `inline-size:min-content`
-  同步读回再还原）—— 别退回 `max(表,容器)` 口径：`.mdc table{inline-size:100%}` 会把任何表撑到容器宽
-  （本机 ~734px），实测把一张 3 列小表也误判成宽表。
-  · `w ≤ 658` → 竖版自然宽；
-  · `658 < w ≤ 987` → 打 `wide-page` ⇒ `@page wide { size: A4 landscape }` **横排**（不压列）；
-  · `w > 987` → 再打 `squeeze-page` ⇒ `table-layout:fixed` + **`inline-size: calc(261mm - 2mm)`** + 单元格
-    `overflow-wrap:anywhere` **压列换行**（C 落地后实测：12 列全印出、**9 页**（p4–p8 横）、**11 行/页**、
-    表宽 259.33mm、每列 21.74mm≈**6.3 个汉字**（推断）、长 token 断 2 行、45 行无丢无重无腰斩）。
-  `658`/`987` = 竖版 174mm / 横版 261mm 按 96dpi 换算（**纸型实测**：竖 594.96×841.92pt、
-  横 841.92×594.96pt；mm⇒px 属推断）—— 改这两个数必须同步改那边注释里的推导线。
-  **禁缩放 / `transform` / 光栅化 / 拆列**。
+- **宽表打印四档**（2026-09-23 三层裁决 → **2026-10-15 主人批准有界修订为四档**，业界调研背书：
+  Typora 压列 / Pandoc·mPDF 缩放字号与 shrink_to_fit / Excel·财报分栏切片；判据在 `src/render/print-ready.ts`
+  的 `markPrintBlocks`，**导出流程里调用**，屏显零影响）：判据量的是**表自身的 `min-content` 宽**（临时
+  `inline-size:min-content` 同步读回再还原）—— 别退回 `max(表,容器)` 口径：`.mdc table{inline-size:100%}` 会把
+  任何表撑到容器宽（本机 ~734px），实测把一张 3 列小表也误判成宽表。
+  · `w ≤ 830` → T1 `print-wrap`：**竖版页内压列**（fixed+100%+anywhere；830≈658×1.26 压列容忍上限）；
+  · `830 < w ≤ 1030` → T2 `print-zoom`+`print-bleed`：**竖版表格级 `zoom:var(--print-zoom)` = clamp(0.75, 771/w, 1)**
+    ＋容器借页边距 `-15mm`（771px=(174+30)mm@96dpi；0.75 可读下限 ⇒ 上限 771/0.75≈1028 取 1030）。
+    **zoom 参与布局重排、Chromium 打印验证有效；`transform` 不参与（打印高度错算）仍禁**；
+  · `1030 < w ≤ 1400` → T3 `squeeze-page`：横排压列（`@page wide` + `table-layout:fixed` +
+    **`inline-size: calc(261mm - 2mm)`** + `overflow-wrap:anywhere`；1400≈987/0.705 压列比下限）；
+  · `w > 1400` → T4 `squeeze-page`+`table-sliced`：**分栏切片**（`table-slice.ts`：colspan/rowspan 先拆平→
+    按列贪心分段每段 ≤950px→每段独立表含完整 thead→第 2 段起重复标识列）。
+  `658`/`830`/`1030`/`1400`/`771`/`0.75`/`950` 均为 print-ready.ts 阈值常量（带推导注释）——
+  改任一数必须同步那边注释与 `print.css` 的 mm 推导线（原 658/987=竖 174mm/横 261mm@96dpi 实测推导仍成立）。
+  **`transform` / 光栅化仍禁**；「拆列」旧禁令由**分栏切片**（带重复表头＋标识列语义）取代——这是
+  2026-10-15 修订的裁决变更，别按旧禁令回退。
   ⚠ **最易再踩的坑（归因轮实测，2026-09-23）**：**横版命名页的"排版内容盒"仍是最初 `@page`（竖版）的
   174mm** —— `@page wide { size: A4 landscape }` 只把**纸**变成横版，**内容宽没变**：表格写百分比只等于
   174mm（墨迹实测 173.99mm，纸上右侧 ~87mm 永远空着）。**清 `.mdc`/`#doc`/`.body-row`/`#content` 的

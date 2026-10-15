@@ -18,6 +18,7 @@
  */
 
 import { renderMermaidEl } from './mermaid'
+import { restoreSlicedTables, sliceTableWrap } from './table-slice'
 
 export interface PrintReadyResult {
   timedOut: boolean
@@ -141,19 +142,27 @@ export async function awaitPrintReady(
 }
 
 /**
- * 宽表横排 + 超宽表压列换行（2026-09-23 用户裁决：「宽表自动横向打印」+「④ 压列换行」；
- * 命名页机制写在 print.css）。
+ * 宽表四档导出（2026-10-15 主人批准，业界调研背书；取代 2026-09-23 三档——旧
+ * wide-page 无消费者退役，横排职责并入 squeeze-page，机制注释与 mm 推导线写在 print.css）。
  *
- * **数值来历（不许当魔法数）**：
- * - `PORTRAIT_PRINTABLE_PX = 658`：A4 210mm − 2×18mm 边距 = 174mm，按 96dpi（3.7795px/mm）换算。
- *   纸型与边距是**实测/既定**的（`pdfinfo` 量到竖版 594.96×841.92pt = A4；18mm 来自 print.css 的
- *   `@page{margin:18mm}`）；**"174mm ⇒ 658px"这一步是推断**（按 CSS 96dpi 口径）。
+ * **数值来历（不许当魔法数；与 print.css 的 mm 注释同源耦合，改任一边必须同步另一边）**：
+ * - `PORTRAIT_PRINTABLE_PX = 658`：A4 210mm − 2×18mm = 174mm，按 96dpi（3.7795px/mm）换算。
+ *   纸型与边距是**实测/既定**的（`pdfinfo` 量到竖版 594.96×841.92pt = A4；18mm 来自 print.css
+ *   的 `@page{margin:18mm}`）；**"174mm ⇒ 658px"这一步是推断**（按 CSS 96dpi 口径）。
  * - `LANDSCAPE_PRINTABLE_PX = 987`：297mm − 36mm = 261mm 同上换算（横版纸型实测 841.92×594.96pt）。
- * - 三层（实测支撑）：`w ≤ 658` 竖版自然宽；`658 < w ≤ 987` 横排即够（实测 734px 表横排后 6 列全印出）；
- *   `w > 987` 连横版都放不下（实测 1870px 表横排后仍丢列）⇒ 再叠加**压列换行**（`table-layout:fixed`）。
- * - `pre` **不进清单**：print.css 已让 pre 打印换行（P1-4(b)），长代码行不再被裁。
- * - **图片**也不需要：`.mdc img { max-inline-size: 100% }` 已存在（复核过）。
- * - 因此「可能被截」的提醒**已无真实触发条件**，于 2026-09-23 随本改动**删除**（不留会撒谎的提示）。
+ * - 四档判据（测量口径不变：表自身 min-content 宽 w，见 blockContentWidth）：
+ *   T1 `w ≤ 830` 竖版页内压列（`print-wrap`）；T2 `830 < w ≤ 1030` 竖版缩放＋出血
+ *   （`print-zoom`＋`print-bleed`）；T3 `1030 < w ≤ 1400` 横排压列（`squeeze-page`）；
+ *   T4 `w > 1400` 横排分栏切片（`squeeze-page`＋`table-sliced`，切片器在 table-slice.ts）。
+ * - 830 ≈ 658×1.26：压列后列宽损失容忍上限（fixed 等分布局把 1.26 倍以内的宽表压进
+ *   658px 竖版可印宽仍可读）。
+ * - 771 = (174+30)mm@96dpi：T2 出血后的有效宽（借 @page 18mm 边距两侧各 15mm ⇒ 204mm，
+ *   余 3mm 安全边）。`--print-zoom = clamp(0.75, 771/w, 1)`；0.75 为可读下限 ⇒
+ *   T2 上限 = 771/0.75 ≈ 1028 → 取 1030。
+ * - 1400 ≈ 987/0.705：横排压列比（987/w）跌破 ~0.7 ⇒ 列过窄，改切片（每段目标
+ *   ≤950px，见 table-slice.ts 的 SLICE_SEGMENT_BUDGET_PX）。
+ * - **禁 transform 缩放**（调研源码级证据：打印高度错算）；zoom 参与重排、Chromium 打印
+ *   验证有效（与 UX-9 的 .print-tall 同一工艺）。
  */
 export const PORTRAIT_PRINTABLE_PX = 658
 export const LANDSCAPE_PRINTABLE_PX = 987
@@ -165,6 +174,37 @@ export const LANDSCAPE_PRINTABLE_PX = 987
 export const PORTRAIT_PRINTABLE_HEIGHT_PX = 986
 /** 缩放下限：低于 0.4 字号不足 6.4pt，再小不可读——不如保持原尺寸让截断可见。 */
 export const PRINT_FIT_MIN = 0.4
+/** T1 上限：830 ≈ 658×1.26（压列后列宽损失容忍上限，推导见文件顶四档注释）。 */
+export const PRINT_WRAP_MAX_PX = 830
+/** T2 上限：1030 ≈ 771/0.75（zoom 可读下限对应的分母，771 为出血后有效宽）。 */
+export const PRINT_ZOOM_MAX_PX = 1030
+/** T3 上限 / T4 下限：1400 ≈ 987/0.705（横排压列比跌破 ~0.7 改切片）。 */
+export const PRINT_SLICE_MIN_PX = 1400
+/** T2 出血后有效宽：771px = (174+30)mm@96dpi（两侧各借 15mm，余 3mm 安全边）。 */
+export const PRINT_ZOOM_FIT_PX = 771
+/** T2 zoom 可读下限（再小不如换档）。 */
+export const PRINT_ZOOM_MIN = 0.75
+
+export type PrintTier = 1 | 2 | 3 | 4
+
+/** 纯判据：min-content 宽 → 四档（阈值写死于主人批准的四档规格，推导见文件顶注释）。 */
+export function printTier(width: number): PrintTier {
+  if (width <= PRINT_WRAP_MAX_PX) {
+    return 1
+  }
+  if (width <= PRINT_ZOOM_MAX_PX) {
+    return 2
+  }
+  if (width <= PRINT_SLICE_MIN_PX) {
+    return 3
+  }
+  return 4
+}
+
+/** T2 缩放比 = clamp(0.75, 771/w, 1)：恰好放进出血后 771px 有效宽；下限可读、上限不放大。 */
+export function printZoomScale(naturalWidth: number): number {
+  return Math.min(1, Math.max(PRINT_ZOOM_MIN, PRINT_ZOOM_FIT_PX / naturalWidth))
+}
 
 /**
  * UX-9（des-5·P2-15）·纯函数：超页高单体的打印缩放比。
@@ -205,34 +245,30 @@ export function blockContentWidth(container: Element): number {
   return measured > 0 ? measured : el.scrollWidth
 }
 
+export interface PrintBlockCounts {
+  /** T1 压列（print-wrap）表数 */
+  wrap: number
+  /** T2 缩放＋出血（print-zoom＋print-bleed）表数 */
+  zoom: number
+  /** T3/T4 横排压列（squeeze-page）表数 */
+  squeeze: number
+  /** T4 切片成功（≥2 段）的表数 */
+  slice: number
+  /** UX-9 超页高单体（print-tall）数 */
+  tall: number
+}
+
 /**
- * 导出前给表格打打印标记（幂等：按当前宽度重算并清掉旧标记；`page` 只作用于打印，屏显零影响）：
- * - `wide-page`（`w > 658`）：竖版放不下 → 走 `@page wide` 横排（横版可印宽 987）；
- * - `squeeze-page`（`w > 987`）：连横版都放不下 → 叠加 `table-layout:fixed` 压列换行，
- *   让整表收敛到可印宽内（用户裁决 ④「压列换行」）。
- * UX-9（des-5·P2-15）追加：`.mermaid svg` 与 `img` 量**块高**，超过竖版可印高（986px）
- * 的打 `print-tall` 并按比例内联 `--print-fit`（print.css 的 `zoom: var(--print-fit)` 消费，
- * 比例由 printFitScale 纯函数算出、clamp 下限 0.4）。幂等：变矮后标记与内联变量一并清掉。
- * 返回计数 `{ landscape, squeeze, tall }` 供对账。最终 PDF 效果需人工验证（jsdom 无打印排版）。
+ * 导出前按四档给表格打打印标记（幂等：每轮先还原上轮切片、摘掉全部档类，再按当前
+ * 宽度重判；`page`/`zoom` 只作用于打印，屏显零影响）。UX-9（des-5·P2-15）追加不变：
+ * `.mermaid svg` 与 `img` 超竖版可印高（986px）打 `print-tall` 并内联 `--print-fit`。
+ * 返回计数供对账。最终 PDF 效果需人工验证（jsdom 无打印排版）。
  */
-export function markPrintBlocks(
-  root: ParentNode,
-): { landscape: number; squeeze: number; tall: number } {
-  let landscape = 0
-  let squeeze = 0
-  let tall = 0
+export function markPrintBlocks(root: ParentNode): PrintBlockCounts {
+  restoreSlicedTables(root) // 幂等前置：还原上轮 T4 切片（原表一直在 DOM，重测口径不变）
+  const counts: PrintBlockCounts = { wrap: 0, zoom: 0, squeeze: 0, slice: 0, tall: 0 }
   for (const box of Array.from(root.querySelectorAll<HTMLElement>('.table-wrap'))) {
-    const width = blockContentWidth(box)
-    const needsLandscape = width > PORTRAIT_PRINTABLE_PX
-    const needsSqueeze = width > LANDSCAPE_PRINTABLE_PX
-    box.classList.toggle('wide-page', needsLandscape)
-    box.classList.toggle('squeeze-page', needsSqueeze)
-    if (needsLandscape) {
-      landscape += 1
-    }
-    if (needsSqueeze) {
-      squeeze += 1
-    }
+    applyTableTier(box, blockContentWidth(box), counts)
   }
   for (const el of Array.from(root.querySelectorAll<HTMLElement>('.mermaid svg, img'))) {
     const fit = printFitScale(el.getBoundingClientRect().height, PORTRAIT_PRINTABLE_HEIGHT_PX)
@@ -241,8 +277,33 @@ export function markPrintBlocks(
       el.style.removeProperty('--print-fit')
     } else {
       el.style.setProperty('--print-fit', String(fit))
-      tall += 1
+      counts.tall += 1
     }
   }
-  return { landscape, squeeze, tall }
+  return counts
+}
+
+/** 单表落档：四类互斥；先摘全部档类与内联变量再落新档（换档/变窄不残留）。 */
+function applyTableTier(box: HTMLElement, width: number, counts: PrintBlockCounts): void {
+  const tier = printTier(width)
+  // 'wide-page' 是三档时代遗产类，这里顺带摘除以防旧标记残留（本函数不再产生它）
+  box.classList.remove('print-wrap', 'print-zoom', 'print-bleed', 'squeeze-page', 'wide-page')
+  box.style.removeProperty('--print-zoom')
+  if (tier === 1) {
+    box.classList.add('print-wrap')
+    counts.wrap += 1
+    return
+  }
+  if (tier === 2) {
+    box.classList.add('print-zoom', 'print-bleed')
+    box.style.setProperty('--print-zoom', String(printZoomScale(width)))
+    counts.zoom += 1
+    return
+  }
+  // T3/T4 共用 squeeze-page：page:wide（自 wide-page 迁移）+ 261mm 压列
+  box.classList.add('squeeze-page')
+  counts.squeeze += 1
+  if (tier === 4 && sliceTableWrap(box, width) > 0) {
+    counts.slice += 1
+  }
 }

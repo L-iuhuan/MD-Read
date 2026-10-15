@@ -1,20 +1,23 @@
 /**
- * 隔离表格评测集的配套断言（fix-31 任务二，2026-10-15）。
+ * 隔离表格评测集的配套断言（fix-31 任务二，2026-10-15 扩充四档）。
  *
- * 语料：tests/corpus/隔离表格评测集.md（T1–T9，九张表，覆盖普通表/对齐三式/无表体表/
- * 单元格特殊内容/列表后表/围栏邻接/宽表/超宽表/公式共存）。本 spec 三层：
+ * 语料：tests/corpus/隔离表格评测集.md（T1–T12，十二张表，覆盖普通表/对齐三式/无表体表/
+ * 单元格特殊内容/列表后表/围栏邻接/宽表/超宽表/公式共存/十列中宽/窄长表/十六列巨宽）。
+ * 本 spec 三层：
  *   ① 渲染层 golden —— 逐表列数/表头/单元格文本比对（DOMParser 解析 renderDocument 产物）；
- *   ② 打印分类 —— markPrintBlocks 对渲染产物**桩宽**分类（jsdom 无真实布局，
+ *   ② 打印分类 —— markPrintBlocks 对渲染产物**桩宽**四档分类（jsdom 无真实布局，
  *      getBoundingClientRect/scrollWidth 恒 0，与 tests/print-overflow.spec.ts 同一口径：
- *      每表 defineProperty scrollWidth 为该档代表值，断言 wide-page/squeeze-page 落位）；
- *   ③ print.css 契约锚 —— 行级分页/表头跨页/命名页横排/压列物理宽/滚动容器还原。
- * 覆盖声明：①②为 jsdom 实测；**PDF 视觉层（横排真的横、压列真的换行）jsdom 不可验**，
- * 待真机导出复验（归主线程）。
+ *      每表 defineProperty scrollWidth 为该档代表值，断言 print-wrap/print-zoom/print-bleed/
+ *      squeeze-page/table-sliced 落位，切片形态由 tests/table-slice.spec.ts 专测）；
+ *   ③ print.css 契约锚 —— 行级分页/表头跨页/四档类（压列/缩放出血/横排物理宽/切片段）/
+ *      滚动容器还原。
+ * 覆盖声明：①②为 jsdom 实测；**PDF 视觉层（横排真的横、压列真的换行、缩放真的缩放）
+ * jsdom 不可验**，待真机导出复验（归主线程）。
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderDocument } from "../src/render/pipeline";
-import { markPrintBlocks } from "../src/render/print-ready";
+import { markPrintBlocks, printZoomScale } from "../src/render/print-ready";
 
 const corpus = readFileSync("tests/corpus/隔离表格评测集.md", "utf8").replace(/\r\n/g, "\n");
 const doc = new DOMParser().parseFromString(renderDocument(corpus).html, "text/html");
@@ -31,10 +34,10 @@ function headOf(t: Element): string[] {
   return [...t.querySelectorAll("thead th")].map((th) => (th.textContent ?? "").trim());
 }
 
-describe("① 渲染层 golden：九张表逐格比对", () => {
-  it("表数与包裹层：9 张 table、9 个 .table-wrap、每表都在 wrap 内", () => {
-    expect(tables.length).toBe(9);
-    expect(wraps.length).toBe(9);
+describe("① 渲染层 golden：十二张表逐格比对", () => {
+  it("表数与包裹层：12 张 table、12 个 .table-wrap、每表都在 wrap 内", () => {
+    expect(tables.length).toBe(12);
+    expect(wraps.length).toBe(12);
     for (const t of tables) expect(t.closest(".table-wrap")).toBeTruthy();
   });
 
@@ -142,36 +145,98 @@ describe("① 渲染层 golden：九张表逐格比对", () => {
     expect(mathCell?.querySelector("annotation")?.textContent).toContain("a \\times b");
     expect(t.querySelectorAll("tbody td")[1]!.textContent!.trim()).toBe("常规文本丙");
   });
+
+  it("T10 十列中宽表：表头 10 列、2 行逐格一致（四档下应落 T2 缩放＋出血）", () => {
+    const t = tables[9]!;
+    expect(headOf(t)).toEqual([
+      "m01_core", "m02_load", "m03_p95", "m04_err", "m05_qps",
+      "m06_heap", "m07_gc", "m08_io", "m09_net", "m10_cpu",
+    ]);
+    expect(cellsOf(t)).toEqual([
+      "v_8421a¦v_1024b¦217ms¦e_00¦q_9k¦h_61p¦g_2ms¦io_r4k¦nt_tx1¦c_43p",
+      "v_5566c¦v_2048d¦89ms¦e_01¦q_7k¦h_58p¦g_5ms¦io_w9k¦nt_rx2¦c_61p",
+    ]);
+  });
+
+  it("T11 窄长表：3 列 × 15 行逐格一致（四档下应落 T1 压列；行级跨页承压）", () => {
+    const t = tables[10]!;
+    expect(headOf(t)).toEqual(["日期", "项目", "状态"]);
+    expect(cellsOf(t).length).toBe(15);
+    expect(cellsOf(t)[0]).toBe("10-01¦盘点甲¦开");
+    expect(cellsOf(t)[14]).toBe("10-15¦复核戊¦开");
+  });
+
+  it("T12 十六列巨宽表：表头 16 列、2 行逐格一致（四档下应落 T4 分栏切片）", () => {
+    const t = tables[11]!;
+    expect(headOf(t).length).toBe(16);
+    expect(headOf(t)[0]).toBe("dimension_lbl_a01");
+    expect(headOf(t)[15]).toBe("dimension_lbl_p16");
+    expect(cellsOf(t).length).toBe(2);
+    expect(cellsOf(t)[0]).toContain("dim_val_aa_1001");
+    expect(cellsOf(t)[1]).toContain("dim_val_kl_2016");
+  });
 });
 
-describe("② markPrintBlocks 分类（jsdom 桩宽；真实阈值落点见语料头注）", () => {
+describe("② markPrintBlocks 四档分类（jsdom 桩宽；真实阈值落点见语料头注）", () => {
   /** 按档位给每张渲染产物桩 scrollWidth（同 print-overflow.spec.ts 口径），再整档分类 */
   function classifiedDoc(): Document {
     const d = new DOMParser().parseFromString(renderDocument(corpus).html, "text/html");
-    //                    T1  T2  T3  T4  T5  T6   T7   T8   T9
-    const widths = [600, 600, 600, 600, 600, 600, 800, 1870, 600];
+    //                 T1  T2  T3  T4  T5  T6    T7   T8   T9   T10  T11   T12
+    const widths = [600, 600, 600, 600, 600, 600, 1000, 1500, 600, 850, 600, 1900];
     d.querySelectorAll("table").forEach((t, i) => {
       Object.defineProperty(t, "scrollWidth", { value: widths[i], configurable: true });
     });
     return d;
   }
 
-  it("九张表分三档：竖版 7 张、横排 2 张（T7/T8）、压列 1 张（T8）", () => {
+  it("十二张表分四档：T1 压列 8 张、T2 缩放 2 张（T7/T10）、T3 0 张、T4 切片 2 张（T8/T12）", () => {
     const d = classifiedDoc();
-    expect(markPrintBlocks(d)).toEqual({ landscape: 2, squeeze: 1, tall: 0 });
+    expect(markPrintBlocks(d)).toEqual({ wrap: 8, zoom: 2, squeeze: 2, slice: 2, tall: 0 });
     const ws = [...d.querySelectorAll(".table-wrap")];
-    for (const i of [0, 1, 2, 3, 4, 5, 8]) {
-      expect(ws[i]!.classList.contains("wide-page"), `#${i} 不应横排`).toBe(false);
-      expect(ws[i]!.classList.contains("squeeze-page"), `#${i} 不应压列`).toBe(false);
+    const tier = (i: number): string =>
+      ["print-wrap", "print-zoom", "squeeze-page"].find((c) => ws[i]!.classList.contains(c)) ?? "无";
+    for (const i of [0, 1, 2, 3, 4, 5, 8, 10]) {
+      expect(tier(i), `#${i} 应落 T1 压列`).toBe("print-wrap");
+      expect(ws[i]!.classList.contains("squeeze-page"), `#${i} 不应横排`).toBe(false);
     }
-    expect(ws[6]!.classList.contains("wide-page")).toBe(true); // T7：658 < 800 ≤ 987
-    expect(ws[6]!.classList.contains("squeeze-page")).toBe(false);
-    expect(ws[7]!.classList.contains("wide-page")).toBe(true); // T8：1870 > 987 两类叠加
-    expect(ws[7]!.classList.contains("squeeze-page")).toBe(true);
+    for (const i of [6, 9]) {
+      expect(tier(i), `#${i} 应落 T2 缩放`).toBe("print-zoom");
+      expect(ws[i]!.classList.contains("print-bleed"), `#${i} 应带出血`).toBe(true);
+      expect(ws[i]!.classList.contains("squeeze-page"), `#${i} 不应横排`).toBe(false);
+    }
+    for (const i of [7, 11]) {
+      expect(tier(i), `#${i} 应落 T4 横排切片`).toBe("squeeze-page");
+      expect(ws[i]!.classList.contains("table-sliced"), `#${i} 应已切片`).toBe(true);
+    }
+  });
+
+  it("T2 内联缩放比 --print-zoom = clamp(0.75, 771/w, 1)：T7(1000)→0.771、T10(850)→0.907", () => {
+    const d = classifiedDoc();
+    markPrintBlocks(d);
+    const ws = [...d.querySelectorAll<HTMLElement>(".table-wrap")];
+    expect(ws[6]!.style.getPropertyValue("--print-zoom")).toBe(String(printZoomScale(1000)));
+    expect(ws[9]!.style.getPropertyValue("--print-zoom")).toBe(String(printZoomScale(850)));
+    expect(printZoomScale(1000)).toBeCloseTo(771 / 1000, 10);
+    expect(printZoomScale(850)).toBeCloseTo(771 / 850, 10);
+  });
+
+  it("T4 切片形态：T8（13 列/1500px）2 段、T12（16 列/1900px）3 段；段表头齐备、第 2 段起重复标识列", () => {
+    const d = classifiedDoc();
+    markPrintBlocks(d);
+    const t8 = d.querySelectorAll(".table-wrap")[7]!;
+    const segs8 = [...t8.querySelectorAll("table.slice-seg")];
+    expect(segs8.length).toBe(2);
+    expect(segs8[0]!.querySelectorAll("thead th").length).toBe(8);
+    expect(segs8[1]!.querySelectorAll("thead th").length).toBe(6);
+    const seg8Head2 = segs8[1]!.querySelector("thead th")!;
+    expect(seg8Head2.textContent).toBe("trace_span_id_a01"); // 首列标识列重复
+    expect(seg8Head2.hasAttribute("data-slice-repeat")).toBe(true);
+    const t12 = d.querySelectorAll(".table-wrap")[11]!;
+    expect(t12.querySelectorAll("table.slice-seg").length).toBe(3);
   });
 });
 
-describe("③ print.css 打印链路契约锚（表格专线）", () => {
+describe("③ print.css 打印链路契约锚（表格专线·四档）", () => {
   const css = readFileSync("src/typography/print.css", "utf8");
 
   it("行级分页：tr 不腰斩、thead 跨页重复", () => {
@@ -181,16 +246,34 @@ describe("③ print.css 打印链路契约锚（表格专线）", () => {
     expect(css).not.toMatch(/pre,\s*table,\s*figure[^{]*\{[^}]*break-inside/);
   });
 
-  it("宽表横排：@page wide（A4 landscape）+ .wide-page 挂命名页", () => {
+  it("横排命名页仍在：@page wide（A4 landscape）；page:wide 已迁入 .squeeze-page（T3/T4）", () => {
     expect(css).toMatch(/@page wide\s*\{[^}]*size:\s*A4 landscape/);
-    expect(css).toMatch(/\.mdc \.wide-page\s*\{[^}]*page:\s*wide/);
+    expect(css).toMatch(/\.mdc \.squeeze-page\s*\{[^}]*page:\s*wide/);
   });
 
-  it("压列物理宽：fixed + calc(261mm - 2mm)（禁百分比回退）+ 单元格换行", () => {
+  it("T1 压列：print-wrap 竖版 fixed + 100% + 单元格任意断行", () => {
+    expect(css).toMatch(/\.mdc \.print-wrap table\s*\{[^}]*table-layout:\s*fixed/);
+    expect(css).toMatch(/\.mdc \.print-wrap table\s*\{[^}]*inline-size:\s*100%/);
+    expect(css).toMatch(/\.mdc \.print-wrap th,\s*\.mdc \.print-wrap td\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  });
+
+  it("T2 缩放＋出血：print-bleed 两侧各借 15mm；表格 zoom 走 --print-zoom（禁 transform）", () => {
+    expect(css).toMatch(/\.mdc \.print-bleed\s*\{[^}]*margin-inline:\s*-15mm/);
+    expect(css).toMatch(/\.mdc \.print-zoom table\s*\{[^}]*zoom:\s*var\(--print-zoom/);
+    expect(css).not.toMatch(/transform:\s*scale/);
+  });
+
+  it("T3/T4 压列物理宽：fixed + calc(261mm - 2mm)（禁百分比回退）+ 单元格换行", () => {
     expect(css).toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*table-layout:\s*fixed/);
     expect(css).toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*inline-size:\s*calc\(261mm - 2mm\)/);
     expect(css).not.toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*inline-size:\s*100%/);
     expect(css).toMatch(/\.mdc \.squeeze-page th,\s*\.mdc \.squeeze-page td\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  });
+
+  it("T4 切片段：原表退场、stack 打印显现、段标题不孤悬页尾", () => {
+    expect(css).toMatch(/\.mdc \.table-sliced > table:not\(\.slice-seg\)\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/\.mdc \.slice-stack\[hidden\]\s*\{[^}]*display:\s*block/);
+    expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*break-after:\s*avoid/);
   });
 
   it("打印链路还原：.table-wrap 滚动容器回到分页流（overflow visible + 限宽清零）", () => {

@@ -80,18 +80,20 @@
     max-inline-size: none;
   }
 
-  /* 宽表自动横排：类由导出流程按**实测边界**加（render/print-ready.ts 的 markPrintBlocks：
-      `内容宽 > 658`，即"竖版放不下"）。`page` 只作用于打印，屏显零影响。
-     横版页上 `tr{break-inside:avoid}` 与 `thead{display:table-header-group}` 照常成立（同为打印层规则）。 */
-  .mdc .wide-page {
-    page: wide;
+  /* 四档宽表（2026-10-15 主人批准，业界调研背书；判据与阈值推导在 render/print-ready.ts）：
+      T1 ≤830 竖版压列（print-wrap）｜ T2 830<w≤1030 竖版缩放＋出血（print-zoom/print-bleed）
+      ｜ T3 1030<w≤1400 横排压列（squeeze-page）｜ T4 >1400 横排分栏切片（squeeze-page＋table-sliced）。
+      旧 .wide-page（2026-09-23 三档遗产）已无消费者退役：横排职责并入下方 .squeeze-page。
+      `page` 只作用于打印，屏显零影响；横版页上 `tr{break-inside:avoid}` 与
+      `thead{display:table-header-group}` 照常成立（同为打印层规则）。 */
+  .mdc .squeeze-page {
+    page: wide; /* 自 .wide-page 迁移：T3/T4 都要横排页 */
   }
 
-  /* 超宽表压列换行（用户裁决 ④「压列换行」，2026-09-23）：内容宽 > 987px 的表连横版都放不下，
-     导出前会被打上 `.squeeze-page`（render/print-ready.ts 的 markPrintBlocks，与 `.wide-page` 叠加
-     ⇒ 在横版页上压列，横版可印宽比竖版宽 1.5×，对超高列表更有利）。
-     只允许 `table-layout: fixed` + 单元格换行这一条正道：**不缩放、不 transform、不光栅化**。
-     只影响 `.squeeze-page`；`≤ 987px` 的表一个字都不动。 */
+  /* T3/T4 横排压列换行（T3 沿用 2026-09-23 的「压列换行」裁决 ④；T4 的段表也走同一规则）：
+     导出前被打上 `.squeeze-page`（markPrintBlocks），在横版页上压列，横版可印宽比竖版宽 1.5×。
+     只允许 `table-layout: fixed` + 单元格换行这一条正道：**不 transform、不光栅化**。
+     T4 的分栏切片不缩放、不 transform——切段后每段表仍在此规则下压进 261mm。 */
   .mdc .squeeze-page table {
     table-layout: fixed;
     /* ⚠ **必须用物理宽，不能写百分比**（用户裁决 C，2026-09-23）。
@@ -111,13 +113,59 @@
     white-space: normal;
   }
 
+  /* T1 压列（w ≤ 830 ≈ 658×1.26）：竖版页内压列——table-layout:fixed + inline-size:100%
+     （竖版**默认页**的内容盒就是 174mm，百分比在此安全；横排命名页不行，那正是
+     squeeze-page 必须用物理宽 261mm 的原因）+ 单元格任意断行。复用现 squeeze 的
+     换行工艺，但作用于竖版 658px 可印宽。 */
+  .mdc .print-wrap table {
+    table-layout: fixed;
+    inline-size: 100%;
+  }
+  .mdc .print-wrap th,
+  .mdc .print-wrap td {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  /* T2 缩放＋出血（830 < w ≤ 1030 ≈ 771/0.75）：竖版页不动纸，表 zoom 进「174mm 有效宽
+     + 两侧各借 15mm」的 204mm≈771px（--print-zoom = clamp(0.75, 771/w, 1)，由 markPrintBlocks
+     内联在 wrap 上、表继承变量）。print-bleed 借 @page 18mm 边距各 15mm、余 3mm 安全边。
+     ⚠ 禁 transform（调研源码级证据：打印高度错算）；zoom 参与重排、Chromium 打印验证有效
+     ——与下方 .print-tall 同一工艺。 */
+  .mdc .print-bleed {
+    margin-inline: -15mm;
+  }
+  .mdc .print-zoom table {
+    zoom: var(--print-zoom, 1);
+  }
+
+  /* T4 分栏切片（w > 1400 ≈ 987/0.705）：切片器 table-slice.ts 导出时在 wrap 内追加
+     .slice-stack（hidden，屏显退场）；打印态 stack 显现、原表退场。每段是独立
+     <table class="slice-seg">（完整 thead ⇒ 跨页表头重复由全局 thead 规则原生接管），
+     段前小标题「续表 N/共 M」（取舍：细线只在同页相邻时才有意义，段会各自分页，
+     小标题在任何落页形态下都自解释）。段表仍落在 .squeeze-page 下（上方 261mm 规则覆盖）。 */
+  .mdc .table-sliced > table:not(.slice-seg) {
+    display: none;
+  }
+  .mdc .slice-stack[hidden] {
+    display: block; /* 压过 UA 的 [hidden]{display:none}（作者层 > UA 层） */
+  }
+  .mdc .slice-caption {
+    font-size: 0.85em;
+    opacity: 0.75;
+    margin-block: 0.2em 0.4em;
+    break-after: avoid; /* 小标题不孤悬页尾 */
+  }
+
   /* P2-15（des-5·UX-9）：超页高单体（大 mermaid / 长图）按比例缩进可印高。
      `break-inside: avoid` 对超过一页高的单体无效（Chromium 直接硬裁）；导出流程的
      markPrintBlocks 量块高，超过竖版可印高（PORTRAIT_PRINTABLE_HEIGHT_PX = 986px，
      即 261mm@96dpi，推导见 render/print-ready.ts）者打 .print-tall 并内联
-     --print-fit（clamp 下限 0.4，再小不可读）。只作用于该类元素，屏显零影响。
-     ⚠ 与 squeeze-page 的「不缩放」裁决不冲突：那条禁的是**表格**压列时偷懒缩放，
-     本条针对无法分页的单体图形。最终 PDF 效果需人工验证（jsdom 无打印排版）。 */
+      --print-fit（clamp 下限 0.4，再小不可读）。只作用于该类元素，屏显零影响。
+      ⚠ 表格缩放在本批是 T2（print-zoom）的正式机制（主人 2026-10-15 四档策略批准）；
+      本条针对无法分页的单体图形。共同红线仍禁 transform。最终 PDF 效果需人工验证
+      （jsdom 无打印排版）。 */
   .print-tall {
     zoom: var(--print-fit, 1);
   }
@@ -128,9 +176,9 @@
      页面上还残留横向滚动条）。打印时改为换行 + 放开滚动：
      `pre-wrap` 提供换行点、`overflow-wrap: anywhere` 让**无空格的超长 token** 也能断，
      `overflow: visible` 让整块回到分页流。不改变字号/版式，属纯赚修复。
-     注意：**超宽**表格（内容宽 > 987px）由上方 `.mdc .squeeze-page` **压列换行**（用户裁决 ④，
-     2026-09-23 已实施）—— 本文件对它**不做**任何缩放、transform 或光栅化；
-     中等宽表（658 < w ≤ 987）走上方 `@page wide` 横排、不压列。 */
+     注意：宽表由四档策略（2026-10-15）接管——T1 print-wrap 竖版压列、T2 print-zoom/print-bleed
+     竖版缩放＋出血、T3/T4 squeeze-page 横排压列（T4 再分栏切片）；本文件对表格**不做** transform
+     或光栅化。 */
   .mdc pre {
     white-space: pre-wrap;
     overflow-wrap: anywhere;

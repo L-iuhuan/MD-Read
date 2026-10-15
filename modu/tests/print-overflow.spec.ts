@@ -1,20 +1,32 @@
 /**
- * 宽表横排 + 超宽表压列换行 + 「可能被截」提醒已撤（2026-09-23 用户裁决）。
+ * 宽表四档导出（2026-10-15 主人批准，业界调研背书；取代 2026-09-23 三档）。
  *
- * 三层（来历见 src/render/print-ready.ts 顶部注释）：
- *   竖版可印宽 658px（A4 210mm − 2×18mm = 174mm，按 96dpi 换算，**推断**）
- *   横版可印宽 987px（297mm − 36mm = 261mm 同上；纸型都是实测的）
- *   `w ≤ 658` 竖版自然宽 ｜ `658 < w ≤ 987` → `wide-page` 横排 ｜ `w > 987` → `+ squeeze-page` 压列换行
- * 提醒：压列后表格不再丢列、图片有 `max-inline-size:100%`、`pre` 会换行 ⇒ **无真实触发条件 ⇒ 已撤除**。
+ * 四层（来历见 src/render/print-ready.ts 顶部注释；测量口径 = 表自身 min-content 宽 w）：
+ *   T1 压列    w ≤ 830        竖版页内 fixed+100% 压列（print-wrap；830 ≈ 658×1.26）
+ *   T2 缩放出  830 < w ≤ 1030 竖版页 zoom+出血（print-zoom+print-bleed；
+ *                --print-zoom = clamp(0.75, 771/w, 1)，771 = (174+30)mm@96dpi；
+ *                1030 ≈ 771/0.75。禁 transform——打印高度错算；zoom 参与重排已验证）
+ *   T3 横排压  1030 < w ≤ 1400 横排页 261mm 压列（squeeze-page；1400 ≈ 987/0.705）
+ *   T4 切片    w > 1400       横排页分栏切片（squeeze-page+table-sliced，见 table-slice.ts）
+ * 旧 wide-page（658 < w ≤ 987 横排、不压列）无消费者退役：横排职责并入 squeeze-page
+ * （`.mdc .squeeze-page { page: wide }`），锚随本批迁移。
+ * 提醒：「可能被截」提示 2026-09-23 已撤（无真实触发条件），本批不复活。
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   LANDSCAPE_PRINTABLE_PX,
   PORTRAIT_PRINTABLE_PX,
+  PRINT_SLICE_MIN_PX,
+  PRINT_WRAP_MAX_PX,
+  PRINT_ZOOM_FIT_PX,
+  PRINT_ZOOM_MAX_PX,
+  PRINT_ZOOM_MIN,
   blockContentWidth,
   markPrintBlocks,
   printFitScale,
+  printTier,
+  printZoomScale,
 } from "../src/render/print-ready";
 
 /** 造一个 `.table-wrap`，内部 table 的内容宽可控（jsdom 的 scrollWidth 恒 0，必须显式定义） */
@@ -28,9 +40,45 @@ function wrapWithTable(width: number): HTMLElement {
   return wrap;
 }
 
-describe("打印标记 · 三层边界", () => {
-  it("阈值常量来历固定：658 / 987（改这两个数必须同步改注释里的推导线）", () => {
+/** 造一张有真实列的表（切片路径需要列结构；空表会被切片器拒绝） */
+function wrapWithRealTable(width: number, columns: number): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "table-wrap";
+  const table = document.createElement("table");
+  const head = Array.from({ length: columns }, (_, i) => `<th>表头${i}</th>`).join("");
+  const body = Array.from({ length: columns }, (_, i) => `<td>值${i}</td>`).join("");
+  table.innerHTML = `<thead><tr>${head}</tr></thead><tbody><tr>${body}</tr></tbody>`;
+  Object.defineProperty(table, "scrollWidth", { value: width, configurable: true });
+  wrap.appendChild(table);
+  Object.defineProperty(wrap, "scrollWidth", { value: 0, configurable: true });
+  return wrap;
+}
+
+describe("打印标记 · 四档边界", () => {
+  it("阈值常量来历固定：658/987（推导基线）+ 830/1030/1400（四档）+ 771/0.75（T2）", () => {
     expect([PORTRAIT_PRINTABLE_PX, LANDSCAPE_PRINTABLE_PX]).toEqual([658, 987]);
+    expect([PRINT_WRAP_MAX_PX, PRINT_ZOOM_MAX_PX, PRINT_SLICE_MIN_PX]).toEqual([830, 1030, 1400]);
+    expect([PRINT_ZOOM_FIT_PX, PRINT_ZOOM_MIN]).toEqual([771, 0.75]);
+  });
+
+  it("判据纯函数 printTier：600/850/1000/1200/1500/1900 → T1/T2/T2/T3/T4/T4（任务书写死）", () => {
+    expect([600, 850, 1000, 1200, 1500, 1900].map(printTier)).toEqual([1, 2, 2, 3, 4, 4]);
+  });
+
+  it("档位沿线逐像素：830→T1、831→T2；1030→T2、1031→T3；1400→T3、1401→T4", () => {
+    expect(printTier(830)).toBe(1);
+    expect(printTier(831)).toBe(2);
+    expect(printTier(1030)).toBe(2);
+    expect(printTier(1031)).toBe(3);
+    expect(printTier(1400)).toBe(3);
+    expect(printTier(1401)).toBe(4);
+  });
+
+  it("printZoomScale = clamp(0.75, 771/w, 1)：恰满出血宽 1、超宽压到下限、绝不放大", () => {
+    expect(printZoomScale(771)).toBe(1);
+    expect(printZoomScale(600)).toBe(1); // 已比有效宽窄：不放大
+    expect(printZoomScale(830)).toBeCloseTo(771 / 830, 10);
+    expect(printZoomScale(1030)).toBe(0.75); // 771/1030 ≈ 0.7485 → clamp 到可读下限
   });
 
   it("blockContentWidth 只量表自身的宽（撑满容器的表不再被误判成宽表）", () => {
@@ -46,64 +94,49 @@ describe("打印标记 · 三层边界", () => {
     expect(blockContentWidth(noTable)).toBe(1234);
   });
 
-  it("658 及以下：竖版自然宽 —— 两个类都不打", () => {
+  it("markPrintBlocks 落类：600→print-wrap；850/1000→print-zoom+print-bleed＋内联比例；1200+→squeeze-page", () => {
     const root = document.createElement("div");
-    const exact = wrapWithTable(PORTRAIT_PRINTABLE_PX);
-    root.append(exact);
-    expect(markPrintBlocks(root)).toEqual({ landscape: 0, squeeze: 0, tall: 0 });
-    expect(exact.classList.contains("wide-page")).toBe(false);
-    expect(exact.classList.contains("squeeze-page")).toBe(false);
-  });
-
-  it("659 ~ 987：只横排、不压列（列宽不受影响）", () => {
-    const root = document.createElement("div");
-    const low = wrapWithTable(PORTRAIT_PRINTABLE_PX + 1);
-    const high = wrapWithTable(LANDSCAPE_PRINTABLE_PX);
-    root.append(low, high);
-    expect(markPrintBlocks(root)).toEqual({ landscape: 2, squeeze: 0, tall: 0 });
-    for (const box of [low, high]) {
-      expect(box.classList.contains("wide-page")).toBe(true);
-      expect(box.classList.contains("squeeze-page")).toBe(false);
-    }
-  });
-
-  it("988 及以上：横排 + 压列两个类都打（超宽表）", () => {
-    const root = document.createElement("div");
-    const over = wrapWithTable(LANDSCAPE_PRINTABLE_PX + 1);
-    const huge = wrapWithTable(1870);
-    root.append(over, huge);
-    expect(markPrintBlocks(root)).toEqual({ landscape: 2, squeeze: 2, tall: 0 });
-    for (const box of [over, huge]) {
-      expect(box.classList.contains("wide-page")).toBe(true);
-      expect(box.classList.contains("squeeze-page")).toBe(true);
-    }
-  });
-
-  it("幂等且能清掉旧标记（重复调用 / 变窄后不残留）", () => {
-    const root = document.createElement("div");
-    const box = wrapWithTable(1870);
-    root.append(box);
-    expect(markPrintBlocks(root)).toEqual({ landscape: 1, squeeze: 1, tall: 0 });
-    expect(markPrintBlocks(root)).toEqual({ landscape: 1, squeeze: 1, tall: 0 });
-    expect(root.querySelectorAll(".squeeze-page").length).toBe(1);
-    Object.defineProperty(box.querySelector("table") as HTMLElement, "scrollWidth", {
-      value: 600,
-      configurable: true,
+    const cases = [600, 850, 1000, 1200, 1500, 1900].map((w) => {
+      const box = wrapWithTable(w); // 空表：切片器拒绝（列数 <2）⇒ 落类断言不受切片干扰
+      root.appendChild(box);
+      return { w, box };
     });
-    Object.defineProperty(box, "scrollWidth", { value: 0, configurable: true });
-    expect(markPrintBlocks(root)).toEqual({ landscape: 0, squeeze: 0, tall: 0 });
-    expect(box.className).toBe("table-wrap");
+    expect(markPrintBlocks(root)).toEqual({ wrap: 1, zoom: 2, squeeze: 3, slice: 0, tall: 0 });
+    for (const { w, box } of cases) {
+      const zoomExpected = w === 850 || w === 1000;
+      expect(box.classList.contains("print-wrap"), `${w} print-wrap`).toBe(w === 600);
+      expect(box.classList.contains("print-zoom"), `${w} print-zoom`).toBe(zoomExpected);
+      expect(box.classList.contains("print-bleed"), `${w} print-bleed`).toBe(zoomExpected);
+      expect(box.classList.contains("squeeze-page"), `${w} squeeze-page`).toBe(w >= 1200);
+      expect(box.style.getPropertyValue("--print-zoom"), `${w} --print-zoom`).toBe(
+        zoomExpected ? String(printZoomScale(w)) : "",
+      );
+    }
   });
 
-  it("混合文档：常规表 / 中等宽表 / 超宽表 各归其位", () => {
+  it("幂等且能清掉旧标记（重复调用 / 变窄后不残留；T4 切片同步还原）", () => {
+    const root = document.createElement("div");
+    const box = wrapWithRealTable(1900, 3); // 3 列等宽 ≈ 633/列 ⇒ 3 段
+    root.appendChild(box);
+    expect(markPrintBlocks(root)).toEqual({ wrap: 0, zoom: 0, squeeze: 1, slice: 1, tall: 0 });
+    expect(markPrintBlocks(root)).toEqual({ wrap: 0, zoom: 0, squeeze: 1, slice: 1, tall: 0 }); // 重跑不叠加
+    expect(root.querySelectorAll(".slice-stack").length).toBe(1);
+    const table = box.querySelector("table") as HTMLTableElement;
+    Object.defineProperty(table, "scrollWidth", { value: 600, configurable: true });
+    expect(markPrintBlocks(root)).toEqual({ wrap: 1, zoom: 0, squeeze: 0, slice: 0, tall: 0 });
+    expect(root.querySelectorAll(".slice-stack").length).toBe(0); // 切片已还原
+    expect(box.className).toBe("table-wrap print-wrap");
+  });
+
+  it("混合文档：常规表 / 中等宽表 / 超宽空表 各归其位", () => {
     const root = document.createElement("div");
     const normal = wrapWithTable(600);
-    const medium = wrapWithTable(734);
-    const huge = wrapWithTable(1870);
+    const medium = wrapWithTable(1000);
+    const huge = wrapWithTable(1900);
     root.append(normal, medium, huge);
-    expect(markPrintBlocks(root)).toEqual({ landscape: 2, squeeze: 1, tall: 0 });
-    expect(normal.className).toBe("table-wrap");
-    expect(medium.classList.contains("squeeze-page")).toBe(false);
+    expect(markPrintBlocks(root)).toEqual({ wrap: 1, zoom: 1, squeeze: 1, slice: 0, tall: 0 });
+    expect(normal.className).toBe("table-wrap print-wrap");
+    expect(medium.classList.contains("print-zoom")).toBe(true);
     expect(huge.classList.contains("squeeze-page")).toBe(true);
   });
 });
@@ -122,26 +155,49 @@ describe("提醒已撤除（无真实触发条件）", () => {
   });
 });
 
-describe("print.css 打印契约锚（命名页 + 压列 + 红线同层）", () => {
+describe("print.css 打印契约锚（四档 + 红线同层）", () => {
   const css = readFileSync("src/typography/print.css", "utf8");
 
-  it("有 @page wide（A4 landscape）与 .mdc .wide-page{page:wide}", () => {
+  it("横排命名页仍在：@page wide（A4 landscape）；page:wide 已迁入 .squeeze-page（T3/T4）", () => {
     expect(css).toMatch(/@page wide\s*\{[^}]*size:\s*A4 landscape/);
-    expect(css).toMatch(/\.mdc \.wide-page\s*\{[^}]*page:\s*wide/);
+    expect(css).toMatch(/\.mdc \.squeeze-page\s*\{[^}]*page:\s*wide/);
+  });
+
+  it("旧 .wide-page 已退役：print.css 无该选择器、标记器不再产生它", () => {
+    expect(css).not.toMatch(/\.mdc \.wide-page\s*\{/);
+    const src = readFileSync("src/render/print-ready.ts", "utf8");
+    expect(src).not.toMatch(/classList\.toggle\('wide-page'/);
+  });
+
+  it("T1 压列：print-wrap 竖版 fixed + 100% + 单元格换行", () => {
+    expect(css).toMatch(/\.mdc \.print-wrap table\s*\{[^}]*table-layout:\s*fixed/);
+    expect(css).toMatch(/\.mdc \.print-wrap table\s*\{[^}]*inline-size:\s*100%/);
+    expect(css).toMatch(/\.mdc \.print-wrap th,\s*\.mdc \.print-wrap td\s*\{[^}]*overflow-wrap:\s*anywhere/);
+  });
+
+  it("T2 缩放＋出血：print-bleed 两侧各借 15mm；表格 zoom 走 --print-zoom", () => {
+    expect(css).toMatch(/\.mdc \.print-bleed\s*\{[^}]*margin-inline:\s*-15mm/);
+    expect(css).toMatch(/\.mdc \.print-zoom table\s*\{[^}]*zoom:\s*var\(--print-zoom/);
   });
 
   it("UX-9：超页高单体走 .print-tall + zoom: var(--print-fit)（markPrintBlocks 内联比例）", () => {
     expect(css).toMatch(/\.print-tall\s*\{[^}]*zoom:\s*var\(--print-fit/);
   });
 
-  it("压列用**物理宽**（禁止回退成百分比）+ fixed + 单元格换行；无缩放/transform", () => {
+  it("T3/T4 压列用**物理宽**（禁止回退成百分比）+ fixed + 单元格换行；无 transform", () => {
     expect(css).toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*table-layout:\s*fixed/);
-    // 用户裁决 C（2026-09-23）：横版命名页的排版内容盒仍是竖版 174mm ⇒ 写 % 拿不到 261mm（归因轮实测）
+    // 用户裁决 C（2026-09-23）：横排命名页的排版内容盒仍是竖版 174mm ⇒ 写 % 拿不到 261mm（归因轮实测）
     expect(css).toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*inline-size:\s*calc\(261mm - 2mm\)/);
     expect(css).not.toMatch(/\.mdc \.squeeze-page table\s*\{[^}]*inline-size:\s*100%\s*;/);
     expect(css).toMatch(/\.mdc \.squeeze-page th,\s*\.mdc \.squeeze-page td\s*\{[^}]*overflow-wrap:\s*anywhere/);
     expect(css).toMatch(/\.mdc \.squeeze-page th,\s*\.mdc \.squeeze-page td\s*\{[^}]*white-space:\s*normal/);
     expect(css).not.toMatch(/transform:\s*scale/);
+  });
+
+  it("T4 切片段：原表退场、stack 打印显现、段标题不孤悬页尾", () => {
+    expect(css).toMatch(/\.mdc \.table-sliced > table:not\(\.slice-seg\)\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/\.mdc \.slice-stack\[hidden\]\s*\{[^}]*display:\s*block/);
+    expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*break-after:\s*avoid/);
   });
 
   it("红线仍在：行级分页 + 表头重复 + 默认 @page A4/18mm", () => {
@@ -178,7 +234,7 @@ describe("UX-9 · 超页高单体缩放", () => {
       configurable: true,
     });
     root.append(box, img);
-    expect(markPrintBlocks(root)).toEqual({ landscape: 0, squeeze: 0, tall: 1 });
+    expect(markPrintBlocks(root)).toEqual({ wrap: 0, zoom: 0, squeeze: 0, slice: 0, tall: 1 });
     expect(svg.classList.contains("print-tall")).toBe(true);
     expect(svg.style.getPropertyValue("--print-fit")).toBe("0.5");
     expect(img.classList.contains("print-tall")).toBe(false);
@@ -192,14 +248,14 @@ describe("UX-9 · 超页高单体缩放", () => {
       value: () => ({ height: 2000 }),
       configurable: true,
     });
-    root.append(img);
+    root.appendChild(img);
     markPrintBlocks(root);
     expect(img.classList.contains("print-tall")).toBe(true);
     Object.defineProperty(img, "getBoundingClientRect", {
       value: () => ({ height: 200 }),
       configurable: true,
     });
-    expect(markPrintBlocks(root)).toEqual({ landscape: 0, squeeze: 0, tall: 0 });
+    expect(markPrintBlocks(root)).toEqual({ wrap: 0, zoom: 0, squeeze: 0, slice: 0, tall: 0 });
     expect(img.classList.contains("print-tall")).toBe(false);
     expect(img.style.getPropertyValue("--print-fit")).toBe("");
   });
