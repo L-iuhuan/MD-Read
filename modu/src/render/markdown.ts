@@ -153,10 +153,74 @@ function installFenceRule(engine: MarkdownIt): void {
  * 原样输出，包裹层不吃掉它。
  */
 function installTableWrapRule(engine: MarkdownIt): void {
-  engine.renderer.rules.table_open = (tokens, idx, options, _env, self) =>
-    `<div class="table-wrap">${self.renderToken(tokens, idx, options)}`
+  engine.renderer.rules.table_open = (tokens, idx, options, _env, self) => {
+    queueTableFadeSweep() // des-9b：右缘渐隐初值——渲染所在任务之后一次全量 sync（见下方驱动块）
+    return `<div class="table-wrap">${self.renderToken(tokens, idx, options)}`
+  }
   engine.renderer.rules.table_close = (tokens, idx, options, _env, self) =>
     `${self.renderToken(tokens, idx, options)}</div>`
+}
+
+/* --------------------------------------------------------------------------
+   des-9b→9c（2026-10-15）：超宽表右缘「线切字」状态接线（消费 cjk.css des-9① v3）
+   背景：v1(scroll-timeline mask) 与 v2(JS inline mask) 均在 WebView2 实测「计算层全对、
+   像素层零绘制」⇒ v3 弃 mask，改边框让位：滚动中挂 tbl-scroll（cjk.css 右线透明），
+   滚到底挂 tbl-end（右线复原收口）。接线随 table-wrap 规则一并落在这里（渲染层无 DOM
+   阶段可达，故统一走全量 sweep）。
+   · 每 wrap 一个 passive scroll 监听＋（可用时）尺寸观察器：wrap 每次渲染重建，
+      监听/观察器随元素一起被 GC（WeakMap 与闭包均不向元素外持引用），省掉生命周期
+      清理；代价 = 同一元素只接一次线（WeakMap 去重）——重渲出新元素即天然重接。
+   · 初值：渲染所在任务之后全量 sync 一次。挂载（adoptNode）是渲染同一同步续段
+      （tabs.ts 的 whenPainted 回调里 render→finishMount），setTimeout 必落在挂载后；
+      此后全靠事件驱动，滚动帧内零额外开销。
+   · 尺寸观察双目标（wrap＋表）：窗口/面板改 wrap 宽、字号/缩放改表宽，两者互不
+      覆盖、任一侧变化即重算——补上「无滚动事件可依」的陈旧态。
+   · jsdom 没有 ResizeObserver ⇒ 守卫跳过（测试环境无布局引擎；scroll 监听照常在位）。
+   -------------------------------------------------------------------------- */
+
+/** 同步单个 wrap 的右线让位态（滚动中 tbl-scroll＝右线让位；到底 tbl-end＝右线复原） */
+function syncTableEdgeFade(wrap: HTMLElement): void {
+  const remaining = wrap.scrollWidth - wrap.clientWidth - Math.ceil(wrap.scrollLeft)
+  wrap.classList.toggle("tbl-scroll", wrap.scrollWidth > wrap.clientWidth + 1)
+  wrap.classList.toggle("tbl-end", remaining <= 1)
+}
+
+/** 接线表：wrap → 尺寸观察器（null = 环境无 RO）。WeakMap ⇒ 随元素一起被 GC */
+const fadeWatchers = new WeakMap<Element, ResizeObserver | null>()
+
+/** 给 root 下每个 wrap 接线（scroll 监听＋尺寸观察）并立即 sync 一次；已接线者只重 sync */
+function wireTableEdgeFade(root: ParentNode): void {
+  for (const wrap of root.querySelectorAll<HTMLElement>(".table-wrap")) {
+    syncTableEdgeFade(wrap)
+    if (fadeWatchers.has(wrap)) {
+      continue
+    }
+    wrap.addEventListener("scroll", () => syncTableEdgeFade(wrap), { passive: true })
+    if (typeof ResizeObserver === "undefined") {
+      fadeWatchers.set(wrap, null)
+      continue
+    }
+    const watcher = new ResizeObserver(() => syncTableEdgeFade(wrap))
+    watcher.observe(wrap)
+    const table = wrap.querySelector("table")
+    if (table !== null) {
+      watcher.observe(table) // 表宽变化而 wrap 盒不变（如字号调整）时也要重算
+    }
+    fadeWatchers.set(wrap, watcher)
+  }
+}
+
+let fadeSweepQueued = false
+/** 渲染后全量同步一次（table_open 每渲染触发；同任务内多表调用去重） */
+function queueTableFadeSweep(): void {
+  if (fadeSweepQueued) {
+    return
+  }
+  fadeSweepQueued = true
+  setTimeout(() => {
+    fadeSweepQueued = false
+    wireTableEdgeFade(document)
+  }, 0)
 }
 
 /**

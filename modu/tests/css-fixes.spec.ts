@@ -597,3 +597,76 @@ describe("Lane O：表头/代码底 accent 化（FB-13）与 hljs 关键词提�
     expect(tokens).toMatch(/--bg-app:\s*var\(--pal-paper\)/);
   });
 });
+
+/* des-9 批次（2026-10-15 · 横向滚动表格右缘视觉修复；des-9b 同日返修）：主人实测 T8
+   （13 列超宽表，语料 tests/corpus/隔离表格评测集.md）右缘 = 硬裁切边界，外框右线恰
+   落在裁切点上 ⇒「竖线切字」。des-9 的 scroll-timeline 驱动在 WebView2 实测「计算在、
+    绘制不在」（computed 全对、像素零重绘）⇒ v2（JS inline 驱动 mask）复测同症 ⇒ v3 弃 mask
+    整链，改「边框让位」：滚动中 JS 挂 tbl-scroll（cjk.css 右线透明），滚到底挂 tbl-end
+    （右线复原收口）。三层：① 边框让位规则（@media screen、零 mask 残留、类 toggle 接线
+    在位）；② 末列呼吸位 ≥8px；③ 打印零参与。jsdom 无布局引擎，沿「源码文本锚」口径。 */
+describe("des-9c：超宽表右缘边框让位（v3）+ 呼吸位锚", () => {
+  const cjkBody = cjk.replace(/\/\*[\s\S]*?\*\//g, "");
+  const mdSrc = readFileSync("src/render/markdown.ts", "utf8");
+
+  it("① 边框让位（v3）：.tbl-scroll:not(.tbl-end) 右线透明唯一一份、嵌在 @media screen 内；mask 整链零残留", () => {
+    const yieldAt = cjkBody.indexOf("border-inline-end-color: transparent");
+    expect(yieldAt).toBeGreaterThan(-1);
+    expect(cjkBody.indexOf("border-inline-end-color: transparent", yieldAt + 1)).toBe(-1); // 唯一一份
+    expect(cjkBody).toMatch(
+      /\.mdc \.table-wrap\.tbl-scroll:not\(\.tbl-end\)\s*\{\s*border-inline-end-color:\s*transparent/,
+    );
+    // 花括号深度检查（沿 Lane C C2 手法）：@media screen 到让位规则之间无 "}" 收口
+    // ⇒ 规则确实嵌在媒体块内 ⇒ 打印媒体下一条都不命中
+    const mediaAt = cjkBody.lastIndexOf("@media screen", yieldAt);
+    expect(mediaAt).toBeGreaterThan(-1);
+    expect(cjkBody.slice(mediaAt, yieldAt)).not.toContain("}");
+    // 唯一打印层红线（与 P0-5 组同口径复核）
+    expect(cjkBody).not.toMatch(/@media\s+print/);
+    // v3 弃 mask 反向锚：两版 mask 均在 WebView2 像素层零绘制（见 cjk.css 方案史），整链退役
+    expect(cjkBody).not.toMatch(/mask-image/);
+  });
+
+  it("① 反向锚：scroll-timeline 驱动整链退役（@property/@supports/@keyframes/animation-timeline 零残留）", () => {
+    expect(cjkBody).not.toMatch(/@property/);
+    expect(cjkBody).not.toMatch(/@supports/);
+    expect(cjkBody).not.toMatch(/@keyframes/);
+    expect(cjkBody).not.toMatch(/animation-timeline/);
+  });
+
+  it("① JS 接线（markdown.ts）：passive scroll 监听＋类 toggle（tbl-scroll/tbl-end）＋渲染后全量 sweep", () => {
+    expect(mdSrc).toMatch(
+      /addEventListener\("scroll", \(\) => syncTableEdgeFade\(wrap\), \{ passive: true \}\)/,
+    );
+    expect(mdSrc).toMatch(/classList\.toggle\("tbl-scroll"/);
+    expect(mdSrc).toMatch(/classList\.toggle\("tbl-end"/);
+    // 状态判据：tbl-end = 剩余隐藏宽 ≤1（滚到底）；tbl-scroll = 存在横向溢出
+    expect(mdSrc).toMatch(/remaining <= 1/);
+    expect(mdSrc).toMatch(/wrap\.scrollWidth > wrap\.clientWidth \+ 1/);
+    // 初值：渲染后一个任务全量 sync（挂载是渲染同任务的同步续段 ⇒ 必落在挂载后）
+    expect(mdSrc).toMatch(
+      /setTimeout\(\(\) => {\s*fadeSweepQueued = false\s*wireTableEdgeFade\(document\)/,
+    );
+    // GC 取舍随注释留档（任务书要求写明：监听随元素 GC、无生命周期清理）
+    expect(mdSrc).toMatch(/随元素一起被 GC/);
+  });
+
+  it("② 呼吸位：末列右侧内边距显式加档 --size-4（16px ≥ 8px 安全距），且 screen 专属", () => {
+    expect(cjk).toMatch(
+      /\.mdc \.table-wrap > table :is\(th, td\):last-child\s*\{\s*padding-inline-end:\s*var\(--size-4\)/,
+    );
+    expect(tokens).toMatch(/--size-4:\s*1rem;/);
+    const padAt = cjkBody.indexOf("padding-inline-end: var(--size-4)");
+    expect(padAt).toBeGreaterThan(-1);
+    const screenAt = cjkBody.lastIndexOf("@media screen", padAt);
+    expect(screenAt).toBeGreaterThan(-1);
+    expect(cjkBody.slice(screenAt, padAt)).not.toContain("}");
+  });
+
+  it("③ 反向锚：表格侧不得新增竖线（裁切线只能是 wrap 外框，已被渐隐一并消隐）", () => {
+    expect(cjkBody).not.toMatch(/\.mdc table\s*\{[^}]*border-(inline|right)/);
+    expect(cjkBody).not.toMatch(/\.mdc (th|td)[^{]*\{[^}]*border-inline/);
+    // 外框三边/圆角保持（原锚同口径抽样）
+    expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border:\s*1px solid var\(--border\)/);
+  });
+});

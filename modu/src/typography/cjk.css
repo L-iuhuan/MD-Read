@@ -345,6 +345,39 @@
    本文件不得再出现任何「末行抑制」规则（tests/css-fixes.spec.ts 有反向锚）。 */
 .mdc .doc-note { font-size: .8125em; color: var(--text-muted); }
 
+/* --- des-9 ①（v3 边框让位，2026-10-15）：超宽表右缘「线切字」---
+   现象：T8 13 列超宽表（tests/corpus/隔离表格评测集.md）滚动中，wrap 外框右线恰落在
+   内容裁切点上 ⇒「竖线切字」。表格自身并无右缘竖线（th/td 只有行底线、thead th 只有
+   顶线）——观感中的竖线即外框右线。
+   方案史：v1（scroll-timeline 驱动 mask）与 v2（JS inline-style 驱动 mask）均经 CDP
+   像素剖面实证「计算层全对、绘制层零生效」——WebView2 对该结构下 mask-image 消费不
+   重绘 ⇒ v3 弃 mask，回归边框语义让位：
+   · 滚动中（JS 挂 tbl-scroll 且未到底 tbl-end）：外框右线透明——线不再与被裁文字叠加；
+   · 滚到底（tbl-end）：右线复原——表格完整呈现、边框收口，右线本身成为「到底」指示。
+   类由 markdown.ts des-9b 接线（passive scroll 监听＋ResizeObserver＋渲染后全量 sweep）
+   toggle；与下方 ②呼吸位（末列 +--size-4）叠加后，滚到底末列文字距右线 ≥16px。
+   选择器特异性高于 .table-wrap 基础边框声明，长式覆盖可靠。打印媒体零参与。 */
+@media screen {
+  .mdc .table-wrap.tbl-scroll:not(.tbl-end) {
+    border-inline-end-color: transparent;
+  }
+}
+
+/* --- des-9 ②：末列呼吸位（2026-10-15）---
+   滚到最右端时，末列文字距裁切边界的间距 = 单元格右内边距 + 1px 外框线。默认档
+   （--size-3 = 12px）本已达标，这里显式加档到 --size-4（16px），让 ≥8px 安全距
+   不依赖默认档位漂移。落点取「行末单元格」而非 wrap 的 padding-inline-end：溢出
+   形态下 wrap 的右内边距区会被表格盖住、不产生尾随空白（尾随空白的可靠落点只有
+   被滚动内容自身）。代价：非滚动表末列文字距外框多 4px，与左缘 12px 的不对称在
+   正常视距下不可辨。整块 screen 专属：打印媒体下本规则不存在（PDF 零扰动）；导出
+   量宽在屏显媒体下测量、会含这 +4px（658/987 阈值 ±4px 的边界表理论上可改档，
+   量级可忽略，真机复验归主线程）。 */
+@media screen {
+  .mdc .table-wrap > table :is(th, td):last-child {
+    padding-inline-end: var(--size-4);
+  }
+}
+
 /* --------------------------------------------------------------------------
    P0-5：图片限宽（正文纸面红线）
    管线直出 <img>（markdown ![]() → <p><img></p>，app/images.ts 只改 src 不做盒子），
