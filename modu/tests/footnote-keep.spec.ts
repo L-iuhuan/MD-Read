@@ -6,12 +6,24 @@
  * 修后：未引用的定义只被拆掉 footnote 标记、内容按作者写的位置渲染成普通块；
  * 被引用的一律不动，照旧进文末脚注区。
  */
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { renderDocument } from "../src/render/pipeline";
 
 function dom(src: string): Document {
   return new DOMParser().parseFromString(renderDocument(src).html, "text/html");
 }
+
+/**
+ * fix-31 锚（2026-10-15）：验收隔离用例 04 的**原文**收进 spec 锁死形态。
+ * 来历：取证轮称「04 未引用定义被静默丢弃、D3 修复失效」，但当前树 jsdom 实测
+ * 全绿（fixture 原文、中文标点/多句/正文两段变体均保留；取证引文的源形态在仓库中
+ * 不存在，疑为对旧树的探针）。锚的作用：这些形态今后一旦真回归，当场红。
+ */
+const ISO_DIR = join("..", "docs", "验收", "隔离用例");
+const fixtureName = readdirSync(ISO_DIR).find((f) => f.startsWith("04-")) ?? "";
+const fixtureSrc = fixtureName !== "" ? readFileSync(join(ISO_DIR, fixtureName), "utf8").replace(/\r\n/g, "\n") : "";
 /** 正文段落：排除文末脚注区里的 <p>（否则脚注体也被算进来） */
 function paras(doc: Document): Element[] {
   return [...doc.querySelectorAll("p")].filter((p) => p.closest("section.footnotes") === null);
@@ -83,5 +95,39 @@ describe("被引用的脚注：行为不变（不许回退）", () => {
     const doc = dom("甲[^a]乙[^a]。\n\n[^a]: 定义。\n");
     expect(doc.querySelectorAll(".footnote-ref").length).toBe(2);
     expect(doc.querySelectorAll(".footnote-item .footnote-backref").length).toBe(2);
+  });
+});
+
+describe("04 fixture 原文锚（fix-31：取证称丢、实树全绿——锁死形态）", () => {
+  it("验收隔离用例 04 真实文件（readdir 前缀取）：定义成段、无脚注区、位置在末尾段之前", () => {
+    expect(fixtureName, "docs/验收/隔离用例 下应有 04-*.md").toMatch(/^04-/);
+    const doc = dom(fixtureSrc);
+    expect(doc.querySelectorAll("section.footnotes").length).toBe(0);
+    const ps = paras(doc);
+    const defIdx = ps.findIndex((p) => (p.textContent ?? "").includes("没有被任何地方引用"));
+    expect(defIdx, "定义文本必须在正文段落里").toBeGreaterThan(-1);
+    const endIdx = ps.findIndex((p) => p.textContent === "末尾段落。"); // 全等匹配：首段的「末尾段落」引文不算
+    expect(defIdx).toBeLessThan(endIdx);
+    expect(ps[defIdx]?.getAttribute("data-line")).toMatch(/^7$/); // 源码第 7 行，原位保留
+  });
+
+  it("定义体含中文标点（——／：／「」）与多句结构：整段逐字保留", () => {
+    const doc = dom("[^p]: 首句。 —— 破折号后的第二句：「引语」收在冒号后。\n\n结尾。\n");
+    expect(paras(doc)[0]?.textContent)
+      .toBe("首句。 —— 破折号后的第二句：「引语」收在冒号后。");
+    expect(doc.querySelectorAll("section.footnotes").length).toBe(0);
+  });
+
+  it("正文两段夹定义的文档形态（H1 + 两段 + 定义 + 末尾段）：四块齐全、顺序不乱", () => {
+    const src = [
+      "# 标题甲", "", "正文第一段。", "",
+      "[^two]: 两段之间的定义体。", "",
+      "正文第二段。", "", "末尾段落。", "",
+    ].join("\n");
+    const doc = dom(src);
+    expect(paras(doc).map((p) => p.textContent)).toEqual([
+      "正文第一段。", "两段之间的定义体。", "正文第二段。", "末尾段落。",
+    ]);
+    expect(doc.querySelectorAll("section.footnotes").length).toBe(0);
   });
 });

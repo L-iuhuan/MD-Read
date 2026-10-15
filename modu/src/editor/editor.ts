@@ -369,13 +369,15 @@ export function createEditSession(deps: EditSessionDeps): EditSession {
     }
     cancelAutosave(); // 离开编辑态：待存票作废（dirty 仍在，关闭确认不失守）
     editing = false;
+    // ⭐ fix-30：编辑器顶行/全文必须**先于 hidden 读**——display:none 的盒子 scrollTop 恒读 0
+    // （CSSOM View「无关联盒返回 0」），旧序先隐藏再测 ⇒ line=1 ⇒ 回阅读落回首块（实测 4566→48px）。
+    const line = editor.topLineNumber();
+    const text = editor.getDoc();
     container.hidden = true;
     const tab = deps.getTab();
     if (tab === null) {
       return;
     }
-    const line = editor.topLineNumber();
-    const text = editor.getDoc();
     if (text !== domText) {
       tab.source = text;
       domText = text;

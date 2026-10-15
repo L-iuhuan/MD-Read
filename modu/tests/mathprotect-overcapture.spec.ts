@@ -223,3 +223,38 @@ describe("E · 行内码区间与未闭合开定界符（Lead 复核 visual-audi
     expect(doc.querySelectorAll(".katex-display").length).toBe(1);
   });
 });
+
+/* ---- F · 行数守恒（fix-30 取证锚）：多行公式不使 data-line 漂移 ----
+ * 背景：阅读⇄编辑保位依赖「渲染侧 data-line（token.map）与编辑器源码行号同刻度」。
+ * mathprotect 若不再保行数（fix-22 曾保），喂给 md.render 的文本行数偏小 ⇒
+ * 之后所有块的 token.map / data-line 系统性偏小 ⇒ nearestBlockLine 选错目标。
+ * D2 重写后此处逐条实证：占位文本行数 === 源文行数，长文档尾部块 data-line 精确。 */
+describe("F · 行数守恒：多行公式长文档的 data-line 与源行号一致（fix-30）", () => {
+  const BLOCKS = 60; // 60 个多行 $$ 段（每段占 3 行）＋夹层段落：足够放大任何行数漂移
+  const lines: string[] = [];
+  for (let i = 0; i < BLOCKS; i++) {
+    lines.push(`段落 ${i}`, "", "$$", `x_{${i}} = ${i}`, "$$", "");
+  }
+  lines.push("## 尾部标题");
+  const src = lines.join("\n");
+  const total = lines.length; // 尾部标题恰在最后一行（1-based）
+
+  it("extractMath 占位文本行数与源文一致（fix-22 补偿在 D2 重写后仍成立）", () => {
+    const guards = extractMath(src);
+    expect(guards.spans.size).toBe(BLOCKS); // 60 段全部收走（补偿路径真被走到）
+    expect(guards.text.split("\n").length).toBe(total);
+  });
+
+  it("尾部标题 data-line === 真源行号；全部锚点落在 [1, 总行数] 内", () => {
+    const doc = dom(src);
+    const tail = doc.querySelector("h2");
+    expect(tail?.getAttribute("data-line")).toBe(String(total));
+    const anchors = [...doc.querySelectorAll("[data-line]")];
+    expect(anchors.length).toBeGreaterThan(BLOCKS); // 锚点确实在场（非空转）
+    for (const el of anchors) {
+      const n = Number(el.getAttribute("data-line"));
+      expect(n).toBeGreaterThanOrEqual(1);
+      expect(n).toBeLessThanOrEqual(total);
+    }
+  });
+});

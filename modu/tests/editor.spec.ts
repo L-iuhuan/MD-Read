@@ -513,6 +513,53 @@ describe("EditSession：toRead dirty 分支（P5 批2 未变不白渲）", () =>
   });
 });
 
+/* ---- fix-30 回归：阅读 ⇄ 编辑往返保位（主人实测 + CDP 复现） ----
+ * 症状：阅读态滚到中部（scrollTop 4566/7553）→ Ctrl+E 进编辑 → 再切回阅读 →
+ * 落回首块附近（scrollTop 48）。根因：toRead 先 `container.hidden = true` 再
+ * `editor.topLineNumber()`——display:none 的盒子没有关联盒，scrollTop 恒读 0
+ * （CSSOM View），line=1 ⇒ nearestBlockLine 回退首块（data-line=3）⇒ 落顶。
+ * jsdom 不做布局、scrollTop 语义不可直接复现 ⇒ 锚定为**契约**：
+ * 编辑器测量必须发生在隐藏之前（topLineNumber 调用瞬间容器仍可见）。 */
+describe("EditSession：切态往返保位（fix-30）", () => {
+  it("toRead 读编辑器顶行时容器必须仍可见（隐藏后 scrollTop 恒 0 ⇒ line=1 ⇒ 落顶）", () => {
+    const h = setupSession();
+    let hiddenAtMeasure: boolean | null = null;
+    h.stub.topLineNumber = () => {
+      hiddenAtMeasure = h.container.hidden === true; // 收窄：hidden 含 "until-found" 字面量型
+      return 9;
+    };
+    h.session.toEdit();
+    expect(hiddenAtMeasure).toBeNull(); // toEdit 不测编辑器顶行（读的是视口首块）
+    h.session.toRead();
+    expect(hiddenAtMeasure).toBe(false); // 修复前：先 hidden 再测 ⇒ true ⇒ 位置回顶
+  });
+
+  it("未改文本往返：scrollIntoView 目标块 = 编辑器顶行的最近上方块（复用分支不重渲）", () => {
+    const h = setupSession();
+    h.session.loadEditorState(null); // domText ← tab.source（旧文）
+    h.stub.doc = "旧文"; // 编辑器一字未改
+    h.stub.topLineNumber = () => 9;
+    h.session.toEdit();
+    const p9 = document.querySelector('[data-line="9"]') as Element;
+    // ⚠ 不用逐元素 spyOn：scrollIntoView 挂在原型上，实例级 spy 会互相串计数——
+    // 直接 spy 原型并记录接收者，才能断言「滚到的是哪一块」。
+    const scrolled: Element[] = [];
+    const spy = vi
+      .spyOn(Element.prototype, "scrollIntoView")
+      .mockImplementation(function (this: Element) {
+        scrolled.push(this);
+      });
+    try {
+      h.session.toRead();
+      expect(h.rerenderRead).not.toHaveBeenCalled(); // 复用分支：DOM 未换新，锚定其上的滚动
+      expect(scrolled.length).toBe(1); // 恰一次
+      expect(scrolled[0]).toBe(p9); // 目标 = 顶行 9 的块——不是回退首块 data-line=3（落顶症状）
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 /* ---- Tab 增量：bom/crlf 与编辑器态随标签 ---- */
 
 function setupTabs(): { manager: TabManager; saveState: ReturnType<typeof vi.fn>; loadState: ReturnType<typeof vi.fn> } {
