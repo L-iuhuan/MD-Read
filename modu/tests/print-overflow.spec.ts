@@ -206,9 +206,14 @@ describe("print.css 打印契约锚（四档 + 红线同层）", () => {
     // 语义裁决：屏显「外框三边/圆角」锚在 cjk.css 层（css-fixes.spec），打印态退场不破坏
   });
 
-  it("案 B（真机复验）：续表段起新页——.slice-caption break-before 双语法（首段随流不动）", () => {
-    expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*break-before:\s*page/);
-    expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*page-break-before:\s*always/);
+  it("案 B 修订（二轮真机复验）：续表段自然连排不强制起新页＋整段避裂——.slice-seg 双语法（放不下剩余空间才整段挪页）", () => {
+    // 撤矫枉过正（每段强制起新页=半空页）：caption 无强制 break-before，分界靠大间距（上缘 1.4em）
+    expect(css).not.toMatch(/\.mdc \.slice-caption\s*\{[^}]*break-before:\s*page/);
+    expect(css).not.toMatch(/\.mdc \.slice-caption\s*\{[^}]*page-break-before:\s*always/);
+    expect(css).toMatch(/\.mdc \.slice-caption\s*\{[^}]*margin-block:\s*1\.4em/);
+    // 整段避裂双语法；段内行/格避裂由案 C 锚（tr/th,td）继续覆盖
+    expect(css).toMatch(/\.mdc \.slice-seg\s*\{[^}]*break-inside:\s*avoid/);
+    expect(css).toMatch(/\.mdc \.slice-seg\s*\{[^}]*page-break-inside:\s*avoid/);
   });
 
   it("案 C（真机复验）：行/格避裂双语法＋打印态 border-collapse:separate/spacing:0（段表同享）", () => {

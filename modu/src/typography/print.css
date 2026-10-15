@@ -165,12 +165,16 @@
   .mdc .slice-caption {
     font-size: 0.85em;
     opacity: 0.75;
-    margin-block: 0.2em 0.4em;
+    /* 案 B 修订（2026-10-15 二轮真机复验）：撤「每段强制起新页」的矫枉过正——
+       段自然连排填满横排页（不留半空页），分界靠本标题＋上方大间距的视觉语义；
+       段不拆裂由 .slice-seg 的 break-inside:avoid 兜底（放不下剩余空间才整段挪下页）。
+       首段无 caption 随流；判据＝横排页数应回落至段自然打包数（约 3-4）。 */
+    margin-block: 1.4em 0.4em;
     break-after: avoid; /* 小标题不孤悬页尾 */
-    /* 案 B（2026-10-15 真机复验）：续表段（第 2 段起）整段起新页——段与上文/前段不再
-       同页连排（首段无 caption、保持随流；判据＝横排页数应增） */
-    break-before: page;
-    page-break-before: always; /* 双语法兜底 */
+  }
+  .mdc .slice-seg {
+    break-inside: avoid;
+    page-break-inside: avoid; /* 双语法：整段避裂，放不下才整段挪页 */
   }
 
   /* P2-15（des-5·UX-9）：超页高单体（大 mermaid/长图）——break-inside:avoid 管不了超一页高
