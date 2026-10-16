@@ -23,6 +23,7 @@ import { mountEditorToolbar } from "./toolbar";
 import type { Tab } from "../app/tabs";
 import { firstVisibleLine, nearestBlockLine } from "./position-map";
 import { CODE_LANGUAGES } from "./code-langs";
+import { mdLint } from "./md-lint"; // C1：MD 格式检查（规则在 lint-rules.ts 纯函数；editor.ts 棘轮 500 满载，故下方并行挂载）
 
 export { CODE_LANGUAGES }; // 语言表外移 code-langs.ts（B1 腾棘轮行数）；re-export 保对外引用面（phrases.ts 先例）
 
@@ -75,7 +76,7 @@ function baseExtensions(crlf: boolean, onDocChanged: () => void, getDocPath: () 
     editorPasteHandlers(getDocPath), // B1：粘贴双通道（图片落盘 / HTML→MD）
     lineNumbers(),
     highlightActiveLine(),
-    EditorView.lineWrapping,
+    EditorView.lineWrapping, mdLint(), // C1：MD 格式检查（error/warning/info 分级；编辑态 only）
     markdown({ base: markdownLanguage, codeLanguages: CODE_LANGUAGES }), // B1：GFM 基座（A2 遗留②：Task/Strikethrough/Table 节点路径激活）
     livePreview(), // B1 总装：A2 实时渲染（装配位次＝markdown() 之后，A2 建议位）；表格编辑包已随 fix-20 退役，插表走 insertTableSkeleton
     syntaxHighlighting(defaultHighlightStyle),

@@ -1,0 +1,67 @@
+/* ==========================================================================
+   C1 · Markdown 格式检查（lint）皮：波浪线主题化 + info 去下划线 + 徽标 + 问题面板。
+   写法沿用 app.css §10 的两条要点：① 选择器带 #editor-pane 前缀比权重（id 必赢
+   CM 生成的类名规则，不赌注入顺序）；② 色值全走 tokens.css 语义变量，亮暗自动跟随。
+   为什么不用 EditorView.theme：CM lint 的波浪线是 baseTheme 里的 data-uri SVG
+   （吃不了 CSS 变量），且徽标在编辑器 DOM 之外（状态栏），theme 管不到。 */
+
+/* error 红波浪线 / warning 黄波浪线：拆 CM 内置 SVG 底图，改 text-decoration 吃 token */
+#editor-pane .cm-lintRange-error {
+  background-image: none;
+  text-decoration: underline wavy var(--danger-text);
+}
+#editor-pane .cm-lintRange-warning {
+  background-image: none;
+  text-decoration: underline wavy var(--warn-text);
+}
+/* info 只进徽标＋列表：禁止画波浪线（两种类名形态都关，防御式） */
+#editor-pane .cm-lintRange-info,
+#editor-pane .cm-lintMark-info {
+  background-image: none;
+  text-decoration: none;
+}
+/* 悬停 tooltip：与阅读态浮层同一套纸面四件套 */
+#editor-pane .cm-tooltip.cm-lintTooltip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  color: var(--text);
+}
+/* 问题列表面板（openLintPanel）：与 §10 查找面板同一套四件套 */
+#editor-pane .cm-panel.cm-lintPanel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  color: var(--text);
+  font-size: var(--fs-chrome);
+  padding: var(--size-2) var(--size-3);
+}
+#editor-pane .cm-lintPanel ul {
+  max-height: 30vh;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#editor-pane .cm-lintPanel button {
+  font: inherit;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+/* 状态栏徽标 #st-lint（md-lint.ts 动态建，index.html 不动）：继承状态栏字号，
+   数字走等宽；语义色三级（data-severity 由 TS 侧每次 lint 后写入） */
+#st-lint {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+#st-lint[data-severity="error"] { color: var(--danger-text); }
+#st-lint[data-severity="warning"] { color: var(--warn-text); }
+#st-lint[data-severity="info"] { color: var(--text-muted); }
