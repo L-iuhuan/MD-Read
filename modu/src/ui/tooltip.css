@@ -1,0 +1,102 @@
+/* ==========================================================================
+   提示类浮层 · 统一设计语言（提示 UI 风格统一批次，2026-10-16）
+   --------------------------------------------------------------------------
+   一条语言管两类宿主（零字面色值，明暗 10 组主题自动跟随）：
+   ① 壳层自定义小气泡 .modu-tip —— 接管原生 title（引擎 src/ui/tooltip.ts，
+      含 data-tip 显式接线）；三种老皮肤（OS 原生、设置面板 title、状态栏 title）
+      统一到这一件；
+   ② 编辑器内 CM 浮层家族 —— `#editor-pane .cm-tooltip` 通用卡（lint 悬停气泡
+      + 补全弹窗 + 未来同类）与补全专属条目皮；lint 问题面板卡在 md-lint.css
+      （同 token、同四件套，只差圆角档）。
+
+   语言（与 app.css §4/§10 既有一切浮层卡同族）：
+   面 --bg-surface / 描边 1px --border / 投影 --shadow-2 / 字级 --fs-chrome /
+   行高 1.5；圆角分两档：气泡小件走 --radius-2（8px，小面不深圆角），面板卡走
+   --radius-3（与全站浮层一致）；内边距气泡 --size-1/--size-3；出现动效 120ms
+   上浮淡入（reduced-motion 由 app.css §12 全局降级接管——.modu-tip 挂 #app
+   内即覆盖）。本文件随 ui/tooltip.ts 模块导入（不进 app.css 棘轮）。
+   ========================================================================== */
+
+/* ---- ① 自定义小气泡（原生 title 的统一替代皮）---- */
+.modu-tip {
+  position: fixed;
+  z-index: calc(var(--z-float) + 20); /* 高于顶栏（浮层档 +10）与一切浮层卡 */
+  max-inline-size: min(420px, calc(100vw - 2 * var(--size-4)));
+  padding: var(--size-1) var(--size-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-chrome);
+  line-height: 1.5;
+  overflow-wrap: anywhere; /* 长路径可断行 */
+  pointer-events: none;    /* 泡不吃指针：不影响宿主 hover / 点击 */
+  user-select: none;
+  animation: modu-tip-in 120ms var(--ease-1);
+}
+@keyframes modu-tip-in {
+  from { opacity: 0; transform: translateY(2px); }
+}
+
+/* ---- ② CM 浮层家族 · 通用卡 ----
+   覆盖 CM baseTheme 的 &light 灰皮（#f5f5f5 底 + #bbb 描边）。选择器带
+   #editor-pane 前缀与 CM 生成样式比权重取胜，不赌注入顺序（app.css §10 同手法）。
+   ⚠ 不给 .cm-tooltip 设 overflow——CM 的箭头（.cm-tooltip-arrow）挂在框外，
+   会被裁掉；圆角裁切只给自带满宽高亮条的补全弹窗单独加。 */
+#editor-pane .cm-tooltip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-2);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-chrome);
+}
+
+/* ---- ③ 补全弹窗（.cm-tooltip-autocomplete）条目语言 ----
+   与壳层菜单同一套「选中 = accent 软底 + 主文字」语言，不再用 CM 默认的
+   纯蓝块（#17c）与白色文字。 */
+#editor-pane .cm-tooltip.cm-tooltip-autocomplete {
+  overflow: hidden; /* 满宽高亮条要被圆角裁住 */
+}
+#editor-pane .cm-tooltip.cm-tooltip-autocomplete > ul {
+  font-family: var(--font-sans);
+  font-size: var(--fs-chrome);
+  min-inline-size: 240px;
+  max-block-size: 12em;
+  padding: var(--size-1) 0;
+}
+#editor-pane .cm-tooltip-autocomplete ul > li {
+  padding: 3px var(--size-3);
+  line-height: 1.5;
+}
+#editor-pane .cm-tooltip-autocomplete ul li:hover:not([aria-selected]) {
+  background: var(--bg-hover);
+}
+#editor-pane .cm-tooltip-autocomplete ul li[aria-selected] {
+  background: var(--accent-tint);
+  color: var(--text);
+}
+#editor-pane .cm-tooltip-autocomplete-disabled ul li[aria-selected] {
+  background: var(--bg-active);
+  color: var(--text-muted);
+}
+#editor-pane .cm-tooltip-autocomplete ul > completion-section {
+  border-bottom: 1px solid var(--hair);
+  opacity: 1;
+  color: var(--text-muted);
+  padding-inline-start: var(--size-2);
+}
+/* 命中片段：accent 墨 + 加重（替代 CM 的下划线） */
+#editor-pane .cm-completionMatchedText {
+  text-decoration: none;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+#editor-pane .cm-completionDetail {
+  font-style: normal;
+  color: var(--text-muted);
+  margin-inline-start: var(--size-2);
+}

@@ -35,7 +35,7 @@ import { setupExternalLinks } from "./app/links";
 import { resolveRelativeImages } from "./app/images";
 import { setupFindbar, closeTopmostOverlay, type Findbar } from "./ui/findbar";
 import { setupEmptyState, type EmptyState } from "./ui/empty-state";
-import { setupOverlayState } from "./ui/overlay-state";
+import { setupOverlayState } from "./ui/overlay-state"; import { setupTooltips } from "./ui/tooltip";
 import { askCloseChoice } from "./ui/close-confirm";
 import { installBootWatchdog, revealBootFailure } from "./ui/boot-error";
 import { setupSettings, readAutosavePref } from "./ui/settings";
@@ -647,7 +647,7 @@ const workspacePanel = setupWorkspacePanel({
     flashStatus("已清空最近列表", "ok"); // UX-8：清空反馈走状态栏（低风险数据，不弹确认）
     activeEmptyState?.refresh(); // 欢迎页那份最近列表同批重画
   });
-  setupToggles();
+  setupToggles(); setupTooltips(); // 全局提示泡：一条悬停/焦点委托（title 与 data-tip 双源，src/ui/tooltip.ts）
   setupDragDrop(tabs);
   setupProgress();
   // 二次实例转发：载荷是筛过的 Markdown 路径列表（Rust 侧 md_paths），逐个开标签、仅末项渲染

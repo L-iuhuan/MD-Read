@@ -102,7 +102,9 @@ const ITEMS: readonly ToolbarItem[] = [
 const HOST_CLASS = "md-toolbar-host";
 const HOST_COLLAPSED_CLASS = "md-toolbar-host--collapsed";
 
-/** 命令钮：tooltip = 名称＋快捷键（title 与 aria-label 双写；aria-keyshortcuts 供读屏） */
+/** 命令钮：tooltip = 名称＋快捷键。title＝原生兜底＋读屏，data-tip＝统一提示泡
+ *  （ui/tooltip.ts 全局委托；悬停期引擎会暂时摘 title 防双泡、离开即还原）；
+ *  aria-keyshortcuts 供读屏 */
 function commandButton(item: ToolbarItem, fire: () => void): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
@@ -110,6 +112,7 @@ function commandButton(item: ToolbarItem, fire: () => void): HTMLButtonElement {
   btn.dataset.cmd = item.key;
   const tip = item.keys === undefined ? item.label : `${item.label} ${item.keys}`;
   btn.title = tip;
+  btn.dataset.tip = tip; // 统一提示泡（src/ui/tooltip.ts）
   btn.setAttribute("aria-label", tip);
   if (item.shortcut !== undefined) {
     btn.setAttribute("aria-keyshortcuts", item.shortcut);
@@ -173,6 +176,7 @@ function setupCollapseToggle(root: HTMLElement, container: HTMLElement): (next: 
     handle.setAttribute("aria-expanded", next ? "false" : "true");
     const tip = next ? "展开格式工具栏" : "收起格式工具栏";
     handle.title = tip;
+    handle.dataset.tip = tip; // 统一提示泡（title 同款双写，防双泡由引擎摘还）
     handle.setAttribute("aria-label", tip);
   };
   handle.addEventListener("click", () => setCollapsed(!root.classList.contains("is-collapsed")));

@@ -1,9 +1,18 @@
 /* ==========================================================================
-   C1 · Markdown 格式检查（lint）皮：波浪线主题化 + info 去下划线 + 徽标 + 问题面板。
-   写法沿用 app.css §10 的两条要点：① 选择器带 #editor-pane 前缀比权重（id 必赢
+   C1 · Markdown 格式检查（lint）皮：
+   波浪线主题化 + info 去下划线 + 徽标 + 悬停气泡条目 + 问题面板卡。
+   --------------------------------------------------------------------------
+   2026-10-16 提示 UI 统一批修订（原版两处选择器是死码，实测从未命中）：
+   · 原 `#editor-pane .cm-tooltip.cm-lintTooltip` —— @codemirror/lint 真实类名
+     是 `ul.cm-tooltip-lint`（挂在内容 ul 上，外框是通用 `.cm-tooltip` 容器）
+     ⇒ 悬停气泡一直落 CM 默认灰皮（#f5f5f5 底 + #bbb 描边）。
+   · 原 `#editor-pane .cm-panel.cm-lintPanel` —— 真实类名是 `.cm-panel.cm-panel-lint`
+     ⇒ 问题面板一直无卡（透明浮层直接压在正文上）。
+   本批按真实 DOM 重写；气泡外框卡与通用件由 ui/tooltip.css 的
+   `#editor-pane .cm-tooltip` 家族提供，此处只补 lint 专属细节。
+   写法沿用 app.css §10 两条要点：① 选择器带 #editor-pane 前缀比权重（id 必赢
    CM 生成的类名规则，不赌注入顺序）；② 色值全走 tokens.css 语义变量，亮暗自动跟随。
-   为什么不用 EditorView.theme：CM lint 的波浪线是 baseTheme 里的 data-uri SVG
-   （吃不了 CSS 变量），且徽标在编辑器 DOM 之外（状态栏），theme 管不到。 */
+   ========================================================================== */
 
 /* error 红波浪线 / warning 黄波浪线：拆 CM 内置 SVG 底图，改 text-decoration 吃 token */
 #editor-pane .cm-lintRange-error {
@@ -20,37 +29,96 @@
   background-image: none;
   text-decoration: none;
 }
-/* 悬停 tooltip：与阅读态浮层同一套纸面四件套 */
-#editor-pane .cm-tooltip.cm-lintTooltip {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-  color: var(--text);
+
+/* ---- 悬停气泡内容（ul.cm-tooltip-lint；外框卡见 ui/tooltip.css 家族皮）---- */
+#editor-pane ul.cm-tooltip-lint {
+  margin: 0;
+  padding: var(--size-1) 0;
+  list-style: none;
+  max-inline-size: min(440px, 80vw); /* 长中文诊断可换行，不出窗 */
 }
-/* 问题列表面板（openLintPanel）：与 §10 查找面板同一套四件套 */
-#editor-pane .cm-panel.cm-lintPanel {
+#editor-pane ul.cm-tooltip-lint .cm-diagnostic {
+  padding: 2px var(--size-3);
+  border-left-width: 3px; /* CM 默认 5px 硬色条：收细，色走 token */
+}
+#editor-pane ul.cm-tooltip-lint .cm-diagnostic + .cm-diagnostic {
+  border-top: 1px solid var(--line);
+}
+#editor-pane ul.cm-tooltip-lint .cm-diagnostic-error { border-left-color: var(--danger-text); }
+#editor-pane ul.cm-tooltip-lint .cm-diagnostic-warning { border-left-color: var(--warn-text); }
+#editor-pane ul.cm-tooltip-lint .cm-diagnostic-info { border-left-color: var(--text-dim); }
+#editor-pane ul.cm-tooltip-lint .cm-diagnostic-hint { border-left-color: var(--accent-solid); }
+
+/* ---- 问题列表面板（openLintPanel → .cm-panel.cm-panel-lint）----
+   卡四件套与全部浮层同族；右缘 = 纸列右缘（与编辑态 CM 查找卡、阅读态
+   findbar 同基准、同浮层档）。
+   ⚠ 外层 .cm-panels 被 app.css §10 改成 pointer-events:none 的穿透容器 ⇒
+   面板自身必须取回 auto，否则列表点不动、关闭钮也点不动。 */
+#editor-pane .cm-panel.cm-panel-lint {
+  pointer-events: auto;
+  inline-size: fit-content;
+  min-inline-size: 280px;
+  max-inline-size: min(560px, calc(100% - 2 * var(--size-4)));
+  margin: var(--size-2) max(var(--size-4), calc((100% - var(--measure) - 2 * var(--pad-page)) / 2)) 0 auto;
+  padding: var(--size-2) calc(var(--size-3) + 32px) var(--size-2) var(--size-3);
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
   box-shadow: var(--shadow-2);
   color: var(--text);
   font-size: var(--fs-chrome);
-  padding: var(--size-2) var(--size-3);
 }
-#editor-pane .cm-lintPanel ul {
+#editor-pane .cm-panel-lint ul {
   max-height: 30vh;
   overflow: auto;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-#editor-pane .cm-lintPanel button {
-  font: inherit;
-  color: var(--text-muted);
-  background: none;
-  border: 0;
+/* 条目：沿用气泡同一套 severity 边条；选中走全站「选中」语言（accent 软底） */
+#editor-pane .cm-panel-lint ul .cm-diagnostic {
+  padding: 2px var(--size-1);
+  border-left-width: 3px;
+  border-radius: var(--radius-1);
   cursor: pointer;
 }
+#editor-pane .cm-panel-lint ul .cm-diagnostic-error { border-left-color: var(--danger-text); }
+#editor-pane .cm-panel-lint ul .cm-diagnostic-warning { border-left-color: var(--warn-text); }
+#editor-pane .cm-panel-lint ul .cm-diagnostic-info { border-left-color: var(--text-dim); }
+#editor-pane .cm-panel-lint ul .cm-diagnostic-hint { border-left-color: var(--accent-solid); }
+#editor-pane .cm-panel-lint ul li[aria-selected] {
+  background: var(--accent-tint);
+  color: var(--text);
+}
+#editor-pane .cm-panel-lint ul:focus li[aria-selected] {
+  background: var(--accent-tint-hover);
+  color: var(--text); /* 覆盖 CM 的 Highlight / HighlightText 系统色 */
+}
+/* 关闭钮：与 findbar / CM 查找卡同规格（24px 方钮 + 8px inset + hover 起底） */
+#editor-pane .cm-panel-lint [name="close"] {
+  position: absolute;
+  inset-block-start: var(--size-1);
+  inset-inline-end: var(--size-1);
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+#editor-pane .cm-panel-lint [name="close"]:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 /* 状态栏徽标 #st-lint（md-lint.ts 动态建，index.html 不动）：继承状态栏字号，
    数字走等宽；语义色三级（data-severity 由 TS 侧每次 lint 后写入） */
 #st-lint {
