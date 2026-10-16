@@ -15,6 +15,7 @@ const cjk = readFileSync("src/typography/cjk.css", "utf8");
 const tokens = readFileSync("src/typography/tokens.css", "utf8");
 const hljs = readFileSync("src/typography/hljs.css", "utf8");
 const printCss = readFileSync("src/typography/print.css", "utf8");
+const lintCss = readFileSync("src/editor/md-lint.css", "utf8");
 const main = readFileSync("src/main.ts", "utf8");
 const themeSrc = readFileSync("src/ui/theme.ts", "utf8");
 const zoomSrc = readFileSync("src/app/zoom.ts", "utf8");
@@ -668,5 +669,14 @@ describe("des-9c：超宽表右缘边框让位（v3）+ 呼吸位锚", () => {
     expect(cjkBody).not.toMatch(/\.mdc (th|td)[^{]*\{[^}]*border-inline/);
     // 外框三边/圆角保持（原锚同口径抽样）
     expect(cjk).toMatch(/\.mdc \.table-wrap\s*\{[^}]*border:\s*1px solid var\(--border\)/);
+  });
+});
+
+describe("lint 警告线级 token（真机案 2026-10-16：warning 波浪线显示为黑色）", () => {
+  it("警告波浪线/面板边线用 --warn-line（amber-11 线级），不用文字级 --warn-text（amber-12 近黑）", () => {
+    expect(tokens).toMatch(/--warn-line:\s*var\(--amber-11\)/);
+    expect(lintCss).toContain("underline wavy var(--warn-line)");
+    expect(lintCss).not.toContain("underline wavy var(--warn-text)");
+    expect(lintCss).toMatch(/\.cm-diagnostic-warning\s*\{[^}]*var\(--warn-line\)/);
   });
 });

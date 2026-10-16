@@ -200,6 +200,7 @@
   --ok-text: var(--green-12);
   --ok-bg: var(--green-3);
   --warn-text: var(--amber-12);
+  --warn-line: var(--amber-11); /* 线级（波浪线/描边）：amber-12 是文字级（浅色 #4f3422 近黑），当线条会发黑（真机案 2026-10-16） */
   --warn-bg: var(--amber-3);
   --danger-text: var(--red-11);
   --danger-bg: var(--red-3);

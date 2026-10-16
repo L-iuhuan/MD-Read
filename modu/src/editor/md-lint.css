@@ -21,7 +21,7 @@
 }
 #editor-pane .cm-lintRange-warning {
   background-image: none;
-  text-decoration: underline wavy var(--warn-text);
+  text-decoration: underline wavy var(--warn-line);
 }
 /* info 只进徽标＋列表：禁止画波浪线（两种类名形态都关，防御式） */
 #editor-pane .cm-lintRange-info,
@@ -45,7 +45,7 @@
   border-top: 1px solid var(--line);
 }
 #editor-pane ul.cm-tooltip-lint .cm-diagnostic-error { border-left-color: var(--danger-text); }
-#editor-pane ul.cm-tooltip-lint .cm-diagnostic-warning { border-left-color: var(--warn-text); }
+#editor-pane ul.cm-tooltip-lint .cm-diagnostic-warning { border-left-color: var(--warn-line); }
 #editor-pane ul.cm-tooltip-lint .cm-diagnostic-info { border-left-color: var(--text-dim); }
 #editor-pane ul.cm-tooltip-lint .cm-diagnostic-hint { border-left-color: var(--accent-solid); }
 
