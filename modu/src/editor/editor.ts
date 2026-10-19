@@ -26,11 +26,9 @@ import { CODE_LANGUAGES } from "./code-langs";
 import { mdLint } from "./md-lint"; // C1：MD 格式检查（规则在 lint-rules.ts 纯函数；editor.ts 棘轮 500 满载，故下方并行挂载）
 
 export { CODE_LANGUAGES }; // 语言表外移 code-langs.ts（B1 腾棘轮行数）；re-export 保对外引用面（phrases.ts 先例）
-
 /** CM6 界面短语汉化（17 键）已外移 phrases.ts（编辑增强 A1 腾棘轮行数）；re-export 保对外引用面 */
 import { PHRASES_ZH } from "./phrases";
 export { PHRASES_ZH };
-
 /** 主题与阅读态同源：全走 tokens.css 的 CSS 变量，亮暗自动跟随。D3/D4（2026-09-29 视觉减负）：
  *  纸色列（--measure + 2×--pad-page）居中、两侧露画布色，切态纸缘不横跳；行号槽贴正文左缘。 */
 const editorTheme = EditorView.theme({
@@ -52,15 +50,15 @@ const editorTheme = EditorView.theme({
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
     backgroundColor: "var(--bg-active)",
   },
-  /* 行号槽：容器宽 0 + row-reverse ⇒ 行号以正文左缘为锚向左溢出；锚点与正文居中同源 (100% − --measure)/2，窄窗退 --pad-page 不进负区（1px 分界线用负外边距抵消流宽）；fontFamily 回等宽保数字对齐（scroller 已改阅读字体，槽位不继承） */
-  ".cm-gutters": { width: 0, flexDirection: "row-reverse", backgroundColor: "transparent", color: "var(--text-muted)", border: "none", borderInlineEnd: "1px solid var(--border-chrome)", marginInlineEnd: "-1px", fontFamily: "var(--font-mono)" },
+  /* 行号槽：容器宽 0 + row-reverse ⇒ 行号以正文左缘为锚向左溢出；锚点与正文居中同源 (100% − --measure)/2，窄窗退 --pad-page 不进负区（1px 分界线用负外边距抵消流宽）。
+     fix-32（0.2.4 行号错位回归）：行号族字体与 .cm-scroller 同源＋同显式 lineHeight——gutters 是 scroller 兄弟不继承其字体/行高，度量不一致即持续错位；继承属性挂族根即覆盖 lineNumbers/gutterElement 全族；旧「回等宽」契约作废（锚在 editor-font.spec），数字对齐改 tabular-nums */
+  ".cm-gutters": { width: 0, flexDirection: "row-reverse", backgroundColor: "transparent", color: "var(--text-muted)", border: "none", borderInlineEnd: "1px solid var(--border-chrome)", marginInlineEnd: "-1px", fontFamily: "var(--font-reading, var(--font-sans))", lineHeight: "1.7", fontVariantNumeric: "tabular-nums" },
   ".cm-gutters-before": { left: "max(var(--pad-page), calc((100% - var(--measure)) / 2))" },
   ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--text)" },
 });
 
 /** 即时查找（2026-10-01）：输入即搜，150ms 防抖——实现外移 live-search.ts（本文件压 500 棘轮） */
-
 /** 组装全部扩展。crlf 决定 lineSeparator（坑1）；onDocChanged 只接用户改动；
  *  getDocPath 供粘贴图片通道取当前文档绝对路径（无文档返回 null）。 */
 function baseExtensions(crlf: boolean, onDocChanged: () => void, getDocPath: () => string | null): Extension[] {
@@ -100,9 +98,10 @@ function docState(text: string, crlf: boolean, report: () => void, getDocPath: (
 export function createDocState(text: string, crlf: boolean): EditorState {
   return docState(text, crlf, () => {}, () => null);
 }
-
+/** fix-32（0.2.4 行号错位）：换字体后触发 CM6 重测——无实例早退；rAF 推一帧再 requestMeasure（AGENTS：容器刚显示时块高是估计值；不在 measure 的 write 里 dispatch） */
+let activeView: EditorView | null = null; // createEditor 挂当前实例（EditorView 常驻单例，见文件头注）
+export function remeasureEditor(): void { if (activeView !== null) requestAnimationFrame(() => activeView?.requestMeasure()); }
 export interface RevealTarget { line?: number; scrollTop?: number }
-
 export interface SavedEditorState { state: EditorState; scrollTop: number }
 
 /* ---- 状态栏统一闪显（P5 批2·错误通道统一）----
@@ -162,7 +161,7 @@ export function createEditor(container: HTMLElement, host: EditorHost): EditorHa
     }
   };
   const getDocPath = host.getDocPath ?? (() => null);
-  const view = new EditorView({ parent: container, state: docState("", false, report, getDocPath) });
+  const view = new EditorView({ parent: container, state: docState("", false, report, getDocPath) }); activeView = view; // fix-32：供 remeasureEditor（字体变更后重测）
   // B1 总装·B2 工具栏：键名对齐 toolbar.ts 的 ITEMS（insertTable/tidySpacing 为其查表键；C0 补 toggleBlockquote ⇒「引用」钮点亮）
   mountEditorToolbar(container, {
     toggleBold, toggleItalic, toggleStrikethrough, toggleInlineCode, toggleLink,

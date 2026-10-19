@@ -23,6 +23,7 @@
  * 出现两条实现，是迟早会分叉的那种债。
  */
 import type { Tab } from "../app/tabs";
+import { displayPath } from "../app/paths";
 import { openFindbar } from "./findbar";
 
 export interface TabMenus {
@@ -69,7 +70,7 @@ function fillText(box: HTMLElement, name: string, path: string): void {
   if (dir !== "") {
     const p = document.createElement("span");
     p.className = "menu-path";
-    p.textContent = dir;
+    p.textContent = displayPath(dir); // 目录行是显示面：剥 \\?\（dirOf 保留前缀开头）
     box.appendChild(p);
   }
 }

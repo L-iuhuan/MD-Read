@@ -9,6 +9,7 @@
  * **只在值真的变了才写回**。归一实现不在本文件 —— 见 app/path-norm.ts（Rust 侧唯一一份）。
  */
 import { normalizePath } from "./path-norm";
+import { displayPath } from "./paths";
 
 const STORAGE_KEY = "modu-recent";
 const RECENT_LIMIT = 10;
@@ -148,7 +149,7 @@ export function setupRecentMenu(
     const item = document.createElement("button");
     item.type = "button";
     item.className = "menu-item";
-    item.title = path;
+    item.title = displayPath(path); // 显示层剥 \\?\（存储与 onPick 仍用 canonical 原串）
     const box = document.createElement("span");
     box.className = "menu-text";
     const name = document.createElement("span");
@@ -159,7 +160,7 @@ export function setupRecentMenu(
     if (dir !== "") {
       const line = document.createElement("span");
       line.className = "menu-path";
-      line.textContent = dir;
+      line.textContent = displayPath(dir); // 目录行同样剥前缀（dirName 保留 \\?\ 开头）
       box.appendChild(line);
     }
     item.appendChild(box);

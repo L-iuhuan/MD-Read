@@ -6,6 +6,7 @@
  *
  * ⚠ 静态锚：`tests/panel-unify.spec.ts` 等若断言本块内的 DOM 细节，需改指本模块（断言不减）。
  */
+import { displayPath } from "./paths";
 import type { Tab } from "./tabs";
 
 /** 块 1 的运行时依赖（**只传活绑定**：箭头函数引用 `tabs.ts` 里的闭包函数）*/
@@ -41,7 +42,7 @@ export function buildTabEl(tab: Tab, isActive: boolean, deps: TabDomDeps): HTMLE
   const el = document.createElement("div");
   el.className = isActive ? "tab active" : "tab";
   el.dataset.path = tab.path;
-  el.title = tab.path;
+  el.title = displayPath(tab.path); // 悬停提示是显示面：剥 \\?\；dataset/回调仍用原串
   // 键盘可达性（波2 designer 遗留#1）：div 默认不可聚焦，补语义与键激活
   el.setAttribute("role", "tab");
   el.setAttribute("aria-selected", String(isActive));

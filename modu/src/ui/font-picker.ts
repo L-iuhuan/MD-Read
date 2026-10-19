@@ -26,6 +26,8 @@ import {
   type FontPickOption,
 } from "./font-catalog";
 import { makeMeasurer, markAvailability, type MeasureText } from "./font-detect";
+// fix-32：ui→editor 单向（无环——editor 树仅经 tabs.ts 触 ui/tabs-menu，不回 font-picker）
+import { remeasureEditor } from "../editor/editor";
 
 /** 分组键转发出口（settings.ts 的对外签名要用；定义在 font-catalog） */
 export type { FontPickGroup } from "./font-catalog";
@@ -194,6 +196,7 @@ export function applyFontPrefs(hooks: FontPickerHooks): void {
   if (editor !== null) {
     editor.style.setProperty("--font-reading", bodyStack);
     editor.style.setProperty("--font-mono", mono);
+    remeasureEditor(); // fix-32：字体度量变了，CM6 行号/块高必须重测（无实例自动早退；hidden 时切态 reveal 链会再测）
   }
 }
 

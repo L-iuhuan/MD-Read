@@ -18,6 +18,7 @@
  */
 import "./empty-state.css";
 import { dirName, loadRecent } from "../app/recent";
+import { displayPath } from "../app/paths";
 
 /** 空态里最多显示几条最近打开（设计稿定稿 5；存储层上限仍是 recent.ts 的 10） */
 const RECENT_MAX = 5;
@@ -101,7 +102,7 @@ export function setupEmptyState(deps: EmptyStateDeps): EmptyState {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "menu-item";
-    item.title = path;
+    item.title = displayPath(path); // 显示层剥 \\?\（onPick 仍用 canonical 原串）
     const box = document.createElement("span");
     box.className = "menu-text";
     const name = document.createElement("span");
@@ -112,7 +113,7 @@ export function setupEmptyState(deps: EmptyStateDeps): EmptyState {
     if (dir !== "") {
       const line = document.createElement("span");
       line.className = "menu-path";
-      line.textContent = dir;
+      line.textContent = displayPath(dir); // 目录行同样剥前缀（dirName 保留 \\?\ 开头）
       box.appendChild(line);
     }
     item.appendChild(box);

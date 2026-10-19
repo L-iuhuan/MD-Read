@@ -9,6 +9,7 @@
  *  · 持久化键 `modu-workspace`（设计 §5）：**只当提示** —— 真伪与权限判定永远在 Rust ✓；坏值/越界 ⇒ 空状态或显示原因，不崩 ✓
  */
 import { invoke } from "@tauri-apps/api/core";
+import { displayPath } from "./paths";
 
 const WORKSPACE_KEY = "modu-workspace";
 
@@ -212,8 +213,8 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
     head.className = "workspace-head";
     const path = document.createElement("span");
     path.className = "workspace-path";
-    path.textContent = root;
-    path.title = root; // 截断时悬停看全量
+    path.textContent = displayPath(root); // 显示层剥 \\?\
+    path.title = displayPath(root); // 截断时悬停看全量（同为显示面，同样剥前缀）
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "workspace-remove";
