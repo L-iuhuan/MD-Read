@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MoDu final direction f2 (app): a bound reading book, celadon cover.
+  Composition: portrait hardcover with a cinnabar spine, a warm paper page
+  block peeking on the right and bottom, a soft top sheen and bottom shade,
+  and the M-down mark stamped in paper white. Mid-tone celadon keeps the
+  cover readable on both white and dark desktops; the cinnabar spine gives
+  the book its identity at small sizes.
+  Palette: cover #6E9C8B to #3C6656, spine #D5552F to #A93A1D,
+  paper #F7F1E4, page block #EDE3CF.
+  Glyph path is the supplied markdown.svg path verbatim, boldened by a
+  same-color stroke; a blurred dark copy behind it gives an embossed stamp.
+  Zero external references; no fonts; pure vector.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="f2-cover" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6E9C8B"/>
+      <stop offset="1" stop-color="#3C6656"/>
+    </linearGradient>
+    <linearGradient id="f2-spine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#D5552F"/>
+      <stop offset="1" stop-color="#A93A1D"/>
+    </linearGradient>
+    <linearGradient id="f2-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="f2-shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.55" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.20"/>
+    </linearGradient>
+    <linearGradient id="f2-hinge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0A1712" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#0A1712" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="f2-soft" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+    <filter id="f2-emboss" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+  <rect x="192" y="132" width="640" height="840" rx="64" fill="#0C141B" opacity="0.45" filter="url(#f2-soft)"/>
+  <rect x="226" y="132" width="640" height="840" rx="64" fill="#EDE3CF"/>
+  <rect x="192" y="92" width="640" height="840" rx="64" fill="url(#f2-cover)"/>
+  <rect x="192" y="92" width="640" height="840" rx="64" fill="url(#f2-sheen)"/>
+  <rect x="192" y="92" width="640" height="840" rx="64" fill="url(#f2-shade)"/>
+  <path d="M282 92H256Q192 92 192 156V868Q192 932 256 932H282Z" fill="url(#f2-spine)"/>
+  <rect x="282" y="120" width="3" height="784" fill="#F7F1E4" opacity="0.20"/>
+  <rect x="285" y="120" width="14" height="784" fill="url(#f2-hinge)"/>
+  <rect x="312" y="126" width="490" height="772" rx="40" fill="none" stroke="#F7F1E4" stroke-width="3" opacity="0.14"/>
+  <g transform="translate(377 332) scale(0.3515625)" stroke-linejoin="round">
+    <path d="M896 0h128v1024H896V304L592.128 873.728 672 1024H352l79.872-150.272L128 304v720H0V0h128l384 722.816L896 0z" transform="translate(0 22)" fill="#1E3B31" opacity="0.5" stroke="#1E3B31" stroke-width="34" filter="url(#f2-emboss)"/>
+    <path d="M896 0h128v1024H896V304L592.128 873.728 672 1024H352l79.872-150.272L128 304v720H0V0h128l384 722.816L896 0z" fill="#F7F1E4" stroke="#F7F1E4" stroke-width="34"/>
+  </g>
+</svg>

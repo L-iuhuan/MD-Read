@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MoDu direction f1 (file, 16px variant), shipped ratio R2: sheet 880 x 950
+  (1:1.08), matching the app icon. Simplified for small sizes: bold widened
+  stems, no drop shadow (silhouette and luminance contrast only).
+  The mark is kept at 580u so its effective bar stays about 1.9px at 16px;
+  the cinnabar bookmark stays above 0.8px wide at 16px.
+  Palette: paper #FFFFFF to #F1F4F7, fold #E6EBF0 to #CBD5DF,
+  ink #22384D, cinnabar #E06038 to #BE3F20.
+  Zero external references; no fonts; pure vector.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="f1f-page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F1F4F7"/>
+    </linearGradient>
+    <linearGradient id="f1f-fold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E6EBF0"/>
+      <stop offset="1" stop-color="#CBD5DF"/>
+    </linearGradient>
+    <linearGradient id="f1f-ribbon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E06038"/>
+      <stop offset="1" stop-color="#BE3F20"/>
+    </linearGradient>
+  </defs>
+  <path d="M136 37H797L952 192V923Q952 987 888 987H136Q72 987 72 923V101Q72 37 136 37Z" fill="url(#f1f-page)" stroke="#DCE3E9" stroke-width="8"/>
+  <path d="M797 37L952 192H797Z" fill="url(#f1f-fold)"/>
+  <path d="M797 37L952 192" fill="none" stroke="#9FB0BE" stroke-width="6" opacity="0.45"/>
+  <path d="M156 37H211V161L183.5 137L156 161Z" fill="url(#f1f-ribbon)"/>
+  <g transform="translate(222 222) scale(0.56640625)" stroke-linejoin="round">
+    <path d="M12 12H208V1012H12ZM816 12H1012V1012H816ZM208 12L512 720L816 12V300L600 880L676 1012H348L424 880L208 300Z" fill="#22384D" stroke="#22384D" stroke-width="20"/>
+  </g>
+</svg>

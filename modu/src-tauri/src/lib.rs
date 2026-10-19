@@ -339,6 +339,8 @@ pub fn run() {
                 Ok(None) => println!("[window] 取不到主显示器，沿用 config 尺寸"),
                 Err(error) => println!("[window] 主显示器查询失败（{error}），沿用 config 尺寸"),
             }
+            // 图标轮（2026-10-19）：老安装的 .md 关联图标自愈刷新（尽力而为，不阻塞启动）
+            fs::refresh_registered_icons();
             let pending = md_paths(&std::env::args().collect::<Vec<String>>());
             app.manage(PendingFiles(Mutex::new(pending.clone())));
             // R-01：受信清单（持久化）。argv/文件关联进来的路径**在 Rust 侧登记**——

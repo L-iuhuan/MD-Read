@@ -577,7 +577,7 @@ pub fn register_markdown_default() -> Result<(), String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("无法确定程序路径：{}", io_reason(&e)))?;
     let exe_str = exe.to_string_lossy().into_owned();
-    let icon = format!("\"{exe_str}\",0");
+    let icon = md_file_icon_value(&exe_str);
     let open_cmd = format!("\"{exe_str}\" \"%1\"");
     const EXTS: [(&str, &str); 3] = [
         (".md", "MoDu.md"),
@@ -617,6 +617,40 @@ pub fn register_markdown_default() -> Result<(), String> {
         .arg("ms-settings:defaultapps")
         .spawn();
     Ok(())
+}
+
+/// .md 专用文件图标的注册表值：随包资源 icons/file-icon.ico 存在则用它
+/// （与主程序图标区分的纸页小图，2026-10-19 图标轮），否则回退主程序图标
+/// （dev 运行或资源缺失时——注册功能本身不受影响）。
+fn md_file_icon_value(exe_str: &str) -> String {
+    let ico = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join("icons").join("file-icon.ico")));
+    match ico {
+        Some(p) if p.exists() => format!("\"{}\"", p.display()),
+        _ => format!("\"{exe_str}\",0"),
+    }
+}
+
+/// 启动自愈（2026-10-19 图标轮）：老安装的用户级注册（HKCU ProgID DefaultIcon）
+/// 若已存在则刷新为随包文件图标；**从不新建键**（未注册过的机器零副作用）。
+pub fn refresh_registered_icons() {
+    let Some(ico) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join("icons").join("file-icon.ico")))
+    else {
+        return;
+    };
+    if !ico.exists() {
+        return;
+    }
+    let icon = format!("\"{}\"", ico.display());
+    for progid in ["MoDu.md", "MoDu.markdown", "MoDu.mdx"] {
+        let key = format!(r"HKCU\Software\Classes\{progid}\DefaultIcon");
+        if run_reg(&["query", key.as_str()]).is_ok() {
+            let _ = reg_set_default(&key, &icon);
+        }
+    }
 }
 
 /// reg add <key> /ve /d <value> /f —— 写「默认」值（DefaultIcon / open\command 的用法）

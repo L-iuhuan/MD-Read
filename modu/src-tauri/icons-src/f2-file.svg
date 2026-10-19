@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MoDu final direction f2 (file, 16px variant): bound reading book, celadon.
+  Same cover, cinnabar spine and paper page block as f2-app, scaled up and
+  simplified for small sizes: no inner frame, no sheen detail, a larger paper
+  white M-down mark with heavier stems (about 1.6px bars at 16px). The
+  mid-tone celadon cover and the cinnabar spine keep the silhouette readable
+  on both white and dark explorer backgrounds.
+  Palette: cover #6E9C8B to #3C6656, spine #D5552F to #A93A1D,
+  paper #F7F1E4, page block #EDE3CF.
+  Zero external references; no fonts; pure vector.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="f2f-cover" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6E9C8B"/>
+      <stop offset="1" stop-color="#3C6656"/>
+    </linearGradient>
+    <linearGradient id="f2f-spine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#D5552F"/>
+      <stop offset="1" stop-color="#A93A1D"/>
+    </linearGradient>
+    <linearGradient id="f2f-hinge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0A1712" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#0A1712" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="f2f-soft" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+  </defs>
+  <rect x="150" y="96" width="724" height="896" rx="76" fill="#0C141B" opacity="0.42" filter="url(#f2f-soft)"/>
+  <rect x="184" y="102" width="724" height="896" rx="76" fill="#EDE3CF"/>
+  <rect x="150" y="64" width="724" height="896" rx="76" fill="url(#f2f-cover)"/>
+  <path d="M270 64H226Q150 64 150 140V884Q150 960 226 960H270Z" fill="url(#f2f-spine)"/>
+  <rect x="270" y="92" width="3" height="836" fill="#F7F1E4" opacity="0.18"/>
+  <rect x="273" y="92" width="14" height="836" fill="url(#f2f-hinge)"/>
+  <g transform="translate(302 242) scale(0.52734375)">
+    <path d="M12 12H208V1012H12ZM816 12H1012V1012H816ZM208 12L512 720L816 12V300L600 880L676 1012H348L424 880L208 300Z" fill="#F7F1E4"/>
+  </g>
+</svg>

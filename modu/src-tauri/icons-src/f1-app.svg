@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MoDu direction f1 (app), shipped ratio R2: sheet 852 x 920 (1:1.08).
+  A slight portrait is the sweet spot: the sheet reads as paper rather than a
+  card tile (R1, 1:0.93) while keeping more width than a printout ratio
+  (R3, 1:1.22), so the M-down mark, fold and bookmark keep their mass in the
+  square taskbar slot. All elements are scaled with the sheet width; element
+  language and palette are unchanged: paper #FFFFFF to #F1F4F7,
+  fold #E6EBF0 to #CBD5DF, ink #22384D, cinnabar #E06038 to #BE3F20.
+  Glyph path is the supplied markdown.svg path verbatim, boldened by a
+  same-color stroke. One tight drop shadow only.
+  Zero external references; no fonts; pure vector.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="f1-page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F1F4F7"/>
+    </linearGradient>
+    <linearGradient id="f1-fold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E6EBF0"/>
+      <stop offset="1" stop-color="#CBD5DF"/>
+    </linearGradient>
+    <linearGradient id="f1-ribbon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E06038"/>
+      <stop offset="1" stop-color="#BE3F20"/>
+    </linearGradient>
+    <filter id="f1-soft" x="-12%" y="-12%" width="124%" height="124%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+  <rect x="92" y="66" width="840" height="908" rx="50" fill="#182130" opacity="0.18" filter="url(#f1-soft)"/>
+  <path d="M142 46H782L938 202V910Q938 966 882 966H142Q86 966 86 910V102Q86 46 142 46Z" fill="url(#f1-page)" stroke="#DCE3E9" stroke-width="4"/>
+  <path d="M782 46L938 202H782Z" fill="url(#f1-fold)"/>
+  <path d="M782 46L938 202" fill="none" stroke="#9FB0BE" stroke-width="3" opacity="0.45"/>
+  <path d="M166 46H218V158L192 134L166 158Z" fill="url(#f1-ribbon)"/>
+  <g transform="translate(262 256) scale(0.48828125)" stroke-linejoin="round">
+    <path d="M896 0h128v1024H896V304L592.128 873.728 672 1024H352l79.872-150.272L128 304v720H0V0h128l384 722.816L896 0z" fill="#22384D" stroke="#22384D" stroke-width="30"/>
+  </g>
+</svg>
