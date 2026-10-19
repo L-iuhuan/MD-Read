@@ -134,6 +134,15 @@
   letter-spacing: .03em;
   margin-block-start: 1.6em;
 }
+/* des-11 P1：H5/H6 此前只剩 UA 默认（约 13.3/10.7px、无上间距），阅读态层级塌陷。
+   补成与 H4 连续的一档收束，并与 live-preview 的 .cm-lp-h5/h6 同值。 */
+.mdc h5 { font-size: .9em; font-weight: 600; margin-block-start: 1.5em; }
+.mdc h6 {
+  font-size: .85em; font-weight: 600;
+  letter-spacing: .02em;
+  margin-block-start: 1.4em;
+  color: var(--text-muted);
+}
 /* L1（FB-8，2026-09-30）：小节标题带主题色 —— H2-H4 用 accent 墨，H1 与正文保持中性
    （纸的重量感）。选「文字染色」而不是「左侧 accent 短竖条」：不动盒模型、文字起点
    不偏移，46em 栏位对齐与 §3.1「靠字号/重量/间距拉开，不靠边框堆砌」都不破。
@@ -220,6 +229,9 @@
    挂在它内部的绝对定位元素会跟着内容横向跑（实测 scrollLeft 0→256 时按钮位移 −256px）。
    按钮由 render/codecopy.ts 挂到 .code-wrap（pre 的外套）上。 */
 .mdc .code-wrap { position: relative; }
+/* des-11：复制钮 SVG 的 1.2 线宽在 render 文件里（红线，不改源码），
+   在允许修改的样式层收敛到 14px 档的 1.5。 */
+.mdc .code-copy svg { stroke-width: 1.5; stroke-linecap: round; }
 .mdc .code-copy {
   position: absolute;
   inset-block-start: 4px;

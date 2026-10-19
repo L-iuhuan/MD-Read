@@ -185,8 +185,16 @@ export function applyFontPrefs(hooks: FontPickerHooks): void {
   const cjk = readStackVar(optionOf("cjk", readFontPref("cjk")).stackVar);
   const mono = readStackVar(optionOf("mono", readFontPref("mono")).stackVar);
   delete doc.dataset.face; // 旧衬线档契约退役：三组组合永远走内联栈
-  doc.style.fontFamily = `${stripTrailingGeneric(latin)}, ${cjk}`;
+  const bodyStack = `${stripTrailingGeneric(latin)}, ${cjk}`;
+  doc.style.fontFamily = bodyStack;
   doc.style.setProperty("--font-mono", mono); // 子树继承 ⇒ pre/code 照常消费
+  /* des-11 P1：编辑态是 #doc 的兄弟，拿不到 #doc 的内联字体。把同一条正文栈
+     与代码栈挂到 #editor-pane，editorTheme 的 .cm-scroller 消费 --font-reading。 */
+  const editor = document.getElementById("editor-pane");
+  if (editor !== null) {
+    editor.style.setProperty("--font-reading", bodyStack);
+    editor.style.setProperty("--font-mono", mono);
+  }
 }
 
 /** 目录 + 可用性 → 三个下拉各自标注（只写回文案与「· 未装」标记，重复渲染安全） */

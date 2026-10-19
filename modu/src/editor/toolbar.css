@@ -84,7 +84,7 @@
 
 /* 把手：展开态 = 行尾钮（推到右缘）；悬停取 accent 墨——与命令钮的一点区分 */
 .md-toolbar-handle { margin-inline-start: auto; }
-.md-toolbar-handle:hover:not(:disabled) { color: var(--accent-ink); }
+.md-toolbar-handle:hover:not(:disabled) { color: var(--accent-text-hover); }
 
 /* --- 折叠态：条目条退场，只留 16px 把手浮在编辑器右上缘（不占行高） --- */
 .md-toolbar.is-collapsed {
@@ -114,5 +114,5 @@
 }
 .md-toolbar.is-collapsed > .md-toolbar-handle:hover:not(:disabled) {
   background: var(--bg-subtle);
-  color: var(--accent-ink);
+  color: var(--accent-text-hover);
 }

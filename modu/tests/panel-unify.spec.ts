@@ -74,9 +74,10 @@ describe("P1 最近下拉条目不再被顶栏按钮权重压过", () => {
     // 反向锚：与「＋」重复的动作区「打开」按钮不得回来（含 id 与文案两种写法）
     expect(html).not.toMatch(/btn-open/);
     expect(html).not.toMatch(/>打开<\/button>/);
-    // D-05：☰ 与标签条在动作区**之外**（左组），不参与这套按钮皮
+    // D-05：大纲钮与标签条在动作区**之外**（左组），不参与这套按钮皮。
+    // des-11：☰ 字形已换内联 SVG（图标统一），锚从「字形」改指「SVG 结构」。
     const stripped = html.replace(/<!--[\s\S]*?-->/g, "");
-    expect(stripped).toMatch(/<button id="btn-outline"[^>]*>☰<\/button>\s*<div id="tabbar"/);
+    expect(stripped).toMatch(/<button id="btn-outline"[^>]*>\s*<svg[\s\S]*?<\/svg><\/button>\s*<div id="tabbar"/);
   });
 
   it("条目回到列表项语言：7px 圆角 + 无描边 + hover 浅色高亮（2026-09-27 用户裁决：无左侧色条）", () => {
@@ -267,14 +268,24 @@ describe("D-05 T1 单栏合并顶栏", () => {
     expect(appBody.match(/is-accent/g)?.length).toBe(2);
   });
 
-  it("无 emoji：顶栏动作按钮文案只用功能性字形/中文（PDF 前的 ⇩ 与编辑前的 ✎ 已去）", () => {
+  it("无 emoji：动作按钮文案只用中文/文字，壳层图标全部内联 SVG（des-11 图标统一）", () => {
     expect(html).not.toMatch(/✎ 编辑/);
     expect(html).not.toMatch(/⇩ PDF/);
     expect(html).toMatch(/>编辑<\/button>/);
     expect(html).toMatch(/>PDF<\/button>/);
-    // 保留的功能性字形：☰ / ◐ / ＋ / ⋯ / ‹ / › / ▾
-    for (const glyph of ["☰", "◐", "＋", "⋯", "‹", "›", "▾"]) {
-      expect(html, `缺少功能性字形 ${glyph}`).toContain(glyph);
+    // 旧锚「功能性字形必须存在」已退役：des-11 起这些按钮全部改内联 SVG，
+    // 继续断言字形存在反而会与目标相反。改锁「按钮内有 SVG 且不再是裸字形」。
+    const stripped = html.replace(/<!--[\s\S]*?-->/g, "");
+    for (const id of [
+      "btn-outline", "btn-newtab", "tabs-prev", "tabs-next", "tabs-list",
+      "btn-theme", "btn-overflow", "btn-settings", "win-min", "win-max",
+      "win-close", "find-prev", "find-next", "find-close",
+      "set-fs-dec", "set-fs-inc", "set-width-dec", "set-width-inc",
+      "set-zoom-dec", "set-zoom-inc",
+    ]) {
+      const button = new RegExp(`<button id="${id}"[^>]*>([\\s\\S]*?)</button>`).exec(stripped)?.[0] ?? "";
+      expect(button, `${id} 应使用内联 SVG`).toMatch(/<svg/);
+      expect(button, `${id} 不应再是文字字形`).not.toMatch(/>\s*[☰◐＋⋯‹›▾✕↑↓]\s*</);
     }
   });
 
@@ -284,12 +295,14 @@ describe("D-05 T1 单栏合并顶栏", () => {
     // 且随 .overflow 自己变宽 ⇒ 阈值再准也自激）。
     expect(tokensBody).not.toMatch(/--w-tabs-min\s*:/);
     expect(tokensBody).toMatch(/--w-chrome-reserve:\s*\d+px/);
-    // 本批收口：拥挤态只剩「编辑 + ⋯」——最近 / Aa / ◐ / PDF 全部隐身
-    for (const sel of ["\\.recent-wrap", "\\.settings-wrap", "#btn-theme", "#btn-export"]) {
-      expect(appBody, `拥挤态未隐身 ${sel}`).toMatch(
-        new RegExp(`\\.topbar\\.overflow ${sel}`),
-      );
-    }
+    // 本批收口：拥挤态只剩「编辑 + ⋯」——最近 / Aa / 主题 / PDF 全部隐身。
+    // des-11 P0：只隐身入口按钮，不收 wrapper —— 浮层住在 wrapper 里，整段
+    // display:none 会让 ⋯ 菜单的代理点击“命中按钮却开不出面板”。
+    expect(appBody).toMatch(/\.topbar\.overflow \.recent-wrap > #btn-recent\s*,/);
+    expect(appBody).toMatch(/\.topbar\.overflow \.settings-wrap > #btn-settings\s*,/);
+    expect(appBody).toMatch(/\.topbar\.overflow #btn-theme/);
+    expect(appBody).toMatch(/\.topbar\.overflow #btn-export/);
+    expect(appBody).not.toMatch(/\.topbar\.overflow \.recent-wrap,\s*\n\.topbar\.overflow \.settings-wrap,/);
     expect(appBody).not.toMatch(/\.topbar\.overflow #btn-open/);
     expect(shellOverflowSrc).toMatch(/setupShellOverflow/);
     expect(shellOverflowSrc).toMatch(/ResizeObserver/);

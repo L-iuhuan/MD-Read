@@ -34,7 +34,7 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
            isMaximized 切换（onResized 监听），title/aria 同步。 -->
       <header id="titlebar" class="topbar" aria-label="窗口标题栏与工具栏">
         <!-- ☰ 大纲折叠（P5 批2）：toggle body.outline-off，态存 localStorage modu-outline -->
-        <button id="btn-outline" type="button" title="显示/隐藏大纲" aria-label="显示或隐藏大纲">☰</button>
+        <button id="btn-outline" type="button" title="显示/隐藏大纲" aria-label="显示或隐藏大纲"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M3 8h10M3 12h10" /></svg></button>
         <!-- 标签条：占满整条栏高（align-self: stretch 由 CSS 给 —— 不 stretch 会让下划线与
              分隔线错位 10~20px，见 app.css §3 的实测值）。标签之间 1px×14px 细分隔线；
              ‹ › ▾ 导航组只在「标签确有溢出」时出现。
@@ -46,12 +46,12 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
              ⚠ 标签条**不再带 hidden**（空态也要显示）：空态里 #tab-list 只有 ＋ 一个孩子，
              它自然落在 ☰ 右侧——这也是空态唯一的可见文件入口。 -->
         <div id="tabbar" class="tabbar" data-tauri-drag-region>
-          <div id="tab-list" class="tab-list" role="tablist" data-tauri-drag-region><button id="btn-newtab" type="button" title="打开文件（新标签）" aria-label="打开文件（新标签）">＋</button></div>
+          <div id="tab-list" class="tab-list" role="tablist" data-tauri-drag-region><button id="btn-newtab" type="button" title="打开文件（新标签）" aria-label="打开文件（新标签）"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10" /></svg></button></div>
         </div>
         <div id="tabs-nav" class="tabs-nav" hidden>
-          <button id="tabs-prev" type="button" title="向左滚动标签（左侧还有标签）" aria-label="向左滚动标签条" disabled>‹</button>
-          <button id="tabs-next" type="button" title="向右滚动标签（右侧还有标签）" aria-label="向右滚动标签条" disabled>›</button>
-          <button id="tabs-list" type="button" class="tabs-list-btn" title="全部标签" aria-label="列出全部标签" aria-haspopup="menu" aria-expanded="false">▾</button>
+          <button id="tabs-prev" type="button" title="向左滚动标签（左侧还有标签）" aria-label="向左滚动标签条" disabled><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5" /></svg></button>
+          <button id="tabs-next" type="button" title="向右滚动标签（右侧还有标签）" aria-label="向右滚动标签条" disabled><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5" /></svg></button>
+          <button id="tabs-list" type="button" class="tabs-list-btn" title="全部标签" aria-label="列出全部标签" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6 8 10.5 12.5 6" /></svg></button>
           <div id="tabs-menu" class="tabs-menu" role="menu" aria-label="全部标签" hidden></div>
         </div>
         <span id="act-sep" class="act-sep"></span>
@@ -71,7 +71,7 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
                    主题/配色/自动保存/默认应用）。三行滑杆 = 「调节类设置」的通用语言，
                    与窗口三钮同规格的内联 SVG（16×16 / currentColor）。 -->
               <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
-                   fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+                   fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M2 3.5h12" /><circle cx="10.5" cy="3.5" r="1.8" fill="currentColor" stroke="none" />
                 <path d="M2 8h12" /><circle cx="5.5" cy="8" r="1.8" fill="currentColor" stroke="none" />
                 <path d="M2 12.5h12" /><circle cx="8" cy="12.5" r="1.8" fill="currentColor" stroke="none" />
@@ -94,17 +94,17 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
                 <div class="settings-row">
                   <span class="settings-label" id="set-fs-label">字号</span>
                   <div class="settings-fs" role="group" aria-labelledby="set-fs-label">
-                    <button id="set-fs-dec" type="button" title="减小字号" aria-label="减小字号">−</button>
+                    <button id="set-fs-dec" type="button" title="减小字号" aria-label="减小字号"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10" /></svg></button>
                     <span id="set-fs-val" title="点击直接输入字号">16</span><span class="settings-unit">px</span>
-                    <button id="set-fs-inc" type="button" title="增大字号" aria-label="增大字号">＋</button>
+                    <button id="set-fs-inc" type="button" title="增大字号" aria-label="增大字号"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10" /></svg></button>
                   </div>
                 </div>
                 <div class="settings-row">
                   <span class="settings-label" id="set-width-label">行宽</span>
                   <div class="settings-fs" role="group" aria-labelledby="set-width-label">
-                    <button id="set-width-dec" type="button" title="减小行宽" aria-label="减小行宽">−</button>
+                    <button id="set-width-dec" type="button" title="减小行宽" aria-label="减小行宽"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10" /></svg></button>
                     <span id="set-width-val" title="点击直接输入行宽">46</span><span class="settings-unit">em</span>
-                    <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽">＋</button>
+                    <button id="set-width-inc" type="button" title="增大行宽" aria-label="增大行宽"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10" /></svg></button>
                   </div>
                 </div>
                 <!-- 纸面缩放（2026-09-30 用户反馈 J2：「放大成了应用内所有都放大，
@@ -114,9 +114,9 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
                 <div class="settings-row">
                   <span class="settings-label" id="set-zoom-label">缩放</span>
                   <div class="settings-fs" role="group" aria-labelledby="set-zoom-label">
-                    <button id="set-zoom-dec" type="button" title="减小整体缩放" aria-label="减小整体缩放">−</button>
+                    <button id="set-zoom-dec" type="button" title="减小整体缩放" aria-label="减小整体缩放"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10" /></svg></button>
                     <span id="set-zoom-val">100</span><span class="settings-unit">%</span>
-                    <button id="set-zoom-inc" type="button" title="增大整体缩放" aria-label="增大整体缩放">＋</button>
+                    <button id="set-zoom-inc" type="button" title="增大整体缩放" aria-label="增大整体缩放"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10" /></svg></button>
                   </div>
                 </div>
                 <!-- UX-6（des-5）：16→20 连点 4 次无直接输入也无复位 ⇒ 复位钮只回字号/行宽
@@ -213,7 +213,7 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
               </div>
             </div>
           </div>
-          <button id="btn-theme" type="button" title="切换亮暗主题">◐</button>
+          <button id="btn-theme" type="button" title="切换亮暗主题" aria-label="切换亮暗主题"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.25" /><path d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" fill="currentColor" stroke="none" /></svg></button>
           <button id="btn-export" type="button" title="导出 PDF（Ctrl+P）" disabled>PDF</button>
           <!-- ⋯ 溢出菜单（D-05 新增功能）：**只在拥挤态可见**。本批收口后拥挤态只剩
                「编辑 + ⋯」，其余动作（最近 / Aa / ◐ / PDF）与标签批量操作全收进这里；
@@ -224,30 +224,30 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
                  按钮右沿，见 app.css §7c），移到末尾后右边缘距窗口右边界仍有整排窗口
                  三钮的余量，故拥挤/非拥挤两态都不会出窗。 -->
           <div id="overflow-wrap" class="overflow-wrap">
-            <button id="btn-overflow" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden>⋯</button>
+            <button id="btn-overflow" type="button" title="更多操作" aria-label="更多操作" aria-haspopup="menu" aria-expanded="false" hidden><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="8" r="1.15" fill="currentColor" stroke="none" /><circle cx="8" cy="8" r="1.15" fill="currentColor" stroke="none" /><circle cx="12" cy="8" r="1.15" fill="currentColor" stroke="none" /></svg></button>
             <div id="overflow-menu" class="overflow-menu" role="menu" aria-label="更多操作" hidden></div>
           </div>
         </div>
         <button id="win-min" type="button" title="最小化" aria-label="最小化">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
-               fill="none" stroke="currentColor" stroke-width="1" shape-rendering="crispEdges">
+               fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 8.5h10" />
           </svg>
         </button>
         <button id="win-max" type="button" title="最大化" aria-label="最大化">
           <svg id="ic-max" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
-               fill="none" stroke="currentColor" stroke-width="1" shape-rendering="crispEdges">
+               fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3.5" y="3.5" width="9" height="9" />
           </svg>
           <svg id="ic-restore" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
-               fill="none" stroke="currentColor" stroke-width="1" shape-rendering="crispEdges" hidden>
+               fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" hidden>
             <rect x="3.5" y="5.5" width="7" height="7" />
             <path d="M5.5 5.5v-2h7v7h-2" />
           </svg>
         </button>
         <button id="win-close" type="button" title="关闭" aria-label="关闭窗口">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"
-               fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round">
+               fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3.5 3.5 12.5 12.5M12.5 3.5 3.5 12.5" />
           </svg>
         </button>
@@ -255,9 +255,9 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
       <div id="findbar" class="findbar" hidden>
         <input id="find-input" type="text" placeholder="查找…" aria-label="查找内容" />
         <span id="find-count" class="find-count" aria-live="polite"></span>
-        <button id="find-prev" type="button" title="上一个（Shift+Enter）">↑</button>
-        <button id="find-next" type="button" title="下一个（Enter）">↓</button>
-        <button id="find-close" type="button" title="关闭（Esc）">✕</button>
+        <button id="find-prev" type="button" title="上一个（Shift+Enter）"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M4.5 6.5 8 3l3.5 3.5" /></svg></button>
+        <button id="find-next" type="button" title="下一个（Enter）"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M4.5 9.5 8 13l3.5-3.5" /></svg></button>
+        <button id="find-close" type="button" title="关闭（Esc）"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l8 8M12 4l-8 8" /></svg></button>
       </div>
       <div class="body-row">
         <aside id="outline" class="outline" aria-label="文档大纲">
@@ -289,7 +289,7 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
               <button id="empty-open" type="button" class="empty-primary">打开 Markdown 文件</button>
               <div class="empty-entries">
                 <div class="empty-entry">
-                  <span class="empty-ico" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M8 2.5v7"/><path d="M5 6.5l3 3 3-3"/><path d="M2.75 11.5v1.2a1.3 1.3 0 0 0 1.3 1.3h7.9a1.3 1.3 0 0 0 1.3-1.3v-1.2"/></svg></span>
+                  <span class="empty-ico" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M8 2.5v7"/><path d="M5 6.5l3 3 3-3"/><path d="M2.75 11.5v1.2a1.3 1.3 0 0 0 1.3 1.3h7.9a1.3 1.3 0 0 0 1.3-1.3v-1.2"/></svg></span>
                   <span class="empty-entry-text"><b>拖入 .md 文件</b></span>
                 </div>
                 <div class="empty-entry">

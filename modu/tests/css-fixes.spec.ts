@@ -136,9 +136,10 @@ describe("P0-5 宽表/大图：纸面宽度红线锚", () => {
 });
 
 describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () => {
-  it("标签：拖拽半透明反馈 + ✕ 瘦身 18px + 焦点在标签上可见", () => {
+  it("标签：拖拽半透明反馈 + 关闭钮热区 24px + 焦点在标签上可见", () => {
     expect(app).toMatch(/\.tab\.dragging\s*\{[^}]*opacity/);
-    expect(app).toMatch(/\.tab-close\s*\{[^}]*inline-size:\s*18px/);
+    // des-11 P0：18px 热区低于 24 目标 ⇒ 抬到 24；字形换成 14px 内联 SVG（见 panel-unify 图标锁）。
+    expect(app).toMatch(/\.tab-close\s*\{[^}]*inline-size:\s*24px/);
     expect(app).toMatch(/\.tab:hover \.tab-close, \.tab:focus-within \.tab-close\s*\{\s*opacity:\s*1/);
   });
 

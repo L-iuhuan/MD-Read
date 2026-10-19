@@ -1,6 +1,6 @@
 [package]
 name = "modu"
-version = "0.2.3"
+version = "0.2.4"
 description = "MoDu - a personal Windows Markdown reader and PDF exporter"
 authors = ["LIUHUAN <noreply@example.com>"]
 license = "MIT"

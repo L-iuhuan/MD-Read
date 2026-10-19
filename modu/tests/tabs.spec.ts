@@ -435,19 +435,20 @@ describe("D-05 标签条（分隔线 + 互斥标记 + 批量关闭）", () => {
     expect(sepEls()[0]?.getAttribute("aria-hidden")).toBe("true");
   });
 
-  it("脏点 ● 与 ✕ 同格互斥：脏标签的 ● 可见，干净标签的 ● 隐藏", async () => {
+  it("脏点与关闭钮同格互斥：脏标签圆点可见，干净标签圆点隐藏（des-11 改 CSS 圆点 + SVG）", async () => {
     const h = setup();
     await open(h, "a.md", "AAA");
     await open(h, "b.md", "BBB");
     h.manager.setDirty("a.md", true);
     const [a, b] = tabEls();
     const dotOf = (el: HTMLElement): HTMLElement | null => el.querySelector(".tab-dirty");
-    expect(dotOf(a as HTMLElement)?.hidden).toBe(false); // 脏：● 显示
-    expect(dotOf(b as HTMLElement)?.hidden).toBe(true); // 干净：● 隐藏（格位让给 ✕）
-    expect(dotOf(a as HTMLElement)?.textContent).toBe("●");
-    // 两枚标签都恒有 ✕ 元素（宽度常驻，标题不因悬停重排），显隐由 CSS 的
-    // 「仅活动常驻 + hover/focus 浮现」与「hover 时 ● 隐身」共同承担
-    expect(a?.querySelector(".tab-close")?.textContent).toBe("✕");
+    expect(dotOf(a as HTMLElement)?.hidden).toBe(false); // 脏：圆点显示
+    expect(dotOf(b as HTMLElement)?.hidden).toBe(true); // 干净：圆点隐藏（格位让给关闭钮）
+    expect(dotOf(a as HTMLElement)?.textContent).toBe(""); // 圆点由 CSS 画，不再是 ● 字形
+    // 两枚标签都恒有关闭钮（宽度常驻，标题不因悬停重排）；图标改 14px SVG。
+    expect(dotOf(a as HTMLElement)?.className).toContain("tab-dirty");
+    expect(a?.querySelector(".tab-close svg")).not.toBeNull();
+    expect(a?.querySelector(".tab-close")?.textContent).toBe("");
     expect(b?.querySelector(".tab-close")).not.toBeNull();
   });
 });

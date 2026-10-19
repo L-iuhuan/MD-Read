@@ -83,7 +83,7 @@
   cursor: pointer;
 }
 #editor-pane .cm-panel-lint ul .cm-diagnostic-error { border-left-color: var(--danger-text); }
-#editor-pane .cm-panel-lint ul .cm-diagnostic-warning { border-left-color: var(--warn-text); }
+#editor-pane .cm-panel-lint ul .cm-diagnostic-warning { border-left-color: var(--warn-line); }
 #editor-pane .cm-panel-lint ul .cm-diagnostic-info { border-left-color: var(--text-dim); }
 #editor-pane .cm-panel-lint ul .cm-diagnostic-hint { border-left-color: var(--accent-solid); }
 #editor-pane .cm-panel-lint ul li[aria-selected] {
@@ -122,14 +122,21 @@
 /* 状态栏徽标 #st-lint（md-lint.ts 动态建，index.html 不动）：继承状态栏字号，
    数字走等宽；语义色三级（data-severity 由 TS 侧每次 lint 后写入） */
 #st-lint {
+  display: inline-grid;
+  place-items: center;
+  block-size: calc(var(--h-status) - 4px);
   font: inherit;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   border: 0;
   background: none;
-  padding: 0;
+  padding: 0 var(--size-1);
+  border-radius: var(--radius-1);
   cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1);
 }
+#st-lint:hover { background: var(--bg-hover); }
+#st-lint:active { background: var(--bg-active); }
 #st-lint[data-severity="error"] { color: var(--danger-text); }
 #st-lint[data-severity="warning"] { color: var(--warn-text); }
 #st-lint[data-severity="info"] { color: var(--text-muted); }

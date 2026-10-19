@@ -70,5 +70,18 @@
 .workspace-remove:hover { background: var(--bg-hover); color: var(--text); }
 /* 工作区树：目录行加字重与文件区分（2026-09-27 用户反馈「不清晰」） */
 #workspace-list .menu-item[data-kind="dir"] { font-weight: 500; }
+/* des-11 P1：真实 chevron + aria-expanded 旋转；文件行用同宽空位保持名称列对齐。 */
+.workspace-chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 14px;
+  block-size: 14px;
+  color: var(--text-muted);
+  transition: transform var(--duration-1) var(--ease-1);
+}
+.workspace-chevron svg { display: block; }
+.menu-item[aria-expanded="true"] .workspace-chevron { transform: rotate(90deg); }
+.workspace-name { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 子层逐层缩进（2026-09-27 复查修复：子层原先与父级齐平） */
 .workspace-kids { padding-inline-start: var(--size-3); }

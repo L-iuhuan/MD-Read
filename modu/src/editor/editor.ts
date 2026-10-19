@@ -38,7 +38,7 @@ const editorTheme = EditorView.theme({
   /* des-8（2026-10-13）编辑态字体治理：正文行走阅读字体栈（--font-sans，与阅读态 .mdc 同源）
      ——LP 实时渲染下源码行不再与渲染行「等宽/阅读」两套字体交替；等宽只留给代码场景
      （行号槽见下、行内码 .cm-lp-code 在 live-preview.ts）。围栏代码内容 v1 随正文（取舍见报告）。 */
-  ".cm-scroller": { fontFamily: "var(--font-sans)", fontSize: "var(--fs-body)", lineHeight: "1.7" },
+  ".cm-scroller": { fontFamily: "var(--font-reading, var(--font-sans))", fontSize: "var(--fs-body)", lineHeight: "1.7" },
   /* 纸面列：与 #doc 同限宽/同内边距/同底色；maxWidth 含 --pad-page ⇒ 文字宽 = --measure */
   ".cm-content": {
     maxWidth: "calc(var(--measure) + 2 * var(--pad-page))",

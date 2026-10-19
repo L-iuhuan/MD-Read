@@ -42,6 +42,30 @@ export interface WorkspacePanel {
   pickFromOutside(): Promise<void>;
 }
 
+/** 目录展开箭头：14px / 1.5 线宽，与壳层 14px 图标同一档（圆端点、currentColor）。 */
+function chevronIcon(): SVGSVGElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [key, value] of [
+    ["width", "14"],
+    ["height", "14"],
+    ["viewBox", "0 0 16 16"],
+    ["aria-hidden", "true"],
+    ["focusable", "false"],
+    ["fill", "none"],
+    ["stroke", "currentColor"],
+    ["stroke-width", "1.5"],
+    ["stroke-linecap", "round"],
+    ["stroke-linejoin", "round"],
+  ] as const) {
+    svg.setAttribute(key, value);
+  }
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M6 4l4 4-4 4");
+  svg.append(path);
+  return svg;
+}
+
 export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
   const outlineNav = document.getElementById("outline-list");
   const workspaceNav = document.getElementById("workspace-list");
@@ -111,7 +135,19 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "menu-item";
-      item.textContent = (entry.is_dir ? "▸ " : "") + entry.name;
+      // des-11 P1：目录用真实 chevron（不再把 ▸ 塞进文件名），并用 aria-expanded
+      // 承担「展开/收起」语义；文件行留同宽空位，名称列保持对齐。
+      const marker = document.createElement("span");
+      marker.className = "workspace-chevron";
+      marker.setAttribute("aria-hidden", "true");
+      if (entry.is_dir) {
+        marker.appendChild(chevronIcon());
+        item.setAttribute("aria-expanded", "false");
+      }
+      const label = document.createElement("span");
+      label.className = "workspace-name";
+      label.textContent = entry.name;
+      item.append(marker, label);
       // 目录行加 data-kind（CSS 加字重与文件区分；2026-09-27 用户反馈「不清晰」）
       if (entry.is_dir) item.dataset.kind = "dir";
       const full = listing.path + "\\" + entry.name;
@@ -123,9 +159,11 @@ export function setupWorkspacePanel(deps: WorkspacePanelDeps): WorkspacePanel {
         item.addEventListener("click", () => {
           if (kids.hidden) {
             kids.hidden = false;
+            item.setAttribute("aria-expanded", "true");
             void fill(kids, full);
           } else {
             kids.hidden = true;
+            item.setAttribute("aria-expanded", "false");
           }
         });
         parent.appendChild(item);

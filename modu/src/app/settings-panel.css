@@ -22,7 +22,14 @@
 /* J1（2026-09-30 用户实测）：面板 320px + 下拉 190px 把「Times New Roman」截成
    「Times New R.」✗ ⇒ 加宽到 360px（等特异性、后加载覆盖 app.css 的 320px；
    右锚定 ⇒ 向左生长不岀窗），「Times New Roman（衬线）」级最长常用名完整显示 ✓ */
-.settings-panel { inline-size: 360px; }
+.settings-panel {
+  inline-size: 360px;
+  /* des-11 P1：矮窗（tauri minHeight 480）时面板不能伸到视口外；限高后自身滚动。
+     顶栏 48 + 上间距 8 + 下留 16，其余交给面板。 */
+  max-block-size: calc(100vh - var(--h-chrome) - var(--size-2) - var(--size-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .settings-title {
   font-size: var(--fs-chrome);
   font-weight: 600;

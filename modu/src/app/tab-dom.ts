@@ -13,6 +13,30 @@ export interface TabDomDeps {
   activateTab(path: string): void;
   closeTab(path: string): void;
 }
+
+/** 标签关闭图标：14px / 1.5 线宽，与壳层 14px 图标同档（圆端点、currentColor）。 */
+function closeIcon(): SVGSVGElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [key, value] of [
+    ["width", "14"],
+    ["height", "14"],
+    ["viewBox", "0 0 16 16"],
+    ["aria-hidden", "true"],
+    ["focusable", "false"],
+    ["fill", "none"],
+    ["stroke", "currentColor"],
+    ["stroke-width", "1.5"],
+    ["stroke-linecap", "round"],
+    ["stroke-linejoin", "round"],
+  ] as const) {
+    svg.setAttribute(key, value);
+  }
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M4 4l8 8M12 4l-8 8");
+  svg.append(path);
+  return svg;
+}
 export function buildTabEl(tab: Tab, isActive: boolean, deps: TabDomDeps): HTMLElement {
   const el = document.createElement("div");
   el.className = isActive ? "tab active" : "tab";
@@ -25,16 +49,17 @@ export function buildTabEl(tab: Tab, isActive: boolean, deps: TabDomDeps): HTMLE
   el.draggable = true; // 拖拽排序（用户反馈批次）：HTML5 DnD，见 setupTabDnd
   const dot = document.createElement("span");
   dot.className = "tab-dirty";
-  dot.hidden = !tab.dirty; // dirty 圆点（M3 启用，渲染逻辑先就位）
-  dot.textContent = "●";
+  dot.hidden = !tab.dirty; // dirty 圆点（M3 启用，渲染逻辑先就位）；底色由 CSS 画
+
   const title = document.createElement("span");
   title.className = "tab-title";
   title.textContent = tab.title;
   const close = document.createElement("button");
   close.type = "button";
   close.className = "tab-close";
-  close.textContent = "✕";
+  close.append(closeIcon());
   close.title = "关闭标签";
+  close.setAttribute("aria-label", "关闭标签");
   close.addEventListener("click", (event) => {
     event.stopPropagation();
     deps.closeTab(tab.path);

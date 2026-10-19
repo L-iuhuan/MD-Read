@@ -126,4 +126,39 @@ describe("workspace-panel 锚 · 切片③ 撤销路径 + ② 不可读原因", 
     expect(nav().textContent, "被拒原因要如实显示 ✓").toContain(reason);
     expect(nav().textContent).toContain("还没有工作区");
   });
+
+  it("目录行：chevron SVG + aria-expanded 随展开切换；非 md 文件保持 disabled", async () => {
+    localStorage.setItem(WORKSPACE_KEY, WS);
+    dispatch({
+      listDir: () => Promise.resolve({
+        path: WS,
+        entries: [
+          { name: "docs", is_dir: true, is_markdown: false },
+          { name: "a.md", is_dir: false, is_markdown: true },
+          { name: "b.txt", is_dir: false, is_markdown: false },
+        ],
+        truncated: false,
+        total: null,
+      }),
+    });
+    await loadPanel();
+    clickWorkspaceTab();
+    await tick();
+
+    const dir = Array.from(nav().querySelectorAll<HTMLButtonElement>(".menu-item"))
+      .find((item) => item.textContent === "docs");
+    expect(dir, "目录行未渲染").toBeInstanceOf(HTMLButtonElement);
+    expect(dir?.getAttribute("aria-expanded")).toBe("false");
+    expect(dir?.querySelector(".workspace-chevron svg"), "目录箭头必须是内联 SVG").not.toBeNull();
+    const txt = Array.from(nav().querySelectorAll<HTMLButtonElement>(".menu-item"))
+      .find((item) => item.textContent === "b.txt");
+    expect(txt?.disabled, "非 md 文件不可打开").toBe(true);
+
+    dir?.click();
+    await tick();
+    expect(dir?.getAttribute("aria-expanded")).toBe("true");
+    dir?.click();
+    await tick();
+    expect(dir?.getAttribute("aria-expanded")).toBe("false");
+  });
 });

@@ -37,11 +37,15 @@ function injectedCss(): string {
 }
 
 describe("editorTheme 字体（des-8）", () => {
-  it("正文行用阅读字体栈（--font-sans），不再整屏等宽", () => {
+  it("正文行用阅读字体栈（--font-reading，回落 --font-sans），不再整屏等宽", () => {
     handle = createEditor(container, { onDocChanged: () => {} });
     const rules = [...injectedCss().matchAll(/\.cm-scroller\{([^}]*)\}/g)].map((m) => m[1]);
     expect(rules.length).toBeGreaterThan(0); // 含基础主题的 monospace 档
-    expect(rules.some((body) => body.includes("font-family:var(--font-sans)"))).toBe(true);
+    // des-11 P1：编辑态字体改为由 #editor-pane 的 --font-reading 驱动（用户所选正文栈），
+    // 无用户选择时回落 --font-sans；旧锚只认 --font-sans，会把「设置已生效」误判成红。
+    expect(
+      rules.some((body) => body.includes("font-family:var(--font-reading,var(--font-sans))")),
+    ).toBe(true);
     expect(rules.every((body) => !body.includes("var(--font-mono)"))).toBe(true);
   });
 

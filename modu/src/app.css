@@ -104,6 +104,14 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 }
 #app *, #app *::before, #app *::after { box-sizing: border-box; }
 
+/* 选中色（des-11 P0）：全应用统一，含正文/表格/代码/空态/UI 文本。
+   系统默认高亮蓝不属于五套纸色语言，明暗两态都割裂；accent 软底 + 正文色
+   在十组主题下保持可读，且与「选中 = accent 软底」既有语言同源。 */
+#app ::selection { background: var(--accent-tint-hover); color: var(--text); }
+
+/* 壳层图标统一走内联 SVG；块级化后由各按钮的 grid/flex 居中。 */
+#app button > svg { display: block; }
+
 /* 全控件焦点态（正文区内的焦点态由 cjk.css 自理）
    ⚠ 本规则**只管 outline，不碰 border-radius**（P3）：原先这里还写了
    `border-radius: var(--radius-1)`，本意只是想给聚焦控件一圈描边，实际却因为
@@ -249,21 +257,21 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
    不用 display:none 切换（tabs.ts 用 hidden 属性，全局 [hidden] 兜底已覆盖）。 */
 .tab-dirty {
   flex: none;
-  font-size: 9px;
-  line-height: 1;
-  color: var(--accent-solid);   /* 未保存圆点用强调色（非错误语义，不占红/黄）*/
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--accent-solid);   /* 未保存圆点用强调色（非错误语义，不占红/黄）*/
 }
-/* 脏标签与活动标签常驻 ✕；其余标签的 ✕ 留位（宽度恒在 → 标题不因悬停重排）只换透明度。
-   脏标签在悬停时 ✕ 盖住 ● ——「有改动」与「可关闭」共用一个格位。 */
+/* 脏标签与活动标签常驻关闭钮；其余标签的关闭钮留位（宽度恒在 → 标题不因悬停重排）只换透明度。
+   des-11：关闭钮热区 24px（原 18px 低于 24 目标），图标 14px/1.5 线宽走内联 SVG；
+   脏标签在悬停时关闭钮盖住圆点 ——「有改动」与「可关闭」共用一个格位。 */
 .tab-close {
   flex: none;
   display: grid;
   place-items: center;
-  inline-size: 18px;
-  block-size: 18px;
-  font: inherit;
-  font-size: 9px;
-  line-height: 1;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
   color: var(--text-muted);
   background: transparent;
   border: 0;
@@ -303,14 +311,14 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 #btn-newtab {
   --plus-fade: 12px;              /* 左缘淡出宽度 */
   flex: none;
+  display: grid;
+  place-items: center;
   align-self: center;
   position: sticky;
   inset-inline-end: 0;
   inline-size: 26px;
   block-size: 26px;
-  font: inherit;
-  font-size: 15px;
-  line-height: 1;
+  padding: 0;
   color: var(--text-muted);
   background-color: transparent;
   background-image: linear-gradient(to right, transparent 0, var(--bg-chrome) var(--plus-fade));
@@ -425,8 +433,12 @@ body { overflow: hidden; }   /* 滚动只发生在 #content，避免整窗出现
 .actions > .overflow-wrap > button:disabled,
 .topbar > #btn-outline:disabled { opacity: .45; cursor: default; }
 
+/* 图标钮：SVG 块级居中（des-11 统一图标后，动作区里只有这三枚是纯图标） */
+.actions > .settings-wrap > button,
+.actions > #btn-theme,
+.topbar > #btn-outline { display: grid; place-items: center; }
 /* ⋯ 按钮：图标钮，方形（与 ‹ › 同尺寸感，但在动作组里给 28px 控件高） */
-.actions > #btn-overflow { padding: 0; inline-size: var(--h-ctl); }
+.actions > #btn-overflow { display: grid; place-items: center; padding: 0; inline-size: var(--h-ctl); }
 
 /* 强调按钮 = 编辑（全条唯一的主色软底）：软底 + 主色文字 + 600 字重。
    实心主色填充被否（宣纸·亮上白字只有 4.39:1）；软底文字实测 5.76~9.86:1。
@@ -458,10 +470,23 @@ html.editing #btn-edit:not(:disabled) {
    收起清单与按钮皮无关，故这里只写「隐身」；⋯ 菜单里点的是**同一批 DOM 按钮的代理
    点击**（proxyClick），逻辑不复制第二份。 */
 .topbar.overflow #act-sep { display: none; }
-.topbar.overflow .recent-wrap,
-.topbar.overflow .settings-wrap,
+/* des-11 P0：只收入口按钮，不收 wrapper —— #recent-menu / #settings-panel 是 wrapper
+   的子元素，整段 display:none 会让 ⋯ 菜单的代理点击即使命中按钮也开不出浮层。
+   wrapper 保持零宽定位上下文，浮层才能从拥挤态正常展开。 */
+.topbar.overflow .recent-wrap > #btn-recent,
+.topbar.overflow .settings-wrap > #btn-settings,
 .topbar.overflow #btn-theme,
 .topbar.overflow #btn-export { display: none; }
+/* 拥挤态下两个 wrapper 保留「控件高度」的定位上下文（按钮已隐身，宽度为 0）。
+   否则 absolute 浮层的 top 会按 0 高容器算，卡片上浮进顶栏。 */
+.topbar.overflow .recent-wrap,
+.topbar.overflow .settings-wrap {
+  display: block;
+  block-size: var(--h-ctl);
+  align-self: center;
+}
+/* 拥挤态下「最近」入口靠近动作区右端：菜单改右锚，避免 240px 宽向右出窗。 */
+.topbar.overflow .recent-menu { inset-inline-start: auto; inset-inline-end: 0; }
 .topbar:not(.overflow) .overflow-wrap { display: none; }
 
 /* 非拥挤态无 ⋯（连占位都不留）：空的 .overflow-wrap 会白吃 #actions 的一个 gap 槽
@@ -712,6 +737,9 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
 }
 .menu-item:hover { background: var(--bg-hover); }
 .menu-item:active { background: var(--bg-active); }
+/* 工作区里不可打开的非 md 文件：保持列表位，但明确降色、默认光标、无 hover。 */
+.menu-item:disabled { color: var(--fg-dim); cursor: default; opacity: .72; }
+.menu-item:disabled:hover, .menu-item:disabled:active { background: transparent; }
 /* 第二行（弱化目录）与文件名共享一个纵向列 */
 .menu-item .menu-text {
   display: flex;
@@ -1283,8 +1311,25 @@ html:not(.panel-open):not(.editing) body.chrome-dim .topbar:not(:hover):not(:foc
 }
 
 /* ==========================================================================
-   12. 窄窗与动效降级
+   12. 滚动条 / 窄窗 / 动效降级
+   --------------------------------------------------------------------------
+   des-11 P2：正文、大纲、菜单、编辑区、代码块统一细滚动条，颜色走语义 token
+   （暗色自动跟随）。滚动条不参与布局，改宽不会推动纸列。
+   ⚠ 标签条原本就隐藏滚动条；下面的 ID 规则特异性高于旧的 .tab-list 规则，
+     故必须保留最后这条定向 display:none，否则会让它重新显形。
    ========================================================================== */
+#app { scrollbar-color: var(--border-strong) transparent; }
+#app ::-webkit-scrollbar { width: 10px; height: 10px; }
+#app ::-webkit-scrollbar-track { background: transparent; }
+#app ::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+#app ::-webkit-scrollbar-thumb:hover { background-color: var(--text-muted); }
+#app .tab-list::-webkit-scrollbar { display: none; }
+
 @media (max-width: 1000px) {
   :root { --w-outline: 184px; }
 }

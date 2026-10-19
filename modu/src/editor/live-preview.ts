@@ -62,8 +62,9 @@ const livePreviewTheme = EditorView.theme({
   ".cm-lp-h2": { fontSize: "1.4em", fontWeight: "700", color: "var(--accent-ink)" },
   ".cm-lp-h3": { fontSize: "1.15em", fontWeight: "600", color: "var(--accent-ink)" },
   ".cm-lp-h4": { fontSize: ".95em", fontWeight: "600", color: "var(--accent-ink)" },
-  ".cm-lp-h5": { fontSize: ".95em", fontWeight: "600", color: "var(--text)" },
-  ".cm-lp-h6": { fontSize: ".95em", fontWeight: "600", color: "var(--text-muted)" },
+  /* des-11：与 cjk.css 的 .mdc h5/h6 同值（.9em / .85em），切阅读态不跳变。 */
+  ".cm-lp-h5": { fontSize: ".9em", fontWeight: "600", color: "var(--text)" },
+  ".cm-lp-h6": { fontSize: ".85em", fontWeight: "600", letterSpacing: ".02em", color: "var(--text-muted)" },
   ".cm-lp-strong": { fontWeight: "700" },
   ".cm-lp-em": { fontStyle: "italic" },
   ".cm-lp-strike": { textDecoration: "line-through", color: "var(--text-muted)" },

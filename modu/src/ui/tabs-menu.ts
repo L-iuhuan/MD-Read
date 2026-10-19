@@ -49,7 +49,7 @@ export interface TabMenusDeps {
 const PROXY_ITEMS: ReadonlyArray<readonly [label: string, id: string]> = [
   ["最近", "btn-recent"],
   ["设置", "btn-settings"],
-  ["◐", "btn-theme"],
+  ["主题", "btn-theme"],
   ["PDF", "btn-export"],
 ];
 
@@ -230,7 +230,11 @@ export function createTabMenus(deps: TabMenusDeps): TabMenus {
     for (const [label, id] of PROXY_ITEMS) {
       const item = makeItem();
       item.textContent = label;
-      item.addEventListener("click", () => {
+      item.addEventListener("click", (event) => {
+        /* des-11 P0：代理点击会新开「最近 / 设置」浮层，原事件继续冒泡到各自的
+           document 点外委托时，会以「点在菜单项上」为由把它立刻关掉。先收菜单，
+           再把这次点击与 document 隔离；两个浮层的开合逻辑仍只有原按钮一份。 */
+        event.stopPropagation();
         close(); // 先收菜单：原按钮的「点外部收起」委托会看到这次点击，晚收会被它误关
         proxyClick(id);
       });

@@ -79,7 +79,8 @@ function mountPanel(): void {
       <input id="set-autosave" type="checkbox" />
       <button id="set-default-app" type="button">设为 .md 默认应用</button>
 </div>
-<article id="doc" class="mdc"></article>`;
+<article id="doc" class="mdc"></article>
+<div id="editor-pane" hidden></div>`;
 }
 
 /**
@@ -315,14 +316,20 @@ describe("字体三下拉（J1：三组各一个 select、互不影响）", () =
     expect((document.getElementById("set-font-code") as HTMLSelectElement).value).toBe("mono-consolas");
   });
 
-  it("应用：正文栈 = 西文链（去尾通用族）+ 中文章，代码链覆写 --font-mono", async () => {
+  it("应用：正文栈 = 西文链（去尾通用族）+ 中文章，代码链覆写 --font-mono，并同步编辑态", async () => {
     await freshSettings();
     const doc = document.getElementById("doc") as HTMLElement;
     // ⚠ 西文链尾的 sans-serif 必须剥掉：通用族在中间会短路 CJK 回退（见 font-picker 头注释）
-    expect(doc.style.fontFamily).toBe(
-      '"Segoe UI Variable Text", "Segoe UI", Inter, Arial, "HarmonyOS Sans SC", "Microsoft YaHei UI", system-ui, sans-serif',
-    );
+    const expectedStack =
+      '"Segoe UI Variable Text", "Segoe UI", Inter, Arial, "HarmonyOS Sans SC", "Microsoft YaHei UI", system-ui, sans-serif';
+    expect(doc.style.fontFamily).toBe(expectedStack);
     expect(doc.style.getPropertyValue("--font-mono")).toBe(
+      '"Maple Mono NF", ui-monospace, "Cascadia Mono", Consolas, monospace',
+    );
+    // des-11 P1：编辑态与 #doc 是兄弟，必须拿到同一条 --font-reading / --font-mono。
+    const editor = document.getElementById("editor-pane") as HTMLElement;
+    expect(editor.style.getPropertyValue("--font-reading")).toBe(expectedStack);
+    expect(editor.style.getPropertyValue("--font-mono")).toBe(
       '"Maple Mono NF", ui-monospace, "Cascadia Mono", Consolas, monospace',
     );
     expect(doc.dataset.face).toBeUndefined(); // 旧衬线档契约退役：三组组合永远走内联栈

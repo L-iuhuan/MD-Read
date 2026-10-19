@@ -1,7 +1,7 @@
 /**
  * D-05 新增功能 · 壳层两个下拉菜单（ui/tabs-menu.ts）的行为锚。
  *   ▾ 全部标签列表：两行式、当前项浅主色底、脏点、底部批量关闭；
- *   ⋯ 溢出菜单：拥挤态收进来的常显动作代理项（最近 / Aa / ◐ / PDF）+ 批量关闭；
+ *   ⋯ 溢出菜单：拥挤态收进来的常显动作代理项（最近 / 设置 / 主题 / PDF）+ 批量关闭；
  *              **只在顶栏拥挤时出现**；**没有「打开」项**（文件入口只剩标签条的 ＋）；
  *   两者共用：一次只开一个、点外部收起、aria-expanded 回显、溢出才显示 #tabs-nav。
  * jsdom 无布局引擎 → 溢出判定用 Object.defineProperty 直接给 scrollWidth/clientWidth；
@@ -190,7 +190,7 @@ describe("⋯ 溢出菜单", () => {
     const items = Array.from(menu.querySelectorAll<HTMLElement>(".menu-item:not(.is-action)"));
     // UX-2（des-5）：「查找」居首（此前零可发现入口），其后仍是四个代理项
     // 2026-10-01：设置按钮 Aa → 滑杆图标，菜单 label 改「设置」（用户反馈图标与内容不符）
-    expect(items.map((el) => el.textContent)).toEqual(["查找", "最近", "设置", "◐", "PDF"]);
+    expect(items.map((el) => el.textContent)).toEqual(["查找", "最近", "设置", "主题", "PDF"]);
     expect(items.map((el) => el.textContent)).not.toContain("打开");
 
     // 逐项点一遍（i=0 是「查找」，非代理项，另有用例）：每个代理项各命中一次自己的原按钮，且点完菜单先收起
@@ -205,6 +205,42 @@ describe("⋯ 溢出菜单", () => {
     }
     for (const [id, spy] of Object.entries(spies)) {
       expect(spy, `${id} 未被代理点击命中`).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("拥挤态：「最近」「设置」代理项能开出浮层，且不被 document 点外委托截胡", () => {
+    const h = setup([tab("a.md")], "a.md");
+    h.menus.sync();
+    const recentMenu = h.el("recent-menu");
+    const settingsPanel = h.el("settings-panel");
+    // 复刻 recent.ts / settings.ts 的真实“点外关闭”语义：只在事件到达 document 时生效。
+    h.el("btn-recent").addEventListener("click", () => { recentMenu.hidden = !recentMenu.hidden; });
+    h.el("btn-settings").addEventListener("click", () => { settingsPanel.hidden = !settingsPanel.hidden; });
+    let documentSawMenuClick = false;
+    const onDocumentClick = (event: Event): void => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.classList.contains("menu-item")) {
+        documentSawMenuClick = true;
+      }
+    };
+    document.addEventListener("click", onDocumentClick);
+    try {
+      h.el("btn-overflow").click();
+      const recentItem = Array.from(h.el("overflow-menu").querySelectorAll<HTMLElement>(".menu-item"))
+        .find((el) => el.textContent === "最近");
+      expect(recentItem).toBeInstanceOf(HTMLElement);
+      recentItem?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      expect(recentMenu.hidden, "「最近」浮层必须保持打开").toBe(false);
+
+      h.el("btn-overflow").click();
+      const settingsItem = Array.from(h.el("overflow-menu").querySelectorAll<HTMLElement>(".menu-item"))
+        .find((el) => el.textContent === "设置");
+      expect(settingsItem).toBeInstanceOf(HTMLElement);
+      settingsItem?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      expect(settingsPanel.hidden, "「设置」浮层必须保持打开").toBe(false);
+      expect(documentSawMenuClick, "代理项点击不得冒泡到 document 点外委托").toBe(false);
+    } finally {
+      document.removeEventListener("click", onDocumentClick);
     }
   });
 
