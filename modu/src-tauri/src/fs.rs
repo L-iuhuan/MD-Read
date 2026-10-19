@@ -7,6 +7,7 @@
 //! **没有任何渲染层可调的注册命令** —— 否则攻陷页面可以自证授权。
 
 use std::path::{Path, PathBuf};
+use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
@@ -645,12 +646,28 @@ pub fn refresh_registered_icons() {
         return;
     }
     let icon = format!("\"{}\"", ico.display());
+    let ico_str = ico.display().to_string();
     for progid in ["MoDu.md", "MoDu.markdown", "MoDu.mdx"] {
         let key = format!(r"HKCU\Software\Classes\{progid}\DefaultIcon");
-        if run_reg(&["query", key.as_str()]).is_ok() {
-            let _ = reg_set_default(&key, &icon);
+        // 键不存在 = 用户从未注册过 ⇒ 不新建（零副作用）；存在但值已正确 ⇒ 跳写
+        // （稳态每次启动只剩 3 次静默查询，不再有 reg add）
+        if let Some(out) = run_reg_captures(&["query", key.as_str()]) {
+            if !String::from_utf8_lossy(&out.stdout).contains(&ico_str) {
+                let _ = reg_set_default(&key, &icon);
+            }
         }
     }
+}
+
+/// run_reg 的取输出变体：键存在返回 Some(Output)，不存在/失败返回 None。
+/// 与 run_reg 同带 CREATE_NO_WINDOW（调用方在后台线程，仍不得闪窗）。
+fn run_reg_captures(args: &[&str]) -> Option<std::process::Output> {
+    std::process::Command::new("reg.exe")
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
 }
 
 /// reg add <key> /ve /d <value> /f —— 写「默认」值（DefaultIcon / open\command 的用法）
@@ -663,10 +680,15 @@ fn reg_set_named(key: &str, name: &str, data: &str) -> Result<(), String> {
     run_reg(&["add", key, "/v", name, "/t", "REG_SZ", "/d", data, "/f"])
 }
 
+/// CREATE_NO_WINDOW：GUI 程序 spawn 控制台子进程（reg.exe）必须带此标志，
+/// 否则每次调用闪一个黑窗（2026-10-19 真机「疯狂弹终端」回归的根因）。
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// 执行 reg.exe 并把失败翻译成中文（面向使用者，不露 OS 黑话）
 fn run_reg(args: &[&str]) -> Result<(), String> {
     let out = std::process::Command::new("reg.exe")
         .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("无法启动注册表写入：{}", io_reason(&e)))?;
     if out.status.success() {
