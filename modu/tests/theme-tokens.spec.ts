@@ -20,6 +20,7 @@ const shellCss = [
   "src/app/shell-tail.css",
   "src/app/workspace-panel.css",
   "src/app/settings-panel.css",
+  "src/ui/empty-state.css", // 2026-10-16 空态皮外移（app.css 满载）⇒ 色值/字体纪律一并覆盖
 ]
   .map((f) => readFileSync(f, "utf8"))
   .join("\n");

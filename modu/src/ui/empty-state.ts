@@ -1,5 +1,9 @@
 /**
- * 空态（首访欢迎页）· 2026-09-23 第二批落地（用户选 V1「克制」稿）。
+ * 空态（首访欢迎页）· 2026-09-23 第二批落地（用户选 V1「克制」稿）；
+ * 2026-10-16 按主人「整体布局/内容/UI 再优化」重做（V3「欢迎纸卡」）：
+ * 层级改为 欢迎纸卡（品牌 → 主行动 → 入口提示 → 文件夹 → 首次引导）
+ * → 最近打开卡 → 快捷键脚注；首次引导改成卡内 inset 三步。
+ * 皮整段外移到 ./empty-state.css（app.css 已满载，按先例外移；本文件只 import）。
  *
  * 为什么单独一个模块：它是**壳层 DOM**（与 findbar / settings / tabs-menu 同层），
  * 不是标签状态机也不碰渲染管线；main.ts 只做接线（onOpen = 与「＋」同一个处理函数，
@@ -12,6 +16,7 @@
  * 判据不另立：空态显隐仍由 `#empty-hint.hidden` 与 `body.empty` 一个来源决定
  * （main.ts 的 resetToWelcome / mountRendered），本模块只管**内容**。
  */
+import "./empty-state.css";
 import { dirName, loadRecent } from "../app/recent";
 
 /** 空态里最多显示几条最近打开（设计稿定稿 5；存储层上限仍是 recent.ts 的 10） */

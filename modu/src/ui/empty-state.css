@@ -1,0 +1,319 @@
+/* ==========================================================================
+   空态（首访欢迎页）· 2026-10-16 重构（V3「欢迎纸卡」）
+   --------------------------------------------------------------------------
+   为什么单独一个文件：app.css 已满载（hard 1452/1452），本批是整段重写，
+   按 workspace-panel.css / settings-panel.css / md-lint.css 的先例外移；
+   由 ui/empty-state.ts 直接 import（模块 CSS 同一手法，md-lint.css 亦然）。
+
+   设计（对应用户「一张欢迎页，不是一堆提示」的诉求）：
+   ① 层级：欢迎纸卡（品牌 → 主行动 → 入口提示 → 文件夹 → 首次引导）
+      → 最近打开卡 → 快捷键脚注。主行动最大最亮；引导次之；快捷键退为键帽行。
+   ② 首次引导从「贴在最下面的流水账」改成卡内 inset 提示：眉标 + 标题 +
+      三步编号 + 知道了；解释性文字压缩成轻提示。
+   ③ 入口提示从两张带边框的小卡改为一行静音提示（DOM 仍是 .empty-entry，
+      测试锚定的 <b> 文案不变）。
+   ④ 全部走 tokens 语义变量（零字面色值）；明暗两套自动跟随；动效 200ms，
+      reduced-motion 由 app.css §12 的全局降级统一接管（挂 #app 内即覆盖）。
+   ========================================================================== */
+
+/* ---- 画布：欢迎页在「桌面」上居中，内容高于窗口时可滚（不裁顶） ---- */
+.empty-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;          /* 老浏览器兜底（不认识下一行的 safe 关键字）*/
+  justify-content: safe center;     /* 内容高于窗口时退回 start：否则顶端会被裁掉且滚不到 */
+  overflow-y: auto;                 /* 窗口再矮也不会丢失内容（可滚）*/
+  gap: var(--size-4);
+  min-block-size: 100%;
+  padding: var(--size-6) var(--size-6) var(--size-5);
+  text-align: center;
+  font-size: var(--fs-body);        /* 跟随用户字号设置，与正文同一档 */
+  color: color-mix(in oklab, var(--text-muted), var(--text) 20%);
+}
+
+/* ---- 欢迎纸卡 ---- */
+.empty-panel {
+  inline-size: 520px;
+  max-inline-size: 100%;
+  padding: var(--size-6);
+  text-align: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  animation: empty-rise var(--duration-2) var(--ease-1) both;
+}
+@keyframes empty-rise {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+/* ---- 品牌区：M↓ 印记 + 词标 + 细线 + 副题 ---- */
+.empty-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.empty-mark {
+  display: grid;
+  place-items: center;
+  inline-size: 30px;
+  block-size: 30px;
+  color: var(--accent-ink);
+}
+.empty-mark svg { display: block; inline-size: 100%; block-size: 100%; }
+.empty-wordmark {
+  font-size: 1.5em;                 /* 24px 基准；随字号设置等比 */
+  font-weight: 600;
+  letter-spacing: .3em;
+  text-indent: .3em;                /* 抵消最后一个字的尾隙，视觉居中 */
+  color: var(--text);
+}
+.empty-rule { inline-size: 34px; block-size: 1px; background: var(--line); }
+.empty-sub {
+  font-size: .75em;
+  letter-spacing: .04em;
+  color: color-mix(in oklab, var(--text-muted), var(--text) 20%);
+}
+
+/* ---- 主行动：整张卡里唯一的强调块 ---- */
+.empty-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
+  block-size: 44px;
+  margin-block-start: var(--size-5);
+  font: inherit;
+  font-size: .875em;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--accent-text-hover);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-ctl);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              border-color var(--duration-1) var(--ease-1);
+}
+.empty-primary:hover { background: var(--accent-tint-hover); }
+.empty-primary:active { background: var(--bg-active); }
+
+/* ---- 入口提示：静音一行（无边框/无底色，不跟主行动抢） ---- */
+.empty-entries {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px var(--size-3);
+  margin-block-start: var(--size-3);
+}
+.empty-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-inline-size: 0;
+  font-size: .75em;
+  color: var(--text-muted);
+}
+.empty-entry + .empty-entry::before {
+  content: "·";
+  margin-inline-end: 3px;
+  color: var(--fg-dim);
+}
+.empty-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 14px;
+  block-size: 14px;
+  color: var(--accent-ink);
+  opacity: .8;
+}
+.empty-ico svg { display: block; inline-size: 100%; block-size: 100%; }
+.empty-entry-text { min-inline-size: 0; }
+.empty-entry-text b {
+  font-weight: 500;
+  font-size: 1em;
+  color: var(--text-muted);
+}
+
+/* ---- 次级行动：文本按钮（比主行动低两档） ---- */
+.empty-secondary {
+  display: block;
+  inline-size: fit-content;
+  margin: var(--size-2) auto 0;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: .78125em;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1),
+              color var(--duration-1) var(--ease-1);
+}
+.empty-secondary:hover { background: var(--bg-hover); color: var(--text); }
+.empty-secondary:active { background: var(--bg-active); }
+
+/* ---- 首次引导：卡内 inset 提示（信息层级第二；不是页面底部的流水账） ---- */
+.empty-first-run {
+  margin-block-start: var(--size-5);
+  padding: var(--size-3) var(--size-4);
+  text-align: start;
+  background: var(--bg-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+}
+/* 暗色层次微调（2026-10-16 主人验图）：inset 从「浅灰块」改为「下沉凹槽」——
+   底走画布档（比纸卡低一阶）、顶部补一条内衬线；只作用于 dark，
+   浅色主题的选择器不受影响（无 data-theme="dark" 即不命中）。 */
+:root[data-theme="dark"] .empty-first-run {
+  background: var(--bg-canvas);
+  box-shadow: inset 0 1px 0 var(--hair);
+}
+.empty-first-run-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--size-2);
+}
+.empty-first-run-eyebrow {
+  font-size: .65625em;              /* 10.5px：眉标档 */
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--accent-text);
+}
+.empty-first-run-title {
+  font-size: .8125em;
+  font-weight: 600;
+  color: var(--text);
+}
+.empty-first-run-steps {
+  counter-reset: fr-step;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--size-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.empty-first-run-steps li {
+  counter-increment: fr-step;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--size-2);
+  align-items: start;
+  font-size: .75em;
+  line-height: 1.55;
+  color: var(--text);
+}
+.empty-first-run-steps li::before {
+  content: counter(fr-step);
+  display: grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-text);
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-tint-border);
+  border-radius: 50%;
+}
+.empty-first-run-steps em {
+  font-style: normal;               /* 中文不用斜体；轻提示只降一档色 */
+  color: var(--fg-dim);
+}
+.empty-first-run-close {
+  display: block;
+  inline-size: fit-content;
+  margin: var(--size-3) 0 0 auto;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: .75em;
+  font-weight: 600;
+  color: var(--accent-text-hover);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition: background-color var(--duration-1) var(--ease-1);
+}
+.empty-first-run-close:hover { background: var(--accent-tint-hover); }
+.empty-first-run-close:active { background: var(--bg-active); }
+
+/* ---- 最近打开：独立纸卡（与欢迎卡同宽；条目复用 .menu-item 语言） ---- */
+.empty-recent {
+  inline-size: 520px;
+  max-inline-size: 100%;
+  text-align: start;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  animation: empty-rise var(--duration-2) var(--ease-1) both;
+}
+.empty-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  font-size: .6875em;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--hair);
+}
+.empty-recent-list { padding: var(--size-1); }
+
+/* ---- 快捷键脚注：键帽行（退到最底，不抢任何东西） ---- */
+.empty-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px var(--size-3);
+  max-inline-size: 620px;
+  margin-block-start: var(--size-1);
+  font-size: .71875em;
+  color: var(--fg-dim);
+}
+.empty-foot-item { display: inline-flex; align-items: center; gap: 5px; }
+.empty-foot-item + .empty-foot-item::before {
+  content: "·";
+  margin-inline-end: 3px;
+  color: var(--fg-dim);
+  opacity: .8;
+}
+.empty-foot code {
+  font-family: var(--font-mono);
+  font-size: .95em;
+  padding: 1px 6px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  box-shadow: var(--shadow-ctl);
+}
+
+/* ---- 窄窗：两张卡都退到满宽，内边距收一档 ---- */
+@media (max-width: 620px) {
+  .empty-panel,
+  .empty-recent { inline-size: 100%; }
+}
+
+/* ---- 矮窗降级：压纵向节奏（沿用旧断点；主行动 36px 是既有契约） ---- */
+@media (max-height: 700px) {
+  .empty-hint { gap: var(--size-3); padding: var(--size-4); }
+  .empty-panel { padding: var(--size-5); }
+  .empty-wordmark { font-size: 1.375em; }
+  .empty-rule { display: none; }
+  .empty-primary { margin-block-start: var(--size-4); block-size: 36px; }
+  .empty-first-run { margin-block-start: var(--size-4); }
+  .empty-foot { margin-block-start: 0; }
+}

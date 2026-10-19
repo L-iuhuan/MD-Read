@@ -23,6 +23,7 @@ const shellCss = [
   "src/app/shell-tail.css",
   "src/app/workspace-panel.css",
   "src/app/settings-panel.css",
+  "src/ui/empty-state.css", // 2026-10-16 空态皮外移（app.css 满载）⇒ 加进清单；空态专项锚直读该文件
 ]
   .map((f) => readFileSync(f, "utf8"))
   .join("\n");
@@ -45,6 +46,9 @@ function stripComments(css: string): string {
 const appBody = stripComments(app);
 const tokensBody = stripComments(tokens);
 const hljsBody = stripComments(hljs);
+// 空态专项锚直读模块文件（外移后仍按「最终层叠」口径；2026-10-16 V3 重构）
+const emptyCss = readFileSync("src/ui/empty-state.css", "utf8");
+const emptyBody = stripComments(emptyCss);
 
 describe("P1 最近下拉条目不再被顶栏按钮权重压过", () => {
   it("顶栏按钮规则只认「动作区的直属结构」，不存在 `.topbar button` 这个后代选择器", () => {
@@ -344,39 +348,41 @@ describe("2026-09-23 第二批：＋ 跟随滚动 / 空态标签条 / ☰ 空态
     expect(body).not.toMatch(/rgba?\(/);
   });
 
-  it("空态 V1 落地：主行动按钮 + 两枚入口提示 + 最近卡片（无则 hidden），旧胶囊词标已去", () => {
+  it("空态 V3 落地：欢迎纸卡 + 主行动 + 静音入口提示 + 最近卡片（无则 hidden），旧胶囊词标已去", () => {
     expect(htmlStripped).toMatch(/<button id="empty-open"[^>]*>打开 Markdown 文件<\/button>/);
     expect(htmlStripped).toMatch(/<b>拖入 \.md 文件<\/b>/);
     expect(htmlStripped).toMatch(/<b>双击 \.md 关联打开<\/b>/);
     expect(htmlStripped).toMatch(/<div id="empty-recent" class="empty-recent" hidden>/);
     expect(htmlStripped).toMatch(/id="empty-recent-list"/);
     // 旧形态：灰胶囊词标（::before content:"墨读"）与「点标签条上的＋」那句提示都不许回来
-    expect(appBody).not.toMatch(/\.empty-hint::before/);
-    expect(appBody).not.toMatch(/content:\s*"墨读"/);
+    expect(emptyBody).not.toMatch(/\.empty-hint::before/);
+    expect(emptyBody).not.toMatch(/content:\s*"墨读"/);
     expect(htmlStripped).not.toMatch(/拖入 \.md 文件，或点标签条上的/);
     // 入口提示与最近条目复用全站唯一一套两行式列表语言
     expect(htmlStripped).toMatch(/<div class="empty-entry">/);
   });
 
   it("空态样式的色值纪律：所有 .empty-* 规则的声明块里零字面色值", () => {
-    const blocks = appBody.match(/\.empty-[\w-]+[^{]*\{[^}]*\}/g) ?? [];
+    const blocks = emptyBody.match(/\.empty-[\w-]+[^{]*\{[^}]*\}/g) ?? [];
     expect(blocks.length).toBeGreaterThanOrEqual(8);
     for (const block of blocks) {
       expect(block, `空态规则出现字面色值：${block.slice(0, 60)}`).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     }
-    // 卡片语言四件套（与 §6/§7c 浮层同一套）
-    expect(appBody).toMatch(/\.empty-recent\s*\{[^}]*border-radius:\s*var\(--radius-3\)/);
-    expect(appBody).toMatch(/\.empty-recent\s*\{[^}]*box-shadow:\s*var\(--shadow-2\)/);
-    expect(appBody).toMatch(/\.empty-entry\s*\{[^}]*border-radius:\s*var\(--radius-2\)/);
+    // 卡片语言四件套：欢迎纸卡与最近卡同族（radius-3 + shadow-2）；主行动仍是控件圆角档
+    expect(emptyBody).toMatch(/\.empty-panel\s*\{[^}]*border-radius:\s*var\(--radius-3\)/);
+    expect(emptyBody).toMatch(/\.empty-panel\s*\{[^}]*box-shadow:\s*var\(--shadow-2\)/);
+    expect(emptyBody).toMatch(/\.empty-recent\s*\{[^}]*border-radius:\s*var\(--radius-3\)/);
+    expect(emptyBody).toMatch(/\.empty-recent\s*\{[^}]*box-shadow:\s*var\(--shadow-2\)/);
+    expect(emptyBody).toMatch(/\.empty-primary\s*\{[^}]*border-radius:\s*var\(--radius-2\)/);
   });
 
-  it("空态矮窗降级：max-height 断点里压词标与纵向节奏（V1 是文字词标，无印面降级）", () => {
-    const mq = /@media \(max-height: 700px\)\s*\{([\s\S]*?)\n\}/.exec(appBody)?.[1] ?? "";
+  it("空态矮窗降级：max-height 断点里压词标与纵向节奏（主行动落 36px）", () => {
+    const mq = /@media \(max-height: 700px\)\s*\{([\s\S]*?)\n\}/.exec(emptyBody)?.[1] ?? "";
     expect(mq).not.toBe("");
     expect(mq).toMatch(/\.empty-wordmark\s*\{[^}]*font-size/);
     expect(mq).toMatch(/\.empty-primary\s*\{[^}]*block-size:\s*36px/);
     // 内容高于窗口时不许被裁掉也滚不到：容器得能滚
-    expect(appBody).toMatch(/\.empty-hint\s*\{[^}]*overflow-y:\s*auto/);
+    expect(emptyBody).toMatch(/\.empty-hint\s*\{[^}]*overflow-y:\s*auto/);
   });
 
   it("X1：根级 :has() 已清零，豁免改走 html 状态类且单一入口在 ui/overlay-state.ts", () => {
