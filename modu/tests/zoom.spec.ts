@@ -109,15 +109,16 @@ describe("纸面缩放（#doc / .cm-editor 内联 zoom）", () => {
     expect(rootZoom()).toBe("");
   });
 
-  it("编辑态纸面：restorePaperZoom 把档位补投到新建的 .cm-editor（懒建后不漏）", () => {
+  it("编辑态纸面：restorePaperZoom 把档位补投到新建的 .cm-editor（懒建后不漏；fix-32 深修：走 --paper-zoom 变量，CM6 根上禁 CSS zoom）", () => {
     mount();
     setupZoom();
     inc().click(); // 110
     const cm = mountEditor(); // 模拟首次进编辑态：CM 编辑器此刻才出现
-    expect(cm.style.zoom).toBe(""); // 新建的还没有
+    expect(cm.style.getPropertyValue("--paper-zoom")).toBe(""); // 新建的还没有
+    expect(cm.style.zoom).toBe(""); // CM6 根上永不写 CSS zoom（布局/视觉坐标分叉 = 行号错位根因）
     restorePaperZoom(); // main.ts 在 onModeChange 里调的那一步
-    expect(cm.style.zoom).toBe("1.1");
-    expect(doc().style.zoom).toBe("1.1"); // 阅读态目标同批保持
+    expect(cm.style.getPropertyValue("--paper-zoom")).toBe("1.1"); // 缩放经 editorTheme fontSize calc 消费
+    expect(doc().style.zoom).toBe("1.1"); // 阅读态目标仍走 CSS zoom（纯展示安全）
   });
 
   it("clear / restore 三步（导出联动）：清空回基准，还原按持久化档位重投", () => {

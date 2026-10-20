@@ -2,8 +2,9 @@
  * 纸面缩放（2026-09-30 用户实测反馈 J2：「放大成了应用内所有都放大，
  * 应该只放大中间的纸面区域」）。
  *
- * 缩放目标 = **纸面列**：阅读态 `#doc`、编辑态 `.cm-editor`（含行号槽一起缩放保持
- * 对齐）；顶栏 / 标签栏 / 状态栏 / 大纲 / 设置面板**一律不缩放** ✓。
+ * 缩放目标 = **纸面列**：阅读态 `#doc`（CSS zoom）；编辑态 `.cm-editor`（fix-32 深修：
+ * 改写 --paper-zoom 变量、经 editorTheme 的 fontSize 缩放——CM6 根上禁 CSS zoom，
+ * 行号槽随正文同源缩放保持对齐）；顶栏 / 标签栏 / 状态栏 / 大纲 / 设置面板**一律不缩放** ✓。
  *
  * 档位 90 / 100 / 110 / 125 / 150（%），持久化在 `modu-zoom`；滚轮 / 快捷键 /
  * 百分比显示的交互语义自 2026-09-27 首版起不变。
@@ -16,9 +17,10 @@
  *
  * ⚠ 编辑器是懒建的：`.cm-editor` 首次进编辑态才出现 ⇒ main.ts 在 onModeChange
  *   里调 restorePaperZoom() 把缩放补到新目标（幂等，重复调用无害）。
- * ⚠ 导出联动：markPrintBlocks 量宽须回到基准 ⇒ main.ts onExportClick 导出前
+ *  ⚠ 导出联动：markPrintBlocks 量宽须回到基准 ⇒ main.ts onExportClick 导出前
  *   clearPaperZoom()、finally 里 restorePaperZoom()（与旧根 zoom 时代的三步同款）。
  */
+import { remeasureEditor } from "../editor/editor"; // app→editor 单向（editor 树不引 zoom.ts，无环）
 const ZOOM_KEY = "modu-zoom";
 export const ZOOM_STEPS = [90, 100, 110, 125, 150] as const;
 const ZOOM_DEFAULT = 100;
@@ -42,25 +44,22 @@ function clampStep(z: number): number {
   return best;
 }
 
-/** 纸面目标：阅读态 #doc + 编辑态 .cm-editor（缺席的跳过；两者互斥显隐，并存无害） */
-function paperTargets(): HTMLElement[] {
-  const targets: HTMLElement[] = [];
+/** 把档位写到纸面：阅读态 #doc 用 CSS zoom（纯展示，安全）；编辑态 .cm-editor 只写
+ *  --paper-zoom 变量，由 editorTheme 的 fontSize calc 消费（fix-32 深修根因修复：
+ *  CSS zoom 直接写在 CM6 根上会使 clientHeight〔布局〕与 getBoundingClientRect〔视觉〕
+ *  两套坐标按 1/k 分叉〔125% 实测 452.5/362=1.25 精确成立〕⇒ CM6 测量系统崩坏，
+ *  长文行号与内容错位〔装机 0.2.6 真机坐实：rectH 4222 = scrollH 3378×1.25〕；
+ *  fontSize 语义缩放下 CM6 正常重测，锚在 tests/editor-align.spec.ts） */
+function writePaperZoom(step: number): void {
+  const v = clampStep(step);
   const doc = document.getElementById("doc");
   if (doc instanceof HTMLElement) {
-    targets.push(doc);
+    doc.style.zoom = String(v / 100);
   }
   const cm = document.querySelector(".cm-editor");
   if (cm instanceof HTMLElement) {
-    targets.push(cm);
-  }
-  return targets;
-}
-
-/** 把档位写到纸面元素的内联 zoom（不碰 documentElement —— 那是 J2 要修掉的 ✗） */
-function writePaperZoom(step: number): void {
-  const v = clampStep(step);
-  for (const el of paperTargets()) {
-    el.style.zoom = String(v / 100);
+    cm.style.setProperty("--paper-zoom", String(v / 100));
+    remeasureEditor(); // 字号变了：行高/断行必须重测（无实例自动早退）
   }
   const el = document.getElementById("set-zoom-val");
   if (el !== null) {
@@ -77,8 +76,14 @@ export function applyPaperZoom(step: number): void {
 
 /** 清掉纸面缩放（导出前量宽回基准用；持久化档位不动，便于还原） */
 export function clearPaperZoom(): void {
-  for (const el of paperTargets()) {
-    el.style.removeProperty("zoom");
+  const doc = document.getElementById("doc");
+  if (doc instanceof HTMLElement) {
+    doc.style.removeProperty("zoom");
+  }
+  const cm = document.querySelector(".cm-editor");
+  if (cm instanceof HTMLElement) {
+    cm.style.removeProperty("--paper-zoom");
+    remeasureEditor(); // 回基准字号也要重测
   }
 }
 
