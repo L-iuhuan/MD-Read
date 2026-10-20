@@ -35,5 +35,11 @@ export default defineConfig(() => ({
   },
   test: {
     environment: "jsdom",
+    // ⚠ 门禁稳定性（2026-10-20 实测两次假红）：本机全量套件并行时 jsdom 环境创建占总时长 70%+，
+    //   而部分回归锚要 execFileSync/spawnSync 冷启动 node 子进程（extract-leveldb / scan-markers 等）
+    //   ⇒ 默认 5000ms 在机器负载高时偶发超时假红（直接导致 commit 门禁拒绝提交，与改动无关）。
+    //   这里只放宽**默认超时**，断言语义不变；个别更重的用例仍显式写 90s（live-preview / scan-markers）。
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 }));

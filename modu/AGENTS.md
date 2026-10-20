@@ -155,6 +155,9 @@
     焦点环（computed outline）/ 是否可见；判据 = **无焦点环 0 · 焦点落不可见 0 · Esc 能收浮层** ✓
     ⚠ Tab 序列里出现一次 BODY 是**浏览器正常回绕** ✓ 不是缺陷 ✗
     用法：起带 CDP 的应用后 `node modu/tests/tools/kbd-audit.mjs [--port 9222] [--steps 22]`
+  - `probe-align.mjs` —— **生产构建**（`pnpm tauri build` 后的 exe + CDP 端口）编辑态行号/内容对齐 + CSP 运行时样式探针；
+    判据：CM6 注入 `<style>` 的 sheet 非 null · 五档缩放与滚动后逐行 dy≤1px · 行号在正文左侧 · `.cm-editor` 无 CSS zoom
+    用法：`node modu/tests/tools/probe-align.mjs [--port 9222] [--out <目录>]`
   - ⚠ **门禁数值不要写进文档**（每轮都变）：一律写"跑 `pnpm run check` 看当前值"。
 
 ## 性能归因（已实测，别再走弯路）
@@ -241,6 +244,28 @@
     爆炸半径已核 ✓：只写 MoDu 自己的 ProgID 注册键 + 拉起 `ms-settings:defaultapps`，**不能指向任意 exe** ✓。
     与「渲染层只能收窄」并存的理由：写的是**本应用自述**（文件关联），不触碰受信集合/任意路径 ✓。
     若未来要改动此命令的能力面，必须先过 D 系裁决（等同改信任模型）✓
+
+## ⭐ 生产 CSP 与「运行时注入样式」（2026-10-20 装机版编辑态全乱的真根因，违者返工）
+
+- **现象**：0.2.7 装机版进编辑态后**行号列在上、右侧空的、正文在下方/左侧没有行号**，整页几何错乱；
+  而 `pnpm tauri dev` 完全正常。多轮"行号错位"修复（0.2.4~0.2.7）都在 dev 里验证，**装机版一直没修好**。
+- **根因（真机 CDP 取证）**：CM6（style-mod）在**运行时**创建 `<style>` 元素注入 baseTheme/自定义主题。
+  Tauri v2 打包时默认改写 CSP：给 `script-src` / `style-src` 注入 **nonce + 内联资源 hash**；
+  按 CSP3，指令里出现 nonce/hash 后 **`'unsafe-inline'` 被忽略** ⇒ 运行时 `<style>` 无 nonce/hash
+  ⇒ 被 `style-src-elem` 拦截。判据：**DOM 里有 style 标签但 `styleTag.sheet === null`**、
+  `document.styleSheets` 里没有它、控制台 `securitypolicyviolation`（directive=style-src-elem）。
+  ⇒ CM6 全部样式（display:flex 布局、行号槽、缩放进制）不生效 = 用户看到的"行号/内容错位"。
+- **修复**：`tauri.conf.json` → `app.security.dangerousDisableAssetCspModification: ["style-src"]`
+  （只对 style-src 关闭 Tauri 的 nonce/hash 注入，保留 `style-src 'self' 'unsafe-inline'`；
+  **script-src 仍必须交给 Tauri 收紧**，不得整体设 `true`、不得放开 script-src）。
+  锚：`tests/csp-production.spec.ts`。
+- ⭐ **一切"编辑态/渲染态样式"的真机验收必须跑生产构建（`pnpm tauri build` 后的 exe）**，
+  只跑 `tauri dev` 的结论**不可信**（CSP 只在生产注入）——本项目的行号错位就是因此白修了四轮。
+  生产 exe 的 CDP 打开方式：`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>`
+  ＋独立 `WEBVIEW2_USER_DATA_FOLDER`（见 `docs/开发状态.md` 活体验证节的隔离纪律）；
+  逐行对齐探针 `tests/tools/probe-align.mjs`（判据：可见行号与 `.cm-line` 逐行 dy≤1px，五档缩放）
+- ⚠ **同类载体先自查**：任何"运行时创建 style / 依赖 inline style 生效"的三方库（CM6、KaTeX 动态样式、
+  loading 条等）在**生产构建**里都要按上面这条验一遍；dev 绿 ≠ 装机绿。
 
 ## PDF 规则（Print Studio 尸检结论，违者返工）
 
