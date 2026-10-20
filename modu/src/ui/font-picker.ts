@@ -197,6 +197,14 @@ export function applyFontPrefs(hooks: FontPickerHooks): void {
     editor.style.setProperty("--font-reading", bodyStack);
     editor.style.setProperty("--font-mono", mono);
     remeasureEditor(); // fix-32：字体度量变了，CM6 行号/块高必须重测（无实例自动早退；hidden 时切态 reveal 链会再测）
+    /* fix-32 真根因（webfont 异步加载，0.2.5 真机定案）：CM6 首测常落在回退字体上
+       （如偏好 cjk-lxgw 霞鹜文楷），webfont 加载完成后度量改变，无重测即永久错位 ⇒
+       FontFaceSet 就绪（＝全部 webfont 加载完成）点必须再测一次。覆盖链：boot 必经
+       mountFontPicker→applyFontPrefs（启动恢复），故本链同时覆盖「启动字体加载完成」
+       与「设置里换字体」两个时点，editor.ts 初始化路径无需重复挂。
+       jsdom 无 FontFaceSet 实现：防御早退（运行时缺失不炸）。 */
+    const fonts = document.fonts;
+    if (fonts !== undefined) void fonts.ready.then(() => remeasureEditor());
   }
 }
 

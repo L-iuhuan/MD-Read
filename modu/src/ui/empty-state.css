@@ -263,13 +263,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px 8px;
+  /* 与列表项文字的水平内边距对齐：list 4 + item 8 = 12 = --size-3。
+     原 14px 让头行比条目多缩 2px，长路径右端又因省略号显得更空。 */
+  padding: 10px var(--size-3) 8px;
   font-size: .6875em;
   letter-spacing: .08em;
   color: var(--text-muted);
   border-bottom: 1px solid var(--hair);
 }
 .empty-recent-list { padding: var(--size-1); }
+/* 最近卡条目之间补 hairline：纯空白分组在 5 条列表里太弱。
+   只作用于相邻条目，首条与卡头之间仍由卡头 border-bottom 分隔。 */
+.empty-recent-list .menu-item + .menu-item {
+  border-block-start: 1px solid var(--line);
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
 
 /* ---- 快捷键脚注：键帽行（退到最底，不抢任何东西） ---- */
 .empty-foot {

@@ -706,6 +706,8 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
   max-inline-size: min(420px, calc(100vw - var(--size-6)));
   max-block-size: 56vh;
   overflow-y: auto;
+  /* des-11b：滚动条出现时左右各留同宽槽位，长路径的右缘不再比左缘少一截。 */
+  scrollbar-gutter: stable both-edges;
   padding: var(--size-1);
   background: var(--bg-surface);
   border: 1px solid var(--border);      /* 四件套之二：一圈 hairline + --shadow-2 = 可收起的浮层闭环 */
@@ -749,9 +751,19 @@ body:not(.outline-off).empty.has-workspace { --paper-shift: var(--w-outline); }
 }
 .menu-item .menu-name,
 .menu-item .menu-path {
+  display: block;
+  min-inline-size: 0;
+  inline-size: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 最近下拉：文件条目之间用 hairline 分组，取代仅靠 1px 空白的弱分隔。
+   注意只作用于文件项；底部 `.menu-sep` 与「清除最近」动作保持原有层级。 */
+#recent-menu .menu-item:not(.is-action) + .menu-item:not(.is-action) {
+  border-block-start: 1px solid var(--line);
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
 }
 .menu-item .menu-path {
   margin-block-start: 1px;

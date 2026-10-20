@@ -363,8 +363,19 @@ function wireDefaultApp(): void {
 }
 
 /** boot 时调用一次：恢复字号/行宽/字体/主题/配色并接好全部面板交互 */
+/** 设置面板底部版本脚注：构建期 define 注入；测试/未注入时显示开发版。 */
+function wireVersion(): void {
+  const el = document.getElementById("settings-version");
+  if (el === null) {
+    return;
+  }
+  const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "开发版";
+  el.textContent = `墨读 MoDu · 版本 ${version}`;
+}
+
 export function setupSettings(deps: SettingsHooks): void {
   hooks = deps;
+  wireVersion();
   wireFontSize();
   wireWidth();
   wireResetTypo(); // UX-6：恢复默认（只回字号/行宽）

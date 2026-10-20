@@ -78,6 +78,7 @@ function mountPanel(): void {
       </select>
       <input id="set-autosave" type="checkbox" />
       <button id="set-default-app" type="button">设为 .md 默认应用</button>
+      <div id="settings-version"></div>
 </div>
 <article id="doc" class="mdc"></article>
 <div id="editor-pane" hidden></div>`;
@@ -639,6 +640,18 @@ describe("面板开关", () => {
     expect(panel.hidden).toBe(false);
     document.getElementById("btn-settings")?.click();
     expect(panel.hidden).toBe(true);
+  });
+
+  it("版本脚注：渲染构建期 __APP_VERSION__（不手抄版本号）", async () => {
+    vi.stubGlobal("__APP_VERSION__", "9.9.9");
+    try {
+      await freshSettings();
+      expect(document.getElementById("settings-version")?.textContent).toBe(
+        "墨读 MoDu · 版本 9.9.9",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

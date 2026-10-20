@@ -83,6 +83,15 @@ describe("fix-32：换字体后 CM6 重测接线", () => {
     // （含启动恢复与 setFontPref），调用点在此即覆盖全部换字体路径；jsdom 无真实字体
     // 度量与加载时序，运行时行为归真机 CDP 验证——故静态锚。
   });
+
+  it("font-picker 含 document.fonts.ready 重测链（fix-32 真根因：webfont 异步加载后度量改变）", () => {
+    const src = readFileSync("src/ui/font-picker.ts", "utf8");
+    expect(src).toContain("document.fonts");
+    expect(src).toMatch(/fonts\.ready\.then\(\(\)\s*=>\s*remeasureEditor\(\)\)/);
+    // 依据：CM6 首测常落在回退字体上（webfont 偏好如霞鹜文楷），加载完成后必须重测，
+    // 否则行号永久错位（0.2.5 真机定案）；jsdom 无 FontFaceSet 实现与真实加载时序，
+    // 运行时验证归真机 CDP——故静态锚；覆盖链（boot 必经 applyFontPrefs）见 font-picker.ts 注释。
+  });
 });
 
 describe("tokens.css：--font-mono 默认链治理（des-8）", () => {
