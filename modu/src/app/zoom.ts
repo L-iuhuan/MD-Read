@@ -2,9 +2,10 @@
  * 纸面缩放（2026-09-30 用户实测反馈 J2：「放大成了应用内所有都放大，
  * 应该只放大中间的纸面区域」）。
  *
- * 缩放目标 = **纸面列**：阅读态 `#doc`（CSS zoom）；编辑态 `.cm-editor`（fix-32 深修：
- * 改写 --paper-zoom 变量、经 editorTheme 的 fontSize 缩放——CM6 根上禁 CSS zoom，
- * 行号槽随正文同源缩放保持对齐）；顶栏 / 标签栏 / 状态栏 / 大纲 / 设置面板**一律不缩放** ✓。
+ * 缩放目标 = **纸面列**：阅读态 `#doc`（CSS zoom）；编辑态 `.cm-editor`（fix-32 深修 +
+ * 2026-10-20 纸面缩放口径：改写 --paper-zoom 变量，经 editorTheme 把**字号、栏宽、内边距、
+ * 行号锚点**按同一倍率缩放（= 纸面整体等比缩放，与阅读态 #doc 的 CSS zoom 视觉效果等价）；
+ * 顶栏 / 标签栏 / 状态栏 / 大纲 / 设置面板**一律不缩放** ✓。
  *
  * 档位 90 / 100 / 110 / 125 / 150（%），持久化在 `modu-zoom`；滚轮 / 快捷键 /
  * 百分比显示的交互语义自 2026-09-27 首版起不变。
@@ -45,11 +46,12 @@ function clampStep(z: number): number {
 }
 
 /** 把档位写到纸面：阅读态 #doc 用 CSS zoom（纯展示，安全）；编辑态 .cm-editor 只写
- *  --paper-zoom 变量，由 editorTheme 的 fontSize calc 消费（fix-32 深修根因修复：
- *  CSS zoom 直接写在 CM6 根上会使 clientHeight〔布局〕与 getBoundingClientRect〔视觉〕
- *  两套坐标按 1/k 分叉〔125% 实测 452.5/362=1.25 精确成立〕⇒ CM6 测量系统崩坏，
- *  长文行号与内容错位〔装机 0.2.6 真机坐实：rectH 4222 = scrollH 3378×1.25〕；
- *  fontSize 语义缩放下 CM6 正常重测，锚在 tests/editor-align.spec.ts） */
+ *  --paper-zoom 变量，由 editorTheme 消费为「字号 + 栏宽 + 内边距 + 行号锚点」同倍率缩放
+ *  （纸面整体等比缩放，与阅读态视觉等价）。根因见下：CSS zoom 直接写在 CM6 根上会使
+ *  clientHeight〔布局〕与 getBoundingClientRect〔视觉〕两套坐标按 1/k 分叉〔125% 实测
+ *  452.5/362=1.25 精确成立〕⇒ CM6 测量系统崩坏；改为语义缩放后 CM6 正常重测，
+ *  锚在 tests/editor-align.spec.ts；2026-10-20 用户裁定：**不能只缩字号**（否则纸面宽度
+ *  不变、折行变密，与阅读态缩放不等价），栏宽/内边距必须同倍率。 */
 function writePaperZoom(step: number): void {
   const v = clampStep(step);
   const doc = document.getElementById("doc");

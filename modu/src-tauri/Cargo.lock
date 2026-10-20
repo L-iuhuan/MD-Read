@@ -2107,7 +2107,7 @@ dependencies = [
 
 [[package]]
 name = "modu"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "chardetng",
  "encoding_rs",

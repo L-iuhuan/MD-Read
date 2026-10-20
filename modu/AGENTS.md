@@ -267,6 +267,23 @@
 - ⚠ **同类载体先自查**：任何"运行时创建 style / 依赖 inline style 生效"的三方库（CM6、KaTeX 动态样式、
   loading 条等）在**生产构建**里都要按上面这条验一遍；dev 绿 ≠ 装机绿。
 
+## ⭐ 编辑态缩放与图标视觉语言（2026-10-20 用户裁定，违者返工）
+
+- **编辑态缩放的语义 = 纸面整体等比缩放**（不是只缩字号）：`--paper-zoom` 必须同时乘
+  `.cm-scroller` 字号、`.cm-content` 的 maxWidth（= measure + 2×pad）、内容内边距（上/左/底 25vh）、
+  以及 `.cm-gutters-before` 的行号锚点公式 —— 与阅读态 `#doc` 的 CSS `zoom` **视觉等价**。
+  ⚠ **只缩字号已被用户明确否决**（纸宽不变、折行变密，不叫界面/纸面缩放）。
+  ⚠ CM6 根上仍**禁止** CSS zoom（clientHeight 与 rect 坐标按 1/k 分叉 ⇒ 测量崩坏）。
+  真机判据（`tests/tools/probe-align.mjs`）：同档位编辑态 `.cm-content` 纸宽/左位 vs 阅读态 `#doc`
+  纸宽/左位 **相差 ≤1.5px**；静态契约锚在 `tests/editor-align.spec.ts`。
+- **图标视觉语言只有一个**：已批准的 **纸页 + M↓ + 朱砂书签**（`icons-src/f1-app.svg` / `f1-file.svg`）。
+  ⚠ 当年实验的"小尺寸变体"（平涂粗框大 M，`f1-app-small.svg` 等）**是用户此前已否决的方向，
+  已删除，不要再加回来**；"糊"的修复**只允许** ① 补齐 Windows 实际请求的尺寸档（16/20/24/32/40/48/64/96/128/256）；
+  ② 每档按目标像素**直接光栅化**（不缩小位图）。用换一套画法来"解决清晰度"= 返工。
+  生成器 `modu/tests/tools/build-icons.py`（口径见 `icons-src/README.md`）。
+- ⚠ 给用户交付前**先确认"这是不是之前被否决过的方案"**：不要因为文件是 WIP/未跟踪就默认它代表用户意图；
+  用户明确说过的裁决优先于任何未入库草稿。
+
 ## PDF 规则（Print Studio 尸检结论，违者返工）
 
 - 禁 `@page` margin-box（`@bottom-center`/`counter(page)`）——**历史上 Chromium 未实现，131+ 已支持；但本项目经评审决定不使用**（理由：保持打印契约的单一覆盖层，并与 WebView2 `PrintSettings` 的行为一致）。页码走 CDP `Page.printToPDF` 的 `footerTemplate`（见 print.rs）

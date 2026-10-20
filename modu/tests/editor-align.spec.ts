@@ -8,14 +8,14 @@
  *
  * 修复契约（本锚守护）：
  *  ① CM6 根上永不出现 CSS zoom 声明（注入样式断言）；
- *  ② 编辑态缩放走 fontSize 语义：.cm-scroller 与 .cm-gutters 的 font-size 同源
- *     消费 `calc(var(--fs-body) * var(--paper-zoom, 1))`——行号族与正文度量同源
- *     （gutters 是 scroller 兄弟，不继承其字号，必须显式同值）；
+ *  ② 编辑态缩放 = 纸面整体语义缩放（2026-10-20 用户裁定）：font-size、内容盒 maxWidth、
+ *     内边距、行号锚点全部消费 `calc(… * var(--paper-zoom, 1))`——与阅读态 `#doc` 的
+ *     CSS zoom 视觉等价；**只缩字号被否决**（纸面宽度不变、折行变密，不是"界面缩放"）；
  *  ③ zoom.ts 编辑态目标写 `--paper-zoom` 变量且写后调 remeasureEditor（源静态锚）。
  *
  * 依据：jsdom 无真实布局/字体加载时序，「逐行 dy≤1px」的对齐级验证只能真机 CDP
- * （.verify/dev/probe-align.mjs，四位置×逐行，主人新标准）；jsdom 锚定的是契约形状。
- * 写侧另有 tests/zoom.spec.ts（fix-32 同批更新为变量断言）。
+ * （入库探针 `tests/tools/probe-align.mjs`，生产构建 + 五档缩放 + 阅读/编辑纸宽等价断言）；
+ * jsdom 锚定的是契约形状。写侧另有 tests/zoom.spec.ts（fix-32 同批更新为变量断言）。
  */
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -58,6 +58,21 @@ describe("fix-32 深修：CM6 根上禁 CSS zoom", () => {
     const gutters = [...injectedCss().matchAll(/\.cm-gutters\{([^}]*)\}/g)].map((m) => m[1]);
     expect(scroller.some((body) => body.includes(want))).toBe(true);
     expect(gutters.some((body) => body.includes(want))).toBe(true); // 行号随缩放，缺此条即错位回归
+  });
+
+  it("纸面缩放：栏宽 / 内边距 / 行号锚点都随 --paper-zoom 同倍率（只缩字号 = 用户已否决）", () => {
+    handle = createEditor(container, { onDocChanged: () => {} });
+    const css = injectedCss();
+    // 栏宽：内容盒 = (measure + 2*pad) × k（与阅读态 #doc 的 CSS zoom 视觉等价）
+    expect(css).toContain("max-width:calc((var(--measure)+2*var(--pad-page))*var(--paper-zoom,1))");
+    // 内边距：上/左 + 底部 25vh 都乘 k（纸面随缩放整体变大/变小）
+    expect(css).toContain(
+      "padding:calc(var(--size-7)*var(--paper-zoom,1))calc(var(--pad-page)*var(--paper-zoom,1))calc(25vh*var(--paper-zoom,1))",
+    );
+    // 行号锚点：贴正文左缘的公式同样乘 k（否则缩放后行号列与正文脱位）
+    expect(css).toContain(
+      "left:max(calc(var(--pad-page)*var(--paper-zoom,1)),calc((100%-var(--measure)*var(--paper-zoom,1))/2))",
+    );
   });
 
   it("设 --paper-zoom 后 remeasureEditor 可安全调用（变量经 calc 消费，jsdom 不布局只验不炸）", () => {

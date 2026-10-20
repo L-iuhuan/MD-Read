@@ -6,16 +6,20 @@
   * 旧 icon.ico 只有 7 档、file-icon.ico 只有 5 档，缺 20 / 40（125% DPI 下
     标题栏 16 逻辑 -> 20 物理、任务栏 32 逻辑 -> 40 物理），Windows 只能拿
     邻近尺寸缩放，于是糊；
-  * 旧小尺寸全部由细节版 SVG（渐变纸页 / 折角 / 柔和投影）缩小，16-32px 发灰。
-修复口径：≤48px 用 icons-src 下的 small 变体（平涂粗框大 M、无渐变无阴影），
->48px 用细节版；10 档尺寸直接按目标像素光栅化（不缩放）。
+  * 旧小尺寸是位图缩放产物（不是按目标像素重新光栅化），边缘发虚。
+
+修复口径（2026-10-20 用户裁定，勿再改视觉语言）：
+  * **只用已批准的细节版 f1-app.svg / f1-file.svg**，10 档尺寸逐档按目标像素
+    直接光栅化（不缩放位图）——**不引入任何改变视觉语言的小尺寸变体**；
+  * 当年 WIP 的 `f1-app-small.svg / f1-file-small.svg`（平涂粗框大 M）是
+    **用户此前已否决的方向**，已从仓库删除，不要再加回来。
 
 产物：
   modu/src-tauri/icons/icon.ico              app 图标，16/20/24/32/40/48/64/96/128/256
   modu/src-tauri/icons/file-icon.ico         .md 文件图标，同上十档
   modu/src-tauri/icons/{32x32,64x64,128x128,128x128@2x,icon}.png
   modu/src-tauri/icons/{Square*,StoreLogo}.png  （细节版，文件名/尺寸不变）
-  .verify/icon-final/  验证证据（报告 / contact-sheet / A/B 对比图，gitignore）
+  .verify/icon-final/  验证证据（报告 / contact-sheet / 前后对比图，gitignore）
   icons/icon.icns 不动（仅 macOS 用）。
 
 用法（仓库根目录）：
@@ -50,20 +54,17 @@ ICON_DIR = ROOT / "modu" / "src-tauri" / "icons"
 EVID_DIR = ROOT / ".verify" / "icon-final"
 BASELINE_DIR = EVID_DIR / "baseline"
 
-APP_SMALL = SRC_DIR / "f1-app-small.svg"
 APP_DETAIL = SRC_DIR / "f1-app.svg"
-FILE_SMALL = SRC_DIR / "f1-file-small.svg"
 FILE_DETAIL = SRC_DIR / "f1-file.svg"
 
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
 BMP_MAX = 128                 # ≤128 用 32-bit BMP 条目（兼容性最好），256 用 PNG 条目
-SMALL_MAX = 48                # A/B 结论：≤48 用 small 变体，>48 用细节版（见 README）
 PNG_ENTRY_MIN = 256
 # 256px PNG 条目把 RGB 每通道四舍五入到 5 的倍数（最大误差 2/255，肉眼不可见），
-# 换取 ICO ≤150KiB：10 档里 9 档 BMP 已占 148,568B，无损 256 PNG 约 6.0KB 放不下。
-# 想逐字节等于 SVG 渲染可改回 1（icon.ico 会变成约 150.9KiB，超出目标）。
+# 控制 ICO 体积；想逐字节等于 SVG 渲染可改回 1。
 PNG_ENTRY_RGB_STEP = 5
-ICO_BUDGET_BYTES = 150 * 1024
+# 体积软预算：9 个 BMP 条目固定约 148.6KB，256 PNG 另计；超过 200KiB 才报 FAIL。
+ICO_BUDGET_BYTES = 200 * 1024
 
 # Tauri bundle 用 PNG：文件名与尺寸保持原样，来源统一为细节版
 BUNDLE_PNGS = (
@@ -100,8 +101,12 @@ def render_svg(svg_path: Path, size: int) -> Image.Image:
     return im
 
 
-def source_for(svg_pair: dict[str, Path], size: int) -> Path:
-    return svg_pair["small"] if size <= SMALL_MAX else svg_pair["detail"]
+def source_for(svg_path: Path, size: int) -> Path:
+    """单一来源：已批准的细节版 SVG。10 档各自按目标像素光栅化（不缩放位图）。
+
+    ⚠ 2026-10-20 用户裁定：不要再引入改变视觉语言的小尺寸变体（平涂粗框版曾被否决）。"""
+    del size  # 尺寸只影响光栅化，不改变来源；保留形参让 build_ico 调用侧不变
+    return svg_path
 
 
 # ---------------------------------------------------------------- ICO 编码
@@ -196,12 +201,12 @@ def write_ico(path: Path, items: list[tuple[int, bytes]]) -> int:
     return path.stat().st_size
 
 
-def build_ico(path: Path, svg_pair: dict[str, Path]) -> list[tuple[int, int, str]]:
-    """生成十档 ICO；返回 [(size, bytes, format)]。"""
+def build_ico(path: Path, svg: Path) -> list[tuple[int, int, str]]:
+    """生成十档 ICO（全部来自同一个已批准的细节版 SVG）；返回 [(size, bytes, format)]。"""
     items: list[tuple[int, bytes]] = []
     report: list[tuple[int, int, str]] = []
     for size in ICO_SIZES:
-        im = render_svg(source_for(svg_pair, size), size)
+        im = render_svg(source_for(svg, size), size)
         if size >= PNG_ENTRY_MIN:
             payload = png_entry(im)
             kind = "PNG"
@@ -341,9 +346,11 @@ def _frames_equal(frame: Image.Image, ref: Image.Image, rgb_tol: int) -> tuple[b
 # ---------------------------------------------------------------- 16px 可辨性
 
 def check_legibility(im: Image.Image, tag: str) -> tuple[list[str], dict]:
-    """16px 可辨性判据：外框可见 + 两根竖笔 + 中缝（M 形）+ 纸面留白。
+    """16px 可辨性判据（针对已批准的细节版纸页稿，2026-10-20 校准）。
 
-    判据量的是结构，不是单一代理指标：外框行、左右竖笔列、每行墨迹段数。
+    结构判据：M 的左右两根竖笔（各≥6 像素高）+ 中缝（存在 ≥3 段墨迹的行）
+    + 亮纸面留白足够 —— 不是单一代理指标，也不要求"粗外框"（那是已否决变体的特征）。
+    实测基线：app ink=30 / file ink=34；两竖笔列 x=4 / x=11（各 8 像素）；max_runs=4。
     """
     w, h = im.size
     if (w, h) != (16, 16):
@@ -360,16 +367,13 @@ def check_legibility(im: Image.Image, tag: str) -> tuple[list[str], dict]:
              if px[x, y][3] > 200 and lum(x, y) > 200]
     ink_set = set(ink)
     col_counts = Counter(x for x, _ in ink)
-    row_counts = Counter(y for _, y in ink)
 
-    # 外框：顶部/底部各有一行横向墨迹，左右各有一列纵向墨迹
-    frame_ok = (row_counts.get(1, 0) >= 8 and row_counts.get(14, 0) >= 8
-                and col_counts.get(1, 0) >= 8 and col_counts.get(14, 0) >= 8)
-    # M 两竖笔：左右各至少一列连续墨迹 ≥10 像素（外框列 1/14 排除后仍成立）
-    left_stems = [x for x in range(2, 7) if col_counts.get(x, 0) >= 10]
-    right_stems = [x for x in range(9, 14) if col_counts.get(x, 0) >= 10]
-    stems_ok = bool(left_stems) and bool(right_stems) and (min(right_stems) - max(left_stems) >= 3)
-    # 中缝/斜笔：至少一行出现 ≥4 段墨迹（左框|左竖|中斜|右竖|右框）
+    # M 两竖笔：左半 x∈[3,7]、右半 x∈[8,12] 各至少要有一列高≥6 的深墨
+    left_stems = [x for x in range(3, 8) if col_counts.get(x, 0) >= 6]
+    right_stems = [x for x in range(8, 13) if col_counts.get(x, 0) >= 6]
+    stems_ok = (bool(left_stems) and bool(right_stems)
+                and min(right_stems) - max(left_stems) >= 4)
+    # 中缝/斜笔：至少一行出现 ≥3 段墨迹（左竖 | 斜笔/中缝 | 右竖）
     max_runs = 0
     for y in range(h):
         runs, prev = 0, -9
@@ -379,20 +383,17 @@ def check_legibility(im: Image.Image, tag: str) -> tuple[list[str], dict]:
                     runs += 1
                 prev = x
         max_runs = max(max_runs, runs)
-    # 纸面留白：亮像素足够多，否则就是一块黑块
     metrics = dict(ink=len(ink), paper=len(paper), max_runs=max_runs,
                    left_stems=left_stems, right_stems=right_stems)
     errs = []
-    if len(ink) < 60 or len(ink) > 170:
-        errs.append(f"{tag}: 墨迹像素 {len(ink)} 超出 [60,170]")
-    if len(paper) < 40:
-        errs.append(f"{tag}: 纸面留白像素 {len(paper)} < 40")
-    if not frame_ok:
-        errs.append(f"{tag}: 外框不可见")
+    if len(ink) < 18 or len(ink) > 90:
+        errs.append(f"{tag}: 墨迹像素 {len(ink)} 超出 [18,90]")
+    if len(paper) < 60:
+        errs.append(f"{tag}: 纸面留白像素 {len(paper)} < 60")
     if not stems_ok:
         errs.append(f"{tag}: M 两竖笔不可辨 {metrics}")
-    if max_runs < 4:
-        errs.append(f"{tag}: 墨迹结构段数 {max_runs} < 4（M 中缝丢失）")
+    if max_runs < 3:
+        errs.append(f"{tag}: 墨迹结构段数 {max_runs} < 3（M 中缝丢失）")
     return errs, metrics
 
 
@@ -523,43 +524,26 @@ def _tile_row(entries: list[tuple[str, Image.Image, Image.Image]], zoom: int,
 
 
 def make_ab_evidence(new_frames: dict[str, dict[int, Image.Image]],
-                     old_frames: dict[str, dict[int, Image.Image]]) -> tuple[Path, Path]:
-    """证据 A：40/48 取舍 A/B（旧 ICO / small / detail）；证据 B：前后对照。"""
-    srcs = {"app": (APP_SMALL, APP_DETAIL), "file": (FILE_SMALL, FILE_DETAIL)}
-    zoom = 10
-    rows_a = []
-    for size in (40, 48):
-        for bg, bg_name in ((LIGHT_BG, "light"), (DARK_BG, "dark")):
-            entries = []
-            for tag in ("app", "file"):
-                small_svg, detail_svg = srcs[tag]
-                old = _composite(_old_effective_size(old_frames[tag], size), bg)
-                small = _composite(render_svg(small_svg, size), bg)
-                detail = _composite(render_svg(detail_svg, size), bg)
-                entries.append((f"{tag} old ICO (scaled)", old, _nearest(old, zoom)))
-                entries.append((f"{tag} small SVG", small, _nearest(small, zoom)))
-                entries.append((f"{tag} detail SVG", detail, _nearest(detail, zoom)))
-            rows_a.append(_tile_row(entries, zoom, bg,
-                                    f"A/B @{size}px ({bg_name} bg) — old ICO effective vs small vs detail"))
-    out_a = EVID_DIR / "ab" / "ab-40-48.png"
-    _stack(rows_a).save(out_a)
+                     old_frames: dict[str, dict[int, Image.Image]]) -> Path:
+    """证据：改造前后对照（旧 ICO 被 Windows 按邻近档缩放 vs 新多档精确帧）。
 
-    zoom_b = 4
-    rows_b = []
+    ⚠ 2026-10-20 用户裁定后已删除"small / detail A/B"证据——视觉语言不再有二选一。"""
+    zoom = 4
+    rows = []
     for tag in ("app", "file"):
         for bg, bg_name in ((LIGHT_BG, "light"), (DARK_BG, "dark")):
             entries = []
             for size in CONTACT_SIZES:
                 old = _composite(_old_effective_size(old_frames[tag], size), bg)
                 new = _composite(new_frames[tag][size], bg)
-                entries.append((f"{size} old", old, _nearest(old, zoom_b)))
-                entries.append((f"{size} new", new, _nearest(new, zoom_b)))
-            rows_b.append(_tile_row(entries, zoom_b, bg,
-                                    f"{tag} before/after ({bg_name} bg): old ICO scaled by nearest-size"
-                                    f" vs new exact frame — x{zoom_b}"))
-    out_b = EVID_DIR / "ab" / "before-after.png"
-    _stack(rows_b).save(out_b)
-    return out_a, out_b
+                entries.append((f"{size} old", old, _nearest(old, zoom)))
+                entries.append((f"{size} new", new, _nearest(new, zoom)))
+            rows.append(_tile_row(entries, zoom, bg,
+                                  f"{tag} before/after ({bg_name} bg): old ICO scaled by nearest-size"
+                                  f" vs new exact frame — x{zoom}"))
+    out = EVID_DIR / "ab" / "before-after.png"
+    _stack(rows).save(out)
+    return out
 
 
 # ---------------------------------------------------------------- 报告
@@ -604,7 +588,7 @@ def verify(new_frames, failures: list[str], lines: list[str], data: dict) -> Non
         if pil_sizes != expect:
             failures.append(f"{fname}: PIL 帧集合 {pil_sizes} != {expect}")
         lines.append(f"   PIL 帧：{len(pil_sizes)}/{len(ICO_SIZES)} 可打开 {pil_sizes}")
-        pairs = {"app": (APP_SMALL, APP_DETAIL), "file": (FILE_SMALL, FILE_DETAIL)}[tag]
+        src_svg = {"app": APP_DETAIL, "file": FILE_DETAIL}[tag]
         for size in ICO_SIZES:
             frame = pil.ico.getimage((size, size)).convert("RGBA")
             if frame.size != (size, size):
@@ -616,22 +600,20 @@ def verify(new_frames, failures: list[str], lines: list[str], data: dict) -> Non
             cov = _coverage(frame)
             if not 0.25 <= cov <= 0.99:
                 failures.append(f"{fname}@{size}: 不透明覆盖率 {cov:.2f} 异常")
-            svg = pairs[0] if size <= SMALL_MAX else pairs[1]
-            ref = render_svg(svg, size)
+            ref = render_svg(src_svg, size)
             tol = (PNG_ENTRY_RGB_STEP // 2) if size >= PNG_ENTRY_MIN else 0
             ok, max_rgb, max_a = _frames_equal(frame, ref, tol)
             if not ok:
                 failures.append(f"{fname}@{size}: 帧与源 SVG 不一致"
                                 f"（RGB max diff={max_rgb} tol={tol}, alpha max diff={max_a}）")
             lines.append(f"   {size:>3}px frame: corners=transparent coverage={cov:.2f} "
-                         f"src={('small' if size <= SMALL_MAX else 'detail')} "
                          f"rgb_max_diff={max_rgb} alpha_max_diff={max_a} OK")
         if tag == "app":
             budget_ok = path.stat().st_size <= ICO_BUDGET_BYTES
-            lines.append(f"   体积：{path.stat().st_size} B ≤ 150KiB({ICO_BUDGET_BYTES} B) ? "
+            lines.append(f"   体积：{path.stat().st_size} B ≤ 200KiB({ICO_BUDGET_BYTES} B) ? "
                          f"{'PASS' if budget_ok else 'FAIL'}")
             if not budget_ok:
-                failures.append(f"{fname}: {path.stat().st_size} B 超出 150KiB 预算")
+                failures.append(f"{fname}: {path.stat().st_size} B 超出 200KiB 预算")
         data[fname] = dict(bytes=path.stat().st_size, sha256=sha256(path),
                            entries=[dict(size=e["size"], format=e["format"],
                                          bytes=e["bytes"], offset=e["offset"]) for e in entries])
@@ -669,11 +651,10 @@ def verify(new_frames, failures: list[str], lines: list[str], data: dict) -> Non
 
     # 证据图
     sheet = make_contact_sheet(new_frames)
-    ab_a, ab_b = make_ab_evidence(new_frames, old_frames)
+    ab = make_ab_evidence(new_frames, old_frames)
     lines.append("== 证据图 ==")
     lines.append(f"   contact-sheet: {sheet.relative_to(ROOT)}")
-    lines.append(f"   40/48 取舍 A/B: {ab_a.relative_to(ROOT)}")
-    lines.append(f"   前后对照: {ab_b.relative_to(ROOT)}")
+    lines.append(f"   前后对照: {ab.relative_to(ROOT)}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -697,15 +678,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.check:
         print("[build] 生成 icon.ico ...")
-        data["app_ico_entries"] = build_ico(ICON_DIR / "icon.ico",
-                                            {"small": APP_SMALL, "detail": APP_DETAIL})
+        data["app_ico_entries"] = build_ico(ICON_DIR / "icon.ico", APP_DETAIL)
         print("[build] 生成 file-icon.ico ...")
-        data["file_ico_entries"] = build_ico(ICON_DIR / "file-icon.ico",
-                                             {"small": FILE_SMALL, "detail": FILE_DETAIL})
+        data["file_ico_entries"] = build_ico(ICON_DIR / "file-icon.ico", FILE_DETAIL)
         print("[build] 生成 bundle PNG ...")
         data["built_bundle_png"] = build_bundle_pngs()
         lines.append(f"== 生成 ==")
-        lines.append(f"   small 变体用于 ≤{SMALL_MAX}px，细节版用于 >{SMALL_MAX}px")
+        lines.append(f"   10 档全部来自已批准的细节版 SVG，逐档按目标像素光栅化（不做位图缩放）")
         for tag, fname in (("app", "icon.ico"), ("file", "file-icon.ico")):
             rows = data["app_ico_entries" if tag == "app" else "file_ico_entries"]
             lines.append(f"   {fname}: " + " ".join(

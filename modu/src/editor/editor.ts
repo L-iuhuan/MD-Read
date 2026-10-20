@@ -33,16 +33,15 @@ export { PHRASES_ZH };
  *  纸色列（--measure + 2×--pad-page）居中、两侧露画布色，切态纸缘不横跳；行号槽贴正文左缘。 */
 const editorTheme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "var(--bg-canvas)", color: "var(--text)" },
-  /* des-8（2026-10-13）编辑态字体治理：正文行走阅读字体栈（--font-sans，与阅读态 .mdc 同源）
-     ——LP 实时渲染下源码行不再与渲染行「等宽/阅读」两套字体交替；等宽只留给代码场景
-     （行号槽见下、行内码 .cm-lp-code 在 live-preview.ts）。围栏代码内容 v1 随正文（取舍见报告）。
-     fix-32 深修：fontSize 乘 --paper-zoom（zoom.ts 编辑态缩放变量）——CM6 根上禁 CSS zoom，字号语义缩放可正确重测。 */
+  /* des-8（2026-10-13）：正文走阅读字体栈，等宽只留给代码场景（行号槽见下、行内码在 live-preview.ts）。
+     2026-10-20 缩放口径（用户裁定）：--paper-zoom 同时缩放字号/栏宽/内边距/行号锚点 = 纸面整体等比；
+     ⚠ CM6 根上仍禁 CSS zoom（clientHeight 与 getBoundingClientRect 两套坐标按 1/k 分叉 ⇒ 测量崩坏）。 */
   ".cm-scroller": { fontFamily: "var(--font-reading, var(--font-sans))", fontSize: "calc(var(--fs-body) * var(--paper-zoom, 1))", lineHeight: "1.7" },
-  /* 纸面列：与 #doc 同限宽/同内边距/同底色；maxWidth 含 --pad-page ⇒ 文字宽 = --measure */
+  /* 纸面列：与 #doc 同限宽/同内边距/同底色，三者随 --paper-zoom 同步缩放（只缩字号 ≠ 纸面缩放） */
   ".cm-content": {
-    maxWidth: "calc(var(--measure) + 2 * var(--pad-page))",
+    maxWidth: "calc((var(--measure) + 2 * var(--pad-page)) * var(--paper-zoom, 1))",
     marginInline: "auto",
-    padding: "var(--size-7) var(--pad-page) 25vh",
+    padding: "calc(var(--size-7) * var(--paper-zoom, 1)) calc(var(--pad-page) * var(--paper-zoom, 1)) calc(25vh * var(--paper-zoom, 1))",
     background: "var(--bg-app)",
     caretColor: "var(--text)",
   },
@@ -51,10 +50,10 @@ const editorTheme = EditorView.theme({
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
     backgroundColor: "var(--bg-active)",
   },
-  /* 行号槽：容器宽 0 + row-reverse ⇒ 行号以正文左缘为锚向左溢出；锚点与正文居中同源 (100% − --measure)/2，窄窗退 --pad-page 不进负区（1px 分界线用负外边距抵消流宽）。
-     fix-32（0.2.4 行号错位回归）：行号族字体与 .cm-scroller 同源＋同显式 lineHeight＋同 fontSize（含 --paper-zoom 缩放）——gutters 是 scroller 兄弟不继承其字体/行高/字号，度量不一致即持续错位；继承属性挂族根即覆盖 lineNumbers/gutterElement 全族；旧「回等宽」契约作废（锚在 editor-font.spec），数字对齐改 tabular-nums */
+  /* 行号槽：容器宽 0 + row-reverse ⇒ 行号以正文左缘为锚向左溢出；窄窗退左内边距不进负区（1px 分界线用负外边距抵消）。
+     left 公式同样乘 --paper-zoom（缩放时行号列与正文左缘不脱位）；行号族字体/行高/字号必须与 .cm-scroller 同源（fix-32）。 */
   ".cm-gutters": { width: 0, flexDirection: "row-reverse", backgroundColor: "transparent", color: "var(--text-muted)", border: "none", borderInlineEnd: "1px solid var(--border-chrome)", marginInlineEnd: "-1px", fontFamily: "var(--font-reading, var(--font-sans))", fontSize: "calc(var(--fs-body) * var(--paper-zoom, 1))", lineHeight: "1.7", fontVariantNumeric: "tabular-nums" },
-  ".cm-gutters-before": { left: "max(var(--pad-page), calc((100% - var(--measure)) / 2))" },
+  ".cm-gutters-before": { left: "max(calc(var(--pad-page) * var(--paper-zoom, 1)), calc((100% - var(--measure) * var(--paper-zoom, 1)) / 2))" },
   ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--text) 6%, transparent)" },
   ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--text)" },
 });

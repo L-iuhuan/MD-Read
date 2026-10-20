@@ -9,14 +9,16 @@
  * 前置：应用已用 CDP 端口启动（生产 exe）：
  *   $env:WEBVIEW2_USER_DATA_FOLDER='<隔离目录>'; $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9222'
  *   启动 modu.exe <绝对路径.md>   →   再跑本探针
- * 用法：node tests/tools/probe-align.mjs [--port 9222] [--out .verify/align/run-<ts>] [--expect-version 0.2.8]
+ * 用法：node tests/tools/probe-align.mjs [--port 9222] [--out .verify/align/run-<ts>] [--expect-version 0.2.9]
  *
  * 判据（数值）：
  *  1) style-src 含 'unsafe-inline' 且不含 nonce/hash；CM6 注入的 <style> 有 sheet（sheetNull=false）；
  *  2) .cm-scroller display=flex、字号 = 16px × 缩放档、.cm-gutters 字号同源；
  *  3) 编辑态可见行号与 `.cm-line` 逐行 top 差 dy ≤ 1px；行号在正文左侧（水平间距 0~40px）；
  *  4) 90/100/110/125/150 五档缩放、长文滚动后、阅读/编辑二次进出：dy 仍 ≤1px；
- *  5) .cm-editor 上没有 CSS zoom（防 0.2.7 之前的根因复发）。
+ *  5) .cm-editor 上没有 CSS zoom（防 0.2.7 之前的根因复发）；
+ *  6) **纸面整体缩放**（2026-10-20 用户裁定）：同档位下编辑态 `.cm-content` 的纸宽/左位与阅读态
+ *     `#doc` 的纸宽/左位相差 ≤1.5px（只缩字号会让编辑态纸宽不随档位变 ⇒ 直接判 FAIL）。
  * 输出：<out>/report.json + 各状态截图；有 FAIL 时退出码 1。
  */
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -68,6 +70,36 @@ async function gotoZoom(target) {
     await new Promise((r) => setTimeout(r, 350));
   }
   return uiZoom();
+}
+const isEditing = async () => (await client.evaluate("document.getElementById('editor-pane')?.hidden === false")) === true;
+async function setMode(editing) {
+  if ((await isEditing()) !== editing) {
+    await client.evaluate("document.getElementById('btn-edit').click(); true");
+    await raf();
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+/** 当前态纸面几何：阅读态量 #doc 在 #content 内，编辑态量 .cm-content 在 .cm-scroller 内。 */
+async function paperMetrics() {
+  return client.evaluate(`(() => {
+    const editing = document.getElementById('editor-pane')?.hidden === false;
+    if (editing) {
+      const sc = document.querySelector('.cm-scroller');
+      const c = document.querySelector('.cm-content');
+      const r = c.getBoundingClientRect();
+      const rs = sc.getBoundingClientRect();
+      const ed = document.querySelector('.cm-editor');
+      return { mode: 'edit', w: +r.width.toFixed(2), x: +(r.x - rs.x).toFixed(2),
+               font: getComputedStyle(sc).fontSize,
+               paperZoom: ed === null ? '' : (ed.style.getPropertyValue('--paper-zoom') || '').trim() };
+    }
+    const doc = document.getElementById('doc');
+    const content = document.getElementById('content');
+    const r = doc.getBoundingClientRect();
+    const rc = content.getBoundingClientRect();
+    return { mode: 'read', w: +r.width.toFixed(2), x: +(r.x - rc.x).toFixed(2),
+             font: getComputedStyle(doc).fontSize, paperZoom: doc.style.zoom };
+  })()`);
 }
 
 /* ---------- 1) CSP / 样式注入 ---------- */
@@ -188,12 +220,34 @@ await raf(); await new Promise((r) => setTimeout(r, 500));
 check("edit@reenter", 125, await measure(125));
 await shot("edit-reenter");
 
+/* ---------- 4) 阅读态 vs 编辑态「纸面整体缩放」等价性（2026-10-20 用户裁定：不能只缩字号） ---------- */
+report.paper = [];
+for (const z of [90, 100, 110, 125, 150]) {
+  await setMode(true);
+  const ui = await gotoZoom(z);
+  await new Promise((r) => setTimeout(r, 400));
+  const editM = await paperMetrics();
+  await setMode(false);
+  const readM = await paperMetrics();
+  await setMode(true);
+  const diffW = +(editM.w - readM.w).toFixed(2);
+  const diffX = +(editM.x - readM.x).toFixed(2);
+  report.paper.push({ zoom: ui, editM, readM, diffW, diffX });
+  if (Math.abs(diffW) > 1.5) fail.push(`纸面缩放@${ui}%: 编辑态纸宽 ${editM.w} ≠ 阅读态 ${readM.w}（diff ${diffW}px）——"只缩字号"回归`);
+  if (Math.abs(diffX) > 1.5) fail.push(`纸面缩放@${ui}%: 编辑态纸左位 ${editM.x} ≠ 阅读态 ${readM.x}（diff ${diffX}px）`);
+  if (Math.abs(parseFloat(editM.font) - 16 * (ui / 100)) > 0.6) fail.push(`纸面缩放@${ui}%: 编辑态字号 ${editM.font} ≠ ${16 * (ui / 100)}px`);
+  await shot(`paper-${ui}`);
+}
+await setMode(false);
+await gotoZoom(100);
+
 report.finishedAt = new Date().toISOString();
 report.pass = fail.length === 0;
 writeFileSync(join(outDir, "report.json"), JSON.stringify(report, null, 2), "utf8");
 console.log("[probe-align] CSP =", styleSrc);
 console.log("[probe-align] CM6 style sheets =", JSON.stringify(styles.cmStyleTags.map((t) => ({ sheetNull: t.sheetNull, len: t.len }))), "| scroller", styles.scroller?.display, styles.scroller?.fontSize, "| dpr", styles.dpr);
 console.log("[probe-align] steps =", JSON.stringify(report.steps.map((s) => ({ label: s.label, maxAbsDy: s.m?.maxAbsDy, gut: s.m?.countGutter, line: s.m?.countLines, font: s.m?.scrollerFont, gap: [s.m?.gapMin, s.m?.gapMax] }))));
+console.log("[probe-align] paper(阅读 vs 编辑 纸宽/左位) =", JSON.stringify(report.paper.map((p) => ({ z: p.zoom, editW: p.editM.w, readW: p.readM.w, dW: p.diffW, dX: p.diffX }))));
 console.log("[probe-align] fail =", JSON.stringify(fail));
 console.log("[probe-align] report =", join(outDir, "report.json"));
 client.close();
