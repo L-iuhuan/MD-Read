@@ -3,6 +3,8 @@ pub mod paste;
 mod print;
 mod single;
 pub mod trust;
+#[cfg(target_os = "windows")]
+mod window_icon;
 
 use std::sync::Mutex;
 use tauri::{DragDropEvent, Emitter, LogicalPosition, LogicalSize, Manager, State, WindowEvent};
@@ -338,6 +340,19 @@ pub fn run() {
                 }
                 Ok(None) => println!("[window] 取不到主显示器，沿用 config 尺寸"),
                 Err(error) => println!("[window] 主显示器查询失败（{error}），沿用 config 尺寸"),
+            }
+            // 任务栏/Alt-Tab 图标（2026-10-20）：Tauri 的 default_window_icon = icon.ico 第一帧（16px），
+            // 且 tao 只设 ICON_SMALL ⇒ 任务栏把 16px 放大到 32px = 糊。这里按窗口 DPI 取 ICO 原生帧
+            // 设 ICON_BIG（32@100% / 40@125% / 48@150%），DPI 变化时重投。详见 window_icon.rs。
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app.get_webview_window("main") {
+                window_icon::apply(&window);
+                let window_for_dpi = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::ScaleFactorChanged { .. } = event {
+                        window_icon::apply(&window_for_dpi);
+                    }
+                });
             }
             // 图标轮（2026-10-19）：老安装的 .md 关联图标自愈刷新——后台线程跑
             // （reg.exe 子进程要过安全软件安检，不得堵启动关键路径，且已带

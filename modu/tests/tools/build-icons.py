@@ -8,11 +8,14 @@
     邻近尺寸缩放，于是糊；
   * 旧小尺寸是位图缩放产物（不是按目标像素重新光栅化），边缘发虚。
 
-修复口径（2026-10-20 用户裁定，勿再改视觉语言）：
-  * **只用已批准的细节版 f1-app.svg / f1-file.svg**，10 档尺寸逐档按目标像素
-    直接光栅化（不缩放位图）——**不引入任何改变视觉语言的小尺寸变体**；
-  * 当年 WIP 的 `f1-app-small.svg / f1-file-small.svg`（平涂粗框大 M）是
-    **用户此前已否决的方向**，已从仓库删除，不要再加回来。
+修复口径（2026-10-21 用户裁定，勿再改视觉语言）：
+  * **app 图标**：靛蓝三段色带瓷砖 + 白色 Markdown「M↓」字标
+    （用户提供 `Page 1.svg` 换色；三段色带按用户要求保留，不做平滑渐变）；
+  * **.md 文件图标**：白色文档（深墨描边）+ 蓝底白字「MD」徽章
+    （用户提供 `markdown (2).svg` 换色；徽章里原本的箭头改成 D；徽章的位置/比例
+    按 Word `.docx` 文件图标校准：页居中、徽章在左下并略微超出页底；MD 文字在徽章内居中）；
+  * 10 档尺寸逐档按目标像素直接光栅化（不缩放位图）。
+  * 历史稿 `f1-*`（纸页 + 书签）与 `f2-*` 已停用，仅作存档，不再参与构建。
 
 产物：
   modu/src-tauri/icons/icon.ico              app 图标，16/20/24/32/40/48/64/96/128/256
@@ -54,8 +57,8 @@ ICON_DIR = ROOT / "modu" / "src-tauri" / "icons"
 EVID_DIR = ROOT / ".verify" / "icon-final"
 BASELINE_DIR = EVID_DIR / "baseline"
 
-APP_DETAIL = SRC_DIR / "f1-app.svg"
-FILE_DETAIL = SRC_DIR / "f1-file.svg"
+APP_DETAIL = SRC_DIR / "md-app.svg"
+FILE_DETAIL = SRC_DIR / "md-file.svg"
 
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
 BMP_MAX = 128                 # ≤128 用 32-bit BMP 条目（兼容性最好），256 用 PNG 条目
@@ -102,9 +105,10 @@ def render_svg(svg_path: Path, size: int) -> Image.Image:
 
 
 def source_for(svg_path: Path, size: int) -> Path:
-    """单一来源：已批准的细节版 SVG。10 档各自按目标像素光栅化（不缩放位图）。
+    """单一来源：每个图标只有一套图形，10 档共用同一源 SVG（无小尺寸变体）。
 
-    ⚠ 2026-10-20 用户裁定：不要再引入改变视觉语言的小尺寸变体（平涂粗框版曾被否决）。"""
+    ⚠ 2026-10-21 用户裁定：app / file 各一套（蓝瓷砖 M↓ / 文档 + MD 徽章），
+    不要再引入"小尺寸换画法"的变体。"""
     del size  # 尺寸只影响光栅化，不改变来源；保留形参让 build_ico 调用侧不变
     return svg_path
 
@@ -307,14 +311,12 @@ def _check_png_entry(path: Path, e: dict) -> list[str]:
     return errs
 
 
-def _corners_transparent(im: Image.Image) -> list[str]:
+def _corner_alphas(im: Image.Image) -> list[tuple[str, int]]:
+    """四个角的 alpha 值。app 是满版瓷砖（圆角处允许半透明）；file 需要四角透明。"""
     w, h = im.size
     px = im.load()
-    bad = []
-    for x, y in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
-        if px[x, y][3] != 0:
-            bad.append(f"角({x},{y}) alpha={px[x, y][3]}")
-    return bad
+    return [(f"角({x},{y})", px[x, y][3])
+            for x, y in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1))]
 
 
 def _coverage(im: Image.Image) -> float:
@@ -346,12 +348,11 @@ def _frames_equal(frame: Image.Image, ref: Image.Image, rgb_tol: int) -> tuple[b
 # ---------------------------------------------------------------- 16px 可辨性
 
 def check_legibility(im: Image.Image, tag: str) -> tuple[list[str], dict]:
-    """16px 可辨性判据（针对已批准的细节版纸页稿，2026-10-20 校准）。
+    """16px 可辨性判据（2026-10-21 按新视觉语言校准）。
 
-    结构判据：M 的左右两根竖笔（各≥6 像素高）+ 中缝（存在 ≥3 段墨迹的行）
-    + 亮纸面留白足够 —— 不是单一代理指标，也不要求"粗外框"（那是已否决变体的特征）。
-    实测基线：app ink=30 / file ink=34；两竖笔列 x=4 / x=11（各 8 像素）；max_runs=4。
-    """
+    app（蓝瓷砖 + 白 M↓）：瓷砖覆盖率、白字像素量、**三段色带亮度递减**。
+    file（文档 + 蓝徽章 MD）：覆盖率、深墨轮廓像素、左下蓝色徽章像素、徽章内白字像素。
+    判据来自实际 16px 帧统计（不是单一代理指标）。"""
     w, h = im.size
     if (w, h) != (16, 16):
         return [f"{tag}: 期望 16x16，实际 {w}x{h}"], {}
@@ -361,39 +362,44 @@ def check_legibility(im: Image.Image, tag: str) -> tuple[list[str], dict]:
         r, g, b, _ = px[x, y]
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
-    ink = [(x, y) for y in range(h) for x in range(w)
-           if px[x, y][3] > 128 and lum(x, y) < 120]
-    paper = [(x, y) for y in range(h) for x in range(w)
-             if px[x, y][3] > 200 and lum(x, y) > 200]
-    ink_set = set(ink)
-    col_counts = Counter(x for x, _ in ink)
+    opaque = [(x, y) for y in range(h) for x in range(w) if px[x, y][3] > 128]
+    white = [(x, y) for (x, y) in opaque if lum(x, y) > 230]
+    dark = [(x, y) for (x, y) in opaque if lum(x, y) < 100]
+    blue = [(x, y) for (x, y) in opaque
+            if px[x, y][2] > 90 and px[x, y][2] > px[x, y][0] + 40 and px[x, y][2] > px[x, y][1] + 30]
+    cov = len(opaque) / (w * h)
+    metrics = dict(opaque=len(opaque), coverage=round(cov, 2), white=len(white),
+                   dark=len(dark), blue=len(blue))
+    errs: list[str] = []
 
-    # M 两竖笔：左半 x∈[3,7]、右半 x∈[8,12] 各至少要有一列高≥6 的深墨
-    left_stems = [x for x in range(3, 8) if col_counts.get(x, 0) >= 6]
-    right_stems = [x for x in range(8, 13) if col_counts.get(x, 0) >= 6]
-    stems_ok = (bool(left_stems) and bool(right_stems)
-                and min(right_stems) - max(left_stems) >= 4)
-    # 中缝/斜笔：至少一行出现 ≥3 段墨迹（左竖 | 斜笔/中缝 | 右竖）
-    max_runs = 0
-    for y in range(h):
-        runs, prev = 0, -9
-        for x in range(w):
-            if (x, y) in ink_set:
-                if x != prev + 1:
-                    runs += 1
-                prev = x
-        max_runs = max(max_runs, runs)
-    metrics = dict(ink=len(ink), paper=len(paper), max_runs=max_runs,
-                   left_stems=left_stems, right_stems=right_stems)
-    errs = []
-    if len(ink) < 18 or len(ink) > 90:
-        errs.append(f"{tag}: 墨迹像素 {len(ink)} 超出 [18,90]")
-    if len(paper) < 60:
-        errs.append(f"{tag}: 纸面留白像素 {len(paper)} < 60")
-    if not stems_ok:
-        errs.append(f"{tag}: M 两竖笔不可辨 {metrics}")
-    if max_runs < 3:
-        errs.append(f"{tag}: 墨迹结构段数 {max_runs} < 3（M 中缝丢失）")
+    if tag == "app":
+        if cov < 0.80:
+            errs.append(f"{tag}: 瓷砖覆盖率 {cov:.2f} < 0.80")
+        if not 30 <= len(white) <= 150:
+            errs.append(f"{tag}: 白色 M 字像素 {len(white)} 超出 [30,150]")
+        # 三段色带：瓷砖左侧取三行采样（避开白色字标），亮度必须递减
+        band_ys = (3, 8, 13)
+        band_lums = [lum(2, y) for y in band_ys]
+        metrics["band_lums"] = [round(v, 1) for v in band_lums]
+        if not (band_lums[0] > band_lums[1] + 8 and band_lums[1] > band_lums[2] + 8):
+            errs.append(f"{tag}: 三段色带亮度未递减 {metrics['band_lums']}")
+        if white:
+            cx = sum(x for x, _ in white) / len(white)
+            if not 6 <= cx <= 10:
+                errs.append(f"{tag}: 白字水平重心 {cx:.1f} 不在 [6,10]")
+    else:
+        if not 0.25 <= cov <= 0.85:
+            errs.append(f"{tag}: 覆盖率 {cov:.2f} 超出 [0.25,0.85]")
+        if len(dark) < 12:
+            errs.append(f"{tag}: 深墨轮廓像素 {len(dark)} < 12")
+        badge_blue = [(x, y) for (x, y) in blue if 1 <= x <= 7 and 9 <= y <= 14]
+        badge_white = [(x, y) for (x, y) in white if 1 <= x <= 7 and 9 <= y <= 14]
+        metrics["badge_blue"] = len(badge_blue)
+        metrics["badge_white"] = len(badge_white)
+        if len(badge_blue) < 6:
+            errs.append(f"{tag}: 左下蓝色徽章像素 {len(badge_blue)} < 6")
+        if len(badge_white) < 1:
+            errs.append(f"{tag}: 徽章内白色 MD 像素 {len(badge_white)} < 1")
     return errs, metrics
 
 
@@ -594,19 +600,28 @@ def verify(new_frames, failures: list[str], lines: list[str], data: dict) -> Non
             if frame.size != (size, size):
                 failures.append(f"{fname}@{size}: getimage 尺寸异常 {frame.size}")
                 continue
-            bad = _corners_transparent(frame)
-            if bad:
-                failures.append(f"{fname}@{size}: 四角不透明：{bad}")
+            alphas = _corner_alphas(frame)
+            if tag == "app":
+                # 满版瓷砖：圆角处允许半透明，但四角不能是完全不透明的方块
+                bad = [f"{c} alpha={a}" for c, a in alphas if a >= 255]
+                if bad:
+                    failures.append(f"{fname}@{size}: 瓷砖四角完全不透明（圆角丢失）：{bad}")
+            else:
+                bad = [f"{c} alpha={a}" for c, a in alphas if a != 0]
+                if bad:
+                    failures.append(f"{fname}@{size}: 四角不透明：{bad}")
             cov = _coverage(frame)
-            if not 0.25 <= cov <= 0.99:
-                failures.append(f"{fname}@{size}: 不透明覆盖率 {cov:.2f} 异常")
+            lo, hi = (0.80, 1.0) if tag == "app" else (0.20, 0.85)
+            if not lo <= cov <= hi:
+                failures.append(f"{fname}@{size}: 不透明覆盖率 {cov:.2f} 超出 [{lo},{hi}]")
             ref = render_svg(src_svg, size)
             tol = (PNG_ENTRY_RGB_STEP // 2) if size >= PNG_ENTRY_MIN else 0
             ok, max_rgb, max_a = _frames_equal(frame, ref, tol)
             if not ok:
                 failures.append(f"{fname}@{size}: 帧与源 SVG 不一致"
                                 f"（RGB max diff={max_rgb} tol={tol}, alpha max diff={max_a}）")
-            lines.append(f"   {size:>3}px frame: corners=transparent coverage={cov:.2f} "
+            corner_note = "rounded(alpha<255)" if tag == "app" else "transparent"
+            lines.append(f"   {size:>3}px frame: corners={corner_note} coverage={cov:.2f} "
                          f"rgb_max_diff={max_rgb} alpha_max_diff={max_a} OK")
         if tag == "app":
             budget_ok = path.stat().st_size <= ICO_BUDGET_BYTES
@@ -639,9 +654,10 @@ def verify(new_frames, failures: list[str], lines: list[str], data: dict) -> Non
         p = ICON_DIR / name
         im = Image.open(p)
         ok = im.size == (size, size) and im.mode == "RGBA"
-        corners = _corners_transparent(im.convert("RGBA"))
+        alphas = _corner_alphas(im.convert("RGBA"))
+        corners = [f"{c} alpha={a}" for c, a in alphas if a >= 255]
         lines.append(f"   {name:24s} {im.size[0]}x{im.size[1]} mode={im.mode} "
-                     f"bytes={p.stat().st_size} corners={'OK' if not corners else corners}")
+                     f"bytes={p.stat().st_size} corners={'OK (rounded)' if not corners else corners}")
         if not ok:
             failures.append(f"{name}: 尺寸/模式异常 {im.size} {im.mode}")
         if corners:
