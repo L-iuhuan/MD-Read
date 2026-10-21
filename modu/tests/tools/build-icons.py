@@ -60,7 +60,7 @@ BASELINE_DIR = EVID_DIR / "baseline"
 APP_DETAIL = SRC_DIR / "md-app.svg"
 FILE_DETAIL = SRC_DIR / "md-file.svg"
 
-ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
+ICO_SIZES = (16, 20, 24, 30, 32, 36, 40, 48, 64, 96, 128, 256)
 BMP_MAX = 128                 # ≤128 用 32-bit BMP 条目（兼容性最好），256 用 PNG 条目
 PNG_ENTRY_MIN = 256
 # 256px PNG 条目把 RGB 每通道四舍五入到 5 的倍数（最大误差 2/255，肉眼不可见），

@@ -370,7 +370,7 @@ function wireVersion(): void {
     return;
   }
   const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "开发版";
-  el.textContent = `墨读 MoDu · 版本 ${version}`;
+  el.textContent = `墨读 · 版本 ${version}`;
 }
 
 export function setupSettings(deps: SettingsHooks): void {

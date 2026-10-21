@@ -179,7 +179,7 @@ function resetToWelcome(): void {
   activeEmptyState?.refresh(); // 空态回来了：最近列表按最新存储重画（无则整块不显示）
   mountOutline([]);
   outlineFollow.reset(); // X2：回到空态 —— 标题列表清空（之后 update() 直接返回 false）
-  document.title = "墨读 MoDu"; // 窗口标题（D-05 起它是文档名的唯一去处）
+  document.title = "墨读"; // 窗口标题（D-05 起它是文档名的唯一去处）
   $("st-encoding").textContent = "—";
   $("st-progress").textContent = "0%";
   $("st-line").hidden = true;

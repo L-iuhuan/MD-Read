@@ -16,6 +16,10 @@
 - **PATH 陷阱**：agent 宿主进程在装 Rust 之前启动，其子进程 PATH 无 `~/.cargo/bin`——每个新 shell 会话先 `$env:PATH="$env:USERPROFILE\.cargo\bin;"+$env:PATH`（rustup 写的是用户级 PATH，宿主重启后自动生效）。
 - **vite dev 缓存陷阱**（2026-09-21 实翻车）：依赖变更后 `vite build`（rollup）正常但 `tauri dev` 页面崩（如 "Invalid top rule name SingleExpression"）——`node_modules/.vite` 预打包缓存陈旧。修法：删 `node_modules/.vite` 重启 dev。**症状特征：车道自检（check/build）全绿而 dev 实例白屏/模块炸。**
 - **bundle 配置串必须 ASCII**（2026-09-21 实翻车，P-44 同族）：`tauri.conf.json` 里 fileAssociations 的 description 用中文 → WiX `light.exe` 打包失败（wxs 编码坑）。规则扩展：**productName 与一切进 wxs/nsis 的配置串一律 ASCII**，中文只出现在窗口标题/界面文案。
+  ⚠ **2026-10-21 复核（中文 productName 仍不可行）**：WiX 数据库默认 code page **1252**，`Product/@Codepage` 未设时
+  中文 Product Name 会让 `light.exe` 报 `LGHT0311`（最小 wxs 实测复现）；Tauri 内置模板没有该属性，
+  要中文产品名必须自带自定义 WiX 模板。⇒ **应用显示名用「墨读」（窗口标题 / `<title>` / 设置版本行），
+  产品与安装标识保持 ASCII「MoDu」（productName / 安装目录 / 快捷方式 / ARP DisplayName）**——这是刻意分离，不是遗漏。
 - 工程内层路径保持 ASCII（`modu/`）；仓库根是中文路径，cargo/NSIS 在中文路径下有历史坑，**不要**把 src-tauri 移到中文子目录。
 - `tauri build` 首次打包要从 GitHub 下载 WiX/NSIS 到 `%LOCALAPPDATA%\tauri`；公司机失败时用家机打包的缓存目录带回（见 M0 任务书）。
 - DSE 透明加密环境（公司机）：.md 理论不加密，M1 须读写双测验证；读文件前不验头（文本格式）。
@@ -293,17 +297,22 @@
   改完要给 16/24/48/256px 实拍 + 与 Word/目标图标同尺寸对照。
 - ⭐ **窗口/任务栏图标是第三条独立链路，别只验 ICO 文件**（2026-10-20 二次真根因）：
   Tauri codegen 的 `default_window_icon` 取 `icon.ico` 的**第一个条目**（本仓按 16→256 升序写 ⇒ 第一个是 **16px**），
-  tao 的 `set_window_icon` 只写 `WM_SETICON(ICON_SMALL)`、**不设 ICON_BIG** ⇒ 任务栏（96dpi 下 32px 槽位）
-  拿 16px 放大 = 糊。**在资源管理器里 exe/文件图标清晰 ≠ 任务栏清晰**。
-  修法：`src-tauri/src/window_icon.rs` 在 setup 里按窗口 DPI 算系统图标槽位
-  （96→32、120→40、144→48、192→64；都在我们 ICO 的 10 档里），
-  **`EnumResourceNamesW(RT_GROUP_ICON)` 取内嵌图标组 id** 后 `LoadImageW(模块句柄, 资源 id, 目标尺寸)`
-  取该尺寸**原生帧**，`WM_SETICON(ICON_BIG)`；DPI 变化时重投。
+  tao 的 `set_window_icon` 只写 `WM_SETICON(ICON_SMALL)`、**不设 ICON_BIG** ⇒ 任务栏拿 16px 放大 = 糊。
+  **在资源管理器里 exe/文件图标清晰 ≠ 任务栏清晰**。
+  ⚠ **Win11 任务栏实际只画 24px**（100%；托盘厚度 48 = 24 图标 + 上下各 12 内边距），**不是 32**；
+  只设 32px 的 `ICON_BIG` 仍会被外壳 32→24 再缩一次 ⇒ 偏软（0.2.10 的教训，0.2.12 复测确认）。
+  修法：`src-tauri/src/window_icon.rs` 用 `SHAppBarMessage(ABM_GETTASKBARPOS)` 取任务栏厚度，
+  按 `icon = 厚度 − round(24×dpi/96)` 反算它实际绘制的尺寸（100%→24、125%→30、150%→36、200%→48；
+  小任务栏 40→16、大任务栏 56→32），**`EnumResourceNamesW(RT_GROUP_ICON)` 取内嵌图标组 id** 后
+  `LoadImageW(模块句柄, 资源 id, 目标尺寸)` 取该尺寸**原生帧**设 `ICON_BIG` ⇒ 任务栏 1:1；
+  窗口 `ScaleFactorChanged` 时重投。ICO 因此要覆盖 16/20/24/30/32/36/40/48/64/96/128/256（12 档）。
   ⚠ `LoadImageW(LR_LOADFROMFILE, exe 路径)` **不行**——它只适用于独立图片文件，对 exe 内嵌资源返回 NULL
   （2026-10-20 实测踩过）；必须走「模块句柄 + 资源 id」。
-  验收：运行中窗口 `WM_GETICON(ICON_BIG)` 的 HICON 尺寸 = 32（100%）且像素与 `icon.ico` 32px 帧**逐像素一致**
-  （实测 maxRGBdiff=0）；任务栏实拍与 Word/DSH 同尺寸对比。三条图标链路 = ① exe/资源管理器 RT_ICON
-  ② `.md` 关联 DefaultIcon ③ 窗口/任务栏 WM_GETICON——缺一条都可能"看起来修了但用户还觉得糊"。
+  验收：运行中窗口 `WM_GETICON(ICON_BIG)` 的 HICON 尺寸 = 任务栏绘制尺寸（100% 时 **24**）且像素与
+  `icon.ico` 对应帧**逐像素一致**（实测 maxRGBdiff=0）；任务栏实拍与 Word 同尺寸对比。三条图标链路 =
+  ① exe/资源管理器 RT_ICON ② `.md` 关联 DefaultIcon ③ 窗口/任务栏 WM_GETICON——缺一条都可能"看起来修了但用户还觉得糊"。
+  ⚠ 权衡：`WM_SETICON` 只有一个 BIG 槽，设成任务栏尺寸后 Alt-Tab 若按更大尺寸绘制会放大一次；
+  目前可接受（用户实际看的是任务栏），若将来 Alt-Tab 变糊再评估双槽方案。
 - ⚠ 给用户交付前**先确认"这是不是之前被否决过的方案"**：不要因为文件是 WIP/未跟踪就默认它代表用户意图；
   用户明确说过的裁决优先于任何未入库草稿。
 

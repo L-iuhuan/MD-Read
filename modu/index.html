@@ -10,7 +10,7 @@
 html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;top:50%;left:50%;width:28px;height:28px;margin:-14px 0 0 -14px;border:3px solid #e5e7eb;border-top-color:#9aa4b2;border-radius:50%;animation:modu-boot .8s linear infinite}
 @keyframes modu-boot{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){html:not(.app-ready) body::after{animation:none}}</style>
-    <title>墨读 MoDu</title>
+    <title>墨读</title>
     <!-- 窗口三钮的皮（2026-09-29 自 app.css 外移，G10 棘轮拆分）。
          接线走 HTML <link>：main.ts 的引入链是并发写域（本批不可改）；
          该段与先后顺序无关（全库无第二处 .topbar > #win-* 消费者）。 -->
@@ -211,7 +211,7 @@ html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;to
                           title="把墨读注册为 .md/.markdown/.mdx 的打开候选，并打开系统默认应用页">设为 .md 默认应用</button>
                 </div>
               </div>
-              <div class="settings-version" id="settings-version">墨读 MoDu · 版本 —</div>
+              <div class="settings-version" id="settings-version">墨读 · 版本 —</div>
             </div>
           </div>
           <button id="btn-theme" type="button" title="切换亮暗主题" aria-label="切换亮暗主题"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.25" /><path d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" fill="currentColor" stroke="none" /></svg></button>

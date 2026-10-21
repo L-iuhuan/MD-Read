@@ -646,8 +646,9 @@ describe("面板开关", () => {
     vi.stubGlobal("__APP_VERSION__", "9.9.9");
     try {
       await freshSettings();
+      // 2026-10-21 用户裁定：应用显示名统一为「墨读」（产品/安装标识仍是 ASCII 的 MoDu）
       expect(document.getElementById("settings-version")?.textContent).toBe(
-        "墨读 MoDu · 版本 9.9.9",
+        "墨读 · 版本 9.9.9",
       );
     } finally {
       vi.unstubAllGlobals();
