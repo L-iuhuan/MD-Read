@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- FOUC 防闪（用户实测启动时简陋界面一闪）：内联关键样式随 HTML 首帧前生效，
          main.ts 的 boot() 应用完主题/字号偏好后再给 html 加 .app-ready 放行——
-         同时消灭无样式闪屏与主题闪错。JS 是应用的运行前提，失败时隐藏可接受。 -->
-    <style>html:not(.app-ready) body{visibility:hidden}
+         同时消灭无样式闪屏与主题闪错。JS 是应用的运行前提，失败时隐藏可接受。
+         2026-11-02：WebView2 冷启动期间页面尚未铺开，窗口露出的是 webview 默认白底——
+         html 先铺一层壳色（亮/暗跟系统），配合转圈，白屏期看起来就是"应用在启动"而不是坏掉。 -->
+    <style>html{background:#fafbfc}
+@media (prefers-color-scheme: dark){html{background:#191d24}}
+html:not(.app-ready) body{visibility:hidden}
 html:not(.app-ready) body::after{visibility:visible;content:"";position:fixed;top:50%;left:50%;width:28px;height:28px;margin:-14px 0 0 -14px;border:3px solid #e5e7eb;border-top-color:#9aa4b2;border-radius:50%;animation:modu-boot .8s linear infinite}
 @keyframes modu-boot{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){html:not(.app-ready) body::after{animation:none}}</style>

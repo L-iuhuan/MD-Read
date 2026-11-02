@@ -217,6 +217,7 @@
   `node .verify/phase2/p1/probe-r-regular.mjs 9222`（三态打开与滚动）。
   口径：打开取 `openClick→loadingOff`；滚动取 3×6s 确定性下行中位 FPS；长任务窗口取 `[openClick, loadingOff+800]`。
   净账与判决见 `docs/tasks/Phase2-常规文档打开性能报告-2026-09-23.md`。
+- **启动首帧（0.2.14）**：有启动文档时先开文档、上屏后再放 `html.app-ready`（不闪空态）；字体目录实测推迟到设置面板首次打开。时序读 `performance.mark("boot:*")`。
 
 ## 代码铁律（TS 侧）
 

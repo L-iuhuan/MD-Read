@@ -31,6 +31,7 @@ import {
   readThemePref,
 } from "./theme";
 import {
+  ensureFontCatalog,
   mountFontPicker,
   readFontPref,
   setFontPref as applyFontPick,
@@ -62,6 +63,9 @@ export interface SettingsHooks {
   measure?: FontPickerHooks["measure"];
   /** 状态栏闪信（2026-09-27：「设为默认应用」的结果反馈）；测试可省略 */
   notify?: (message: string, kind: "ok" | "warn" | "error") => void;
+  /** 启动提速（2026-11-02）：把字体目录的逐族实测推迟到设置面板首次打开；
+   *  生产 boot 传 true，测试/其他调用方缺省 false（保持同步渲染的旧契约）。 */
+  deferFontCatalog?: boolean;
 }
 
 /** 字体面板需要的那两个钩子（与 SettingsHooks 同形；为避免重复声明只做结构复用） */
@@ -263,7 +267,10 @@ function wireDirectEdit(valId: string, read: () => number, write: (value: number
 
 /** 字体面板接线（D-02）：填目录 → 恢复选择 → 接 change（实现全在 font-picker） */
 function wireFontSelect(): void {
-  mountFontPicker(fontHooks());
+  mountFontPicker(
+    fontHooks(),
+    hooks.deferFontCatalog === true ? { deferCatalog: true } : undefined,
+  );
 }
 
 function wireThemeSelect(): void {
@@ -314,7 +321,10 @@ function wireToggle(): void {
   const panel = req<HTMLElement>("settings-panel");
   req<HTMLButtonElement>("btn-settings").addEventListener("click", () => {
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) syncSettingsPanel();
+    if (!panel.hidden) {
+      ensureFontCatalog(fontHooks()); // 首次打开才做逐族实测（启动期已推迟，见 font-picker）
+      syncSettingsPanel();
+    }
   });
 }
 

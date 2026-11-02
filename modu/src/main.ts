@@ -12,7 +12,6 @@ import { renderDocument, type OutlineItem } from "./render/pipeline";
 import { keepOffscreenSkipping, shapeOf } from "./render/offscreen-policy";
 import { enhanceView, refitView, refreshMermaidTheme } from "./render/view";
 import { attachCodeCopyButtons } from "./render/codecopy";
-import { awaitPrintReady, markPrintBlocks } from "./render/print-ready";
 import {
   createTabManager,
   type MountContext,
@@ -25,7 +24,7 @@ import { hydrateRecentOnBoot, pushRecent, removeRecent, setupRecentMenu } from "
 import { req } from "./app/dom";
 import { setupShellOverflow } from "./app/shell-overflow";
 import { setupWindowControls } from "./app/window-controls";
-import { clearPaperZoom, restorePaperZoom, setupZoom } from "./app/zoom";
+import { restorePaperZoom, setupZoom } from "./app/zoom";
 import { setupWorkspacePanel } from "./app/workspace-panel";
 import { prevalidateMermaid } from "./render/mermaid";
 import { openEachMd } from "./app/drop";
@@ -45,12 +44,12 @@ import {
   nextThemePref,
   readPalettePref,
   readThemePref,
-  resolvedTheme,
   setupThemeEngine,
   watchSystemTheme,
 } from "./ui/theme";
 import { createEditSession, flashStatus, type EditSession } from "./editor/editor";
 import { firstVisibleLine } from "./editor/position-map";
+import { exportActivePdf } from "./app/export-pdf";
 import "./app.css";
 // ⚠ 后三个分片必须紧跟 app.css 导入：CSS 按导入顺序层叠，外移的皮才与拆前等价
 import "./app/workspace-panel.css"; // D-11b 工作区面板（2026-09-27 外移）
@@ -250,6 +249,28 @@ async function openPath(tabs: TabManager, path: string, activate = true): Promis
   }
 }
 
+/**
+ * 打开**已经是 canonical 形态**的路径（启动 argv / second-instance 转发）：
+ * Rust 的 `md_paths` 已用 `fs::normalize_path` 归一（见 lib.rs），再走一次
+ * `normalizePath` IPC 是纯多余往返 ⇒ 直接从调用方给的 canonical 开标签。
+ * `preloaded` 允许把 read_file 提前发出（与启动装配重叠），失败语义与 openPath 一致。
+ */
+async function openCanonicalPath(
+  tabs: TabManager,
+  canonical: string,
+  activate = true,
+  preloaded?: Promise<LoadedFile>,
+): Promise<void> {
+  try {
+    const file = await (preloaded ?? invoke<LoadedFile>("read_file", { path: canonical }));
+    tabs.openTab(canonical, file, activate);
+    pushRecent(canonical);
+  } catch (error) {
+    showError(error, canonical);
+    removeRecent(canonical);
+  }
+}
+
 /** 打开对话框：**对话框在 Rust 侧**（R-01）——用户选中的文件由 Rust 登记为受信路径，
  *  渲染层拿不到"凭空登记"能力（否则攻陷页面可 登记任意路径 → 读任意文件）。 */
 async function onOpenClick(tabs: TabManager): Promise<void> {
@@ -264,85 +285,9 @@ async function onOpenClick(tabs: TabManager): Promise<void> {
   }
 }
 
-/* ---- 导出 PDF（M4）：等待渲染完备 → 存路径 → CDP `Page.printToPDF` 直出 ---- */
-
-/** 默认存档名：当前文件名去 .md/.markdown 扩展 + .pdf */
-function defaultPdfName(path: string): string {
-  const name = path.split(/[\\/]/).pop() ?? "";
-  const stem = name.replace(/\.(md|markdown)$/i, "");
-  return `${stem === "" ? "文档" : stem}.pdf`;
-}
-
-async function onExportClick(tabs: TabManager): Promise<void> {
-  activeFindbar?.close(); // P5 批2：查找 mark 不进 PDF
-  const tab = tabs.activeTab();
-  if (tab === null) {
-    return; // 无文档：按钮本应禁用，双保险
-  }
-  if (editorSession?.isEditing() === true) {
-    editorSession.toRead(); // beta 席 D2 条款：编辑态导出先切回阅读态（含重渲正文）
-  }
-  const doc = document.getElementById("doc");
-  if (doc === null) {
-    return;
-  }
-  // C1+C4 导出版式归一：暗色近白不可读、纸面缩放让量宽漂移 ⇒ 清纸面缩放、临时切亮色重渲
-  // mermaid，finally 无条件还原。H 静默化：冻结层与归一同一同步块；F6（fix-22）：冻结/变亮/
-  // 重渲三行在 try 内，refreshMermaidTheme 抛异常时 finally 仍揭幕还原。
-  // J2（2026-09-30）：缩放目标从根元素换成纸面（#doc/.cm-editor）——清空/还原语义不变，
-  // 持久化档位即「保存值」，restorePaperZoom 按它重投。
-  const savedThemePref = readThemePref(); // 权威来源（theme.ts），不自己摸 localStorage
-  clearPaperZoom();
-  try {
-    document.documentElement.classList.add("exporting"); // 与下行同一同步块：先遮屏再变亮，中间不得有异步断点
-    document.documentElement.dataset.theme = "light"; // 不落盘：崩溃后偏好不被改成亮色
-    refreshMermaidTheme("light");
-    const failed = doc.querySelectorAll(".mermaid[data-mmd-error]").length;
-    if (failed > 0) {
-      flashStatus(`有 ${failed} 张图渲染失败，将按占位导出`, "warn"); // 告警不阻断（P5 批2）
-    }
-    const ready = await awaitPrintReady(doc);
-    if (ready.timedOut) {
-      flashStatus("部分图表未渲染完成，将按当前版式导出", "warn");
-    }
-    // P1-4 补：字体/图片没在时限内就绪时提示（此前只有 mermaid 有等待与提示）
-    if (ready.fontsTimedOut) {
-      flashStatus("字体加载超时，部分字形可能按回退字体导出", "warn");
-    } else if (ready.imageFailures.length > 0) {
-      flashStatus(`有 ${ready.imageFailures.length} 张图片未就绪，将按当前版式导出`, "warn");
-    }
-    // P1-4(b)+宽表：竖版放不下的表自动横排，连横版都放不下再压列换行（用户裁决 ④）。
-    // 「可能被截」提醒已撤：压列不丢列、图片限宽、pre 换行 ⇒ 无静默丢内容，留着就是撒谎。
-    markPrintBlocks(doc);
-    // 票据制（P0 安全修复 B1）：pick_save_path 返回 {path, ticket}，export_pdf 只认 ticket ⇒ 渲染层无法指定任意写入路径。
-    interface SaveResult { path: string | null; ticket: number | null }
-    let saveResult: SaveResult;
-    try {
-      saveResult = await invoke<SaveResult>("pick_save_path", {
-        defaultName: defaultPdfName(tab.path),
-      });
-    } catch (error) {
-      flashStatus(`导出失败：${String(error)}`, "error");
-      return;
-    }
-    if (saveResult.path === null || saveResult.path === "" || saveResult.ticket === null) {
-      return; // 用户取消：静默结束
-    }
-    try {
-      // 页眉已按平台限制取舍清空（用户反馈批次：PDF 只要页码不要页眉，print.rs 查证注释）
-      flashStatus(await invoke<string>("export_pdf", { ticket: saveResult.ticket }), "ok");
-    } catch (error) {
-      flashStatus(`导出失败：${String(error)}`, "error");
-    }
-  } finally {
-    const restored = resolvedTheme(savedThemePref); // auto 档解析回系统值
-    document.documentElement.dataset.theme = restored;
-    refreshMermaidTheme(restored);
-    restorePaperZoom(); // J2：纸面缩放还原（旧根 zoom 时代的 style.zoom = savedZoom 已退役）
-    document.documentElement.classList.remove("exporting"); // 揭幕放最后：先还原主题后揭幕，同一同步块（顺序反了会闪亮）
-  }
-}
-
+/* ---- 导出 PDF（M4）：实现外移到 app/export-pdf.ts（main.ts 行数棘轮 707 已满） ---- */
+const exportPdf = (tabs: TabManager): Promise<void> =>
+  exportActivePdf(tabs, { closeFindbar: () => activeFindbar?.close(), getEditor: () => editorSession });
 /* ---- 全局键位（P5 批2）：Ctrl+P 绑导出（阅读/编辑两态都触发，preventDefault 阻
  *      浏览器打印对话框）；Esc 依序关浮层（一次只关一个）。⚠ 须先于 setupFindbar
  *      注册：统一 Esc 要抢在 findbar 自有 Esc 之前定夺，否则一次 Esc 连关两层。 ---- */
@@ -351,7 +296,7 @@ function setupGlobalKeys(): void {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
       event.preventDefault();
       if (activeTabs !== null) {
-        void onExportClick(activeTabs);
+        void exportPdf(activeTabs);
       }
       return;
     }
@@ -521,15 +466,32 @@ function injectLoadingStyle(): void {
 }
 
 async function boot(): Promise<void> {
+  performance.mark("boot:start");
+  // 启动参数（文件关联/命令行）**尽早取**：与后面的同步装配并行，少一个 IPC 等待；
+  // 有文档时会等它上屏才放行首帧（见 boot 末尾）——否则会先闪一帧欢迎页。
+  const pendingAtBoot: Promise<string[]> = invoke<string[]>("take_pending_files").catch(
+    (error: unknown) => {
+      console.warn("启动参数读取失败", error); // 不阻断启动：按无文档启动
+      return [];
+    },
+  );
+  // 启动文档的 read_file 与装配并行：pending 一到就发（路径已由 Rust 归一，无需再 normalize）
+  const preloadedReads = new Map<string, Promise<LoadedFile>>();
+  void pendingAtBoot.then((paths) => {
+    for (const path of paths) {
+      const read = invoke<LoadedFile>("read_file", { path });
+      void read.catch(() => {}); // 打开失败由 openCanonicalPath 统一报错；这里只防未处理拒绝
+      preloadedReads.set(path, read);
+    }
+  });
   setupGlobalKeys(); // 先于 setupFindbar：统一 Esc 仲裁须最先注册（见函数注释）
   setupTabHotkeys(() => activeTabs); // Ctrl+W / Ctrl+Tab(+Shift)：capture 拦截，先于 CM 键位
   injectLoadingStyle(); // loading 指示符样式一次就位（P5 批3）
   setupThemeEngine((theme) => refreshMermaidTheme(theme)); // 主题引擎钩子（三档）
   applyPrefs(); // 内含 applyThemePref（自动档按系统解析落 data-theme）
-  // 空态起步：启动时还没有文档（若启动参数带了文件，openEachMd → mountRendered 随后摘掉它）。
-  // 这一条同时管住大纲与顶栏 ☰ 的显隐（CSS 见 app.css §5），并与 resetToWelcome 同源。
-  document.body.classList.add("empty");
-  document.documentElement.classList.add("app-ready"); // FOUC 放行：主题偏好已应用，配合 index.html 内联防闪样式
+  // 首帧放行推迟到「首屏内容已定」之后（见 boot 末尾）：有启动文档时先开文档、
+  // 文档上屏后再放行 ⇒ 不再先闪一帧欢迎页；无文档时才进入空态。
+  // （FOUC 防闪的 `html:not(.app-ready) body{visibility:hidden}` 见 index.html 内联样式）
   watchSystemTheme(); // 系统主题变化即时跟随（仅自动档响应）
   setupWindowControls(); // 无边框顶栏三钮 + 最大化/还原图标切换（反馈⑤）+ 双击顶栏空白
   setupZoom(); // 纸面缩放（2026-09-27 起；J2 改为只缩放 #doc/.cm-editor）：启动回填 + 面板 ± 两键 ✓
@@ -556,9 +518,18 @@ const workspacePanel = setupWorkspacePanel({
     onFontChange: refitDoc, // 字体度量变了：断行守卫与公式缩放重算
     onWidthChange: refitDoc, // F3（P2-2）：行宽变了同样重跑守卫（settings 侧已防抖）
     notify: (message, kind) => flashStatus(message, kind), // 「设为默认应用」的状态栏反馈
+    // 启动提速（2026-11-02）：字体目录的 canvas 逐族实测 ~280ms 推迟到面板首次打开。
+    deferFontCatalog: true,
   });
   const findbar = setupFindbar(() => document.getElementById("doc"));
   activeFindbar = findbar;
+  // 首篇正文上屏信号：有启动文档时 boot 等它再放行首帧（避免先闪一帧空态）。
+  // 也覆盖「启动期就有 second-instance 转发文件」的竞态。
+  let resolveFirstDoc: () => void = () => {};
+  const firstDocMounted = new Promise<void>((resolve) => {
+    resolveFirstDoc = resolve;
+  });
+  let docMountedOnce = false;
   // 挂载一篇渲染结果：#doc/大纲/F4 观察/增强/查找作废/状态栏——两处入口（标签激活、编辑回读）共用
   function mountRendered(ctx: MountContext): void {
     const doc = $<HTMLElement>("doc");
@@ -604,6 +575,11 @@ const workspacePanel = setupWorkspacePanel({
     }
     updateStatusLine(); // 行号就位（滚动由 setupProgress 的 rAF 持续刷新）
     resolveRelativeImages(doc, ctx.tab.path); // P5 批1 接线：相对路径图片 → asset 协议
+    if (!docMountedOnce) {
+      docMountedOnce = true;
+      performance.mark("doc:first");
+      resolveFirstDoc(); // boot 等这一下来决定是否放行首帧（有启动文档时不闪空态）
+    }
   }
 
   // M3-A 编辑会话（Ctrl+E/S/F 捕获路由、✎ 同 Ctrl+E）：先建会话再建标签（getTab 经 activeTabs 回指）
@@ -642,7 +618,7 @@ const workspacePanel = setupWorkspacePanel({
     onPickFolder: () => void workspacePanel.pickFromOutside(),
   });
   exportButton = document.getElementById("btn-export") as HTMLButtonElement | null;
-  exportButton?.addEventListener("click", () => void onExportClick(tabs));
+  exportButton?.addEventListener("click", () => void exportPdf(tabs));
   setupRecentMenu((path) => void openPath(tabs, path), () => {
     flashStatus("已清空最近列表", "ok"); // UX-8：清空反馈走状态栏（低风险数据，不弹确认）
     activeEmptyState?.refresh(); // 欢迎页那份最近列表同批重画
@@ -650,19 +626,42 @@ const workspacePanel = setupWorkspacePanel({
   setupToggles(); setupTooltips(); // 全局提示泡：一条悬停/焦点委托（title 与 data-tip 双源，src/ui/tooltip.ts）
   setupDragDrop(tabs);
   setupProgress();
-  // 二次实例转发：载荷是筛过的 Markdown 路径列表（Rust 侧 md_paths），逐个开标签、仅末项渲染
+  performance.mark("boot:setup-done");
+  // 二次实例转发：载荷是筛过的 Markdown 路径列表（Rust 侧 md_paths 已归一），逐个开标签、仅末项渲染
   await listen<string[]>("second-instance", (event) => {
     void openEachMd(
       event.payload,
-      (path, activate) => openPath(tabs, path, activate),
+      (path, activate) => openCanonicalPath(tabs, path, activate),
       notifyIgnoredDrops,
     );
   });
-  // 启动参数携带的待开文件（P0-6：列表——多文件启动每个都开，不再只开第一个）
-  const pending = await invoke<string[]>("take_pending_files");
+  // 启动参数携带的待开文件（P0-6：列表——多文件启动每个都开，不再只开第一个）。
+  // 请求在 boot 开头就已发出（与同步装配并行），这里只等结果。
+  const pending = await pendingAtBoot;
+  performance.mark("boot:pending-resolved");
   if (pending.length > 0) {
-    await openEachMd(pending, (path, activate) => openPath(tabs, path, activate), notifyIgnoredDrops);
+    performance.mark("boot:open-start");
+    await openEachMd(
+      pending,
+      (path, activate) => openCanonicalPath(tabs, path, activate, preloadedReads.get(path)),
+      notifyIgnoredDrops,
+    );
+    performance.mark("boot:open-end");
+    if (!docMountedOnce && tabs.count() > 0) {
+      // 打开成功但正文还没上屏（activateTab 走 whenPainted 在下一帧挂载）：
+      // 等首篇上屏，最多 1.2s 兜底 —— 绝不把欢迎页当首帧闪出来。
+      await Promise.race([
+        firstDocMounted,
+        new Promise<void>((resolve) => setTimeout(resolve, 1200)),
+      ]);
+    }
   }
+  if (!docMountedOnce) {
+    // 没有可开的文档（未带参数 / 全部打不开）：进入空态（与关掉最后一个标签同源）
+    resetToWelcome();
+  }
+  performance.mark("boot:app-ready");
+  document.documentElement.classList.add("app-ready"); // FOUC 放行：首屏内容已定（空态或正文）
   // 最近列表双形态收敛（归一/只在值变才写回/空态重画都在 recent.ts）：放 pending 之后——pushRecent 已写最新项，此处收敛全表且保留原序。
   void hydrateRecentOnBoot(() => activeEmptyState?.refresh()).catch((error: unknown) => {
     console.warn("最近列表归一失败", error); // 不阻断启动：沿用原值

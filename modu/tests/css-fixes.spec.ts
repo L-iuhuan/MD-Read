@@ -17,6 +17,8 @@ const hljs = readFileSync("src/typography/hljs.css", "utf8");
 const printCss = readFileSync("src/typography/print.css", "utf8");
 const lintCss = readFileSync("src/editor/md-lint.css", "utf8");
 const main = readFileSync("src/main.ts", "utf8");
+// 导出接线 2026-11-02 外移到 src/app/export-pdf.ts（main.ts 行数棘轮 707）；源码锚跟着走。
+const exportSrc = readFileSync("src/app/export-pdf.ts", "utf8");
 const themeSrc = readFileSync("src/ui/theme.ts", "utf8");
 const zoomSrc = readFileSync("src/app/zoom.ts", "utf8");
 // ⚠ **锚读"最终形态"，不读文件名** ✗（Phase 2.5 外移教训，2026-09-27）：
@@ -207,18 +209,18 @@ describe("用户反馈批次（本期 12 项）：交互与导出修复锚", () 
 describe("Lane C：导出归一与打印契约锚", () => {
   it("C1/C4(+J2)：导出前归一主题与纸面缩放（先于量宽/等渲染），finally 无条件还原", () => {
     // 归一点必须先于 markPrintBlocks（量宽）与 awaitPrintReady（等渲染）
-    const normalizeAt = main.indexOf('document.documentElement.dataset.theme = "light"');
-    const measureAt = main.indexOf("markPrintBlocks(doc)");
-    const waitAt = main.indexOf("awaitPrintReady(doc)");
+    const normalizeAt = exportSrc.indexOf('document.documentElement.dataset.theme = "light"');
+    const measureAt = exportSrc.indexOf("markPrintBlocks(doc)");
+    const waitAt = exportSrc.indexOf("awaitPrintReady(doc)");
     expect(normalizeAt).toBeGreaterThan(-1);
     expect(measureAt).toBeGreaterThan(normalizeAt);
     expect(waitAt).toBeGreaterThan(normalizeAt);
     // 偏好读 theme.ts 权威来源；还原按原偏好的解析值（auto 跟系统）。
     // J2（2026-09-30）：缩放目标从根元素换成纸面——导出前 clearPaperZoom()、
     // finally 在还原主题之后 restorePaperZoom()（清空/还原成对，语义不放宽 ✓）。
-    expect(main).toMatch(/const savedThemePref = readThemePref\(\)/);
-    expect(main).toMatch(/clearPaperZoom\(\)/);
-    expect(main).toMatch(
+    expect(exportSrc).toMatch(/const savedThemePref = readThemePref\(\)/);
+    expect(exportSrc).toMatch(/clearPaperZoom\(\)/);
+    expect(exportSrc).toMatch(
       /\} finally \{[\s\S]*?resolvedTheme\(savedThemePref\)[\s\S]*?restorePaperZoom\(\)/,
     );
   });
@@ -284,16 +286,16 @@ describe("Lane H：导出冻结层（静默导出）锚", () => {
   });
 
   it("同帧时序：add(exporting) 先于亮色归一、finally 先还原主题再揭幕，两段中间无 await", () => {
-    const addAt = main.indexOf('classList.add("exporting")');
-    const lightAt = main.indexOf('document.documentElement.dataset.theme = "light"');
-    const restoreAt = main.indexOf("document.documentElement.dataset.theme = restored");
-    const removeAt = main.indexOf('classList.remove("exporting")');
+    const addAt = exportSrc.indexOf('classList.add("exporting")');
+    const lightAt = exportSrc.indexOf('document.documentElement.dataset.theme = "light"');
+    const restoreAt = exportSrc.indexOf("document.documentElement.dataset.theme = restored");
+    const removeAt = exportSrc.indexOf('classList.remove("exporting")');
     expect(addAt).toBeGreaterThan(-1);
     expect(lightAt).toBeGreaterThan(addAt); // 先遮屏、后变亮（同一次 recalc 生效）
-    expect(main.slice(addAt, lightAt)).not.toContain("await"); // 同一同步块
+    expect(exportSrc.slice(addAt, lightAt)).not.toContain("await"); // 同一同步块
     expect(restoreAt).toBeGreaterThan(-1);
     expect(removeAt).toBeGreaterThan(restoreAt); // 先还原主题、后揭幕（还原瞬间不闪亮）
-    expect(main.slice(restoreAt, removeAt)).not.toContain("await"); // 还原与揭幕同块
+    expect(exportSrc.slice(restoreAt, removeAt)).not.toContain("await"); // 还原与揭幕同块
     expect(main).toMatch(/import "\.\/ui\/export-state\.css"/); // 样式已接线
   });
 });

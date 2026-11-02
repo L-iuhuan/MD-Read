@@ -81,6 +81,8 @@ export interface FontPickerHooks {
 
 /** 探测量器缓存：整个会话共用一块 1×1 canvas */
 let measurer: MeasureText | null = null;
+/** 目录是否已做过「本机是否安装」实测（canvas measureText 逐族探测，冷启动 ~200-300ms）。 */
+let catalogRendered = false;
 
 /** 取（或造）探测量器；拿不到 2d 上下文时返回 null，调用方降级为「不标注未装」 */
 function getMeasurer(hooks: FontPickerHooks): MeasureText | null {
@@ -242,10 +244,24 @@ export function syncFontSelects(): void {
   }
 }
 
-/** 挂载字体面板：填目录 → 恢复选择 → 接 change（当前值由三下拉各自回显） */
-export function mountFontPicker(hooks: FontPickerHooks): void {
-  renderFontPicker(hooks);
-  applyFontPrefs(hooks); // 启动恢复：#doc 常驻 index.html，落容器上即可
+/**
+ * 挂载字体面板：填目录 → 恢复选择 → 接 change（当前值由三下拉各自回显）。
+ *
+ * `deferCatalog`（2026-11-02 启动提速）：启动期只做**应用偏好 + 接线**，把
+ * `renderFontPicker` 的 canvas 逐族探测（冷启动实测 ~280ms）推迟到设置面板首次打开
+ * （见 `ensureFontCatalog`）。面板隐藏时没人看标签，测量纯属浪费首屏时间。
+ */
+export function mountFontPicker(
+  hooks: FontPickerHooks,
+  options?: { deferCatalog?: boolean },
+): void {
+  if (options?.deferCatalog === true) {
+    applyFontPrefs(hooks); // 启动恢复不能省：#doc 的字体栈要在首屏就位
+  } else {
+    renderFontPicker(hooks);
+    catalogRendered = true;
+    applyFontPrefs(hooks); // 启动恢复：#doc 常驻 index.html，落容器上即可
+  }
   for (const group of GROUPS) {
     const select = document.getElementById(SELECT_IDS[group]);
     if (!(select instanceof HTMLSelectElement)) {
@@ -254,6 +270,15 @@ export function mountFontPicker(hooks: FontPickerHooks): void {
     }
     select.addEventListener("change", () => setFontPref(group, select.value, hooks));
   }
+}
+
+/** 目录实测的懒入口：设置面板首次打开时调用（幂等；按测试注入的 measure 走）。 */
+export function ensureFontCatalog(hooks: FontPickerHooks): void {
+  if (catalogRendered) {
+    return;
+  }
+  catalogRendered = true;
+  renderFontPicker(hooks);
 }
 
 /** 统一入口：应用 + 持久化（该组键）+ 回显（面板只有这一个写入口） */

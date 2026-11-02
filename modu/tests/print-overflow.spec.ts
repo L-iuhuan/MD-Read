@@ -148,8 +148,8 @@ describe("提醒已撤除（无真实触发条件）", () => {
     expect(src).not.toMatch(/export function tooWideBlocks/);
   });
 
-  it("main.ts 不再调用提醒，只打标记", () => {
-    const src = readFileSync("src/main.ts", "utf8");
+  it("导出接线不再调用提醒，只打标记（2026-11-02 外移到 app/export-pdf.ts）", () => {
+    const src = readFileSync("src/app/export-pdf.ts", "utf8");
     expect(src).not.toMatch(/overflowWarning|tooWideBlocks|overflowingBlocks/);
     expect(src).toMatch(/markPrintBlocks\(doc\)/);
   });
