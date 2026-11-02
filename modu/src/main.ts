@@ -657,8 +657,8 @@ const workspacePanel = setupWorkspacePanel({
     }
   }
   if (!docMountedOnce) {
-    // 没有可开的文档（未带参数 / 全部打不开）：进入空态（与关掉最后一个标签同源）
-    resetToWelcome();
+    // 未带参数/全打不开 ⇒ 空态；有标签但正文还没上屏（大文档渲染慢）⇒ 留白，别把欢迎页闪出来
+    if (tabs.count() === 0) resetToWelcome(); else { $("empty-hint").hidden = true; document.body.classList.remove("empty"); }
   }
   performance.mark("boot:app-ready");
   document.documentElement.classList.add("app-ready"); // FOUC 放行：首屏内容已定（空态或正文）
