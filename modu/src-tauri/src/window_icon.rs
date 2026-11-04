@@ -19,8 +19,14 @@
 //!   用 `EnumResourceNamesW(RT_GROUP_ICON)` 取第一个组 id——实测本仓为 32512。
 //!
 //! ⚠ 权衡：`ICON_BIG` 同时会被 Alt-Tab 等场景使用；设成任务栏尺寸后，Alt-Tab 若按更大尺寸绘制
-//!   会做一次放大（可接受：用户实际看的是任务栏）。若将来 Alt-Tab 体验变差，再评估
-//!   改为「任务栏用 ICON_BIG=24 + 另一个尺寸留给 Alt-Tab」的方案（WM_SETICON 只有一个 BIG 槽）。
+//! 会做一次放大（可接受：用户实际看的是任务栏）。若将来 Alt-Tab 体验变差，再评估
+//! 改为「任务栏用 ICON_BIG=24 + 另一个尺寸留给 Alt-Tab」的方案（WM_SETICON 只有一个 BIG 槽）。
+//!
+//! 0.2.18 补修（2026-11-04 任务栏实拍对拍定案）：Win11 任务栏按钮取的是 **ICON_SMALL 槽**
+//! 渲染 24px——此前该槽只有 tao 放的 ICO 首帧 16px，被系统双线性放大（实拍 vs 原生 24 帧
+//! SSD=999,588，vs 16→24 放大 SSD=38,810，差 26 倍 ⇒ 任务栏在画 16px 放大版）。
+//! 本窗体 decorations=false 无标题栏，SMALL 槽没有别的消费者 ⇒ 与 BIG 同设 24px 原生帧，
+//! 任务栏 1:1。两槽各持独立 HICON，分开记句柄防双销毁。
 #![cfg(target_os = "windows")]
 
 use std::sync::atomic::{AtomicIsize, Ordering};
@@ -53,6 +59,7 @@ extern "system" {
 const RT_GROUP_ICON: isize = 14;
 const IMAGE_ICON: u32 = 1;
 const WM_SETICON: u32 = 0x0080;
+const ICON_SMALL: usize = 0;
 const ICON_BIG: usize = 1;
 const ABM_GETTASKBARPOS: u32 = 5;
 
@@ -76,8 +83,10 @@ struct AppBarData {
     lparam: isize,
 }
 
-/// 最近一次由本模块设置的 ICON_BIG（DPI/任务栏变化时替换并销毁上一枚，避免句柄累积）。
+/// 最近一次由本模块设置的 ICON_BIG / ICON_SMALL（DPI/任务栏变化时替换并销毁上一枚，
+/// 避免句柄累积；两槽各持独立 HICON，销毁互不牵连）。
 static LAST_BIG: AtomicIsize = AtomicIsize::new(0);
+static LAST_SMALL: AtomicIsize = AtomicIsize::new(0);
 /// 枚举到的 RT_GROUP_ICON 整数 id（`MAKEINTRESOURCE` 形态；0 = 未找到）。
 static GROUP_ID: AtomicIsize = AtomicIsize::new(0);
 
@@ -154,15 +163,26 @@ pub(crate) fn apply(window: &WebviewWindow) {
         eprintln!("[window-icon] LoadImageW 失败（{big}px，group={group_id}，dpi={dpi}）");
         return;
     }
+    // 0.2.18：SMALL 槽单独取一枚同尺寸帧——Win11 任务栏按钮从 SMALL 槽取图（见文件头注）
+    let hicon_small = unsafe { LoadImageW(module, name, IMAGE_ICON, big, big, 0) };
     unsafe {
         let _ = SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon);
+        if hicon_small != 0 {
+            let _ = SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small);
+        }
     }
     let prev = LAST_BIG.swap(hicon, Ordering::SeqCst);
     if prev != 0 {
         unsafe { DestroyIcon(prev) };
     }
+    if hicon_small != 0 {
+        let prev_s = LAST_SMALL.swap(hicon_small, Ordering::SeqCst);
+        if prev_s != 0 {
+            unsafe { DestroyIcon(prev_s) };
+        }
+    }
     println!(
-        "[window-icon] ICON_BIG={big}px group={group_id} dpi={dpi} taskbar_thickness={thickness}"
+        "[window-icon] ICON_BIG={big}px ICON_SMALL={big}px group={group_id} dpi={dpi} taskbar_thickness={thickness}"
     );
 }
 
