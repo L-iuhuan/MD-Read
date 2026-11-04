@@ -559,6 +559,11 @@ mod shipped_config_guard {
 #[path = "fs_trust_tests.rs"]
 mod fs_trust_tests;
 
+/// 关联自愈纯函数单测（2026-11-04 关联轮）。
+#[cfg(test)]
+#[path = "fs_assoc_tests.rs"]
+mod fs_assoc_tests;
+
 // ==========================================================================
 // 注册表：设为 .md 默认应用（2026-09-27 用户反馈「默认打开方式里选不到墨读」）
 // ==========================================================================
@@ -573,6 +578,13 @@ mod fs_trust_tests;
 ///
 /// 实现走 `reg.exe` 子进程（零依赖；HKCU 写入不需提权）。
 /// 安全软件可能弹窗询问关联变更——这是预期的用户确认动作。
+/// 三个受支持扩展与对应 ProgID（注册命令与启动自愈共用同一张表）
+const MD_ASSOC: [(&str, &str); 3] = [
+    (".md", "MoDu.md"),
+    (".markdown", "MoDu.markdown"),
+    (".mdx", "MoDu.mdx"),
+];
+
 #[tauri::command]
 pub fn register_markdown_default() -> Result<(), String> {
     let exe = std::env::current_exe()
@@ -580,12 +592,7 @@ pub fn register_markdown_default() -> Result<(), String> {
     let exe_str = exe.to_string_lossy().into_owned();
     let icon = md_file_icon_value(&exe_str);
     let open_cmd = format!("\"{exe_str}\" \"%1\"");
-    const EXTS: [(&str, &str); 3] = [
-        (".md", "MoDu.md"),
-        (".markdown", "MoDu.markdown"),
-        (".mdx", "MoDu.mdx"),
-    ];
-    for (ext, progid) in EXTS {
+    for (ext, progid) in MD_ASSOC {
         // ProgID：图标 + 打开命令（用户级副本；HKLM 那份不受影响）
         reg_set_default(&format!(r"HKCU\Software\Classes\{progid}\DefaultIcon"), &icon)?;
         reg_set_default(
@@ -633,29 +640,78 @@ fn md_file_icon_value(exe_str: &str) -> String {
     }
 }
 
-/// 启动自愈（2026-10-19 图标轮）：老安装的用户级注册（HKCU ProgID DefaultIcon）
-/// 若已存在则刷新为随包文件图标；**从不新建键**（未注册过的机器零副作用）。
-pub fn refresh_registered_icons() {
-    let Some(ico) = std::env::current_exe()
-        .ok()
-        .and_then(|e| e.parent().map(|d| d.join("icons").join("file-icon.ico")))
-    else {
-        return;
-    };
-    if !ico.exists() {
-        return;
+/// 启动自愈（2026-10-19 图标轮 → 2026-11-04 关联轮扩展）。
+///
+/// 根因（2026-11-04 用户实测）：重装/换安装器（MSI→NSIS）后，`UserChoice` 仍指向
+/// `MoDu.md`（用户的默认选择从未丢），但 HKCU ProgID 的 `shell\open\command` 还指着
+/// **已卸载的旧安装位置**（如 `C:\Program Files\MoDu\`），双击 .md 沿链走到死路径
+/// ＝「默认打开丢失，重装也要重新指定」。安装器不会更新这个应用侧手写的键，
+/// 旧自愈只刷图标不修命令——本函数补上：command 指向的 exe 不是当前安装（死链
+/// 或旧路径）时，静默重写 command / DefaultIcon / OpenWithProgids 为当前 exe。
+///
+/// 原则不变：**从不新建键**（从未注册过的机器零副作用，progid 键查不到即跳过）；
+/// UserChoice 受系统哈希保护且无需触碰（链修好即恢复默认打开，不必去系统设置重选）。
+/// dev / 测试构建（exe 在 `target\` 下）整体跳过，防止开发机污染真实注册表。
+pub fn heal_file_association() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let exe_str = exe.to_string_lossy().into_owned();
+    if exe_str.contains(r"\target\") {
+        return; // dev / cargo test 构建：绝不改真实注册表
     }
-    let icon = format!("\"{}\"", ico.display());
+    let Some(dir) = exe.parent() else { return };
+    let ico = dir.join("icons").join("file-icon.ico");
     let ico_str = ico.display().to_string();
-    for progid in ["MoDu.md", "MoDu.markdown", "MoDu.mdx"] {
-        let key = format!(r"HKCU\Software\Classes\{progid}\DefaultIcon");
-        // 键不存在 = 用户从未注册过 ⇒ 不新建（零副作用）；存在但值已正确 ⇒ 跳写
-        // （稳态每次启动只剩 3 次静默查询，不再有 reg add）
-        if let Some(out) = run_reg_captures(&["query", key.as_str()]) {
-            if !String::from_utf8_lossy(&out.stdout).contains(&ico_str) {
-                let _ = reg_set_default(&key, &icon);
+    let icon = if ico.exists() {
+        format!("\"{ico_str}\"")
+    } else {
+        format!("\"{exe_str}\",0")
+    };
+    let open_cmd = format!("\"{exe_str}\" \"%1\"");
+    for (ext, progid) in MD_ASSOC {
+        let cmd_key = format!(r"HKCU\Software\Classes\{progid}\shell\open\command");
+        // progid 键查不到 = 用户从未注册过 ⇒ 不新建（零副作用）
+        let Some(out) = run_reg_captures(&["query", cmd_key.as_str(), "/ve"]) else {
+            continue;
+        };
+        let existing = String::from_utf8_lossy(&out.stdout);
+        let existing_cmd = existing.split("REG_SZ").nth(1).map(str::trim);
+        if !open_command_matches_install(existing_cmd, &exe_str) {
+            // 死链或旧安装残留：三件套重写到当前安装（静默，不弹设置页）
+            let _ = reg_set_default(&cmd_key, &open_cmd);
+            let _ = reg_set_default(&format!(r"HKCU\Software\Classes\{progid}\DefaultIcon"), &icon);
+            let _ = reg_set_named(
+                &format!(r"HKCU\Software\Classes\{ext}\OpenWithProgids"),
+                progid,
+                "",
+            );
+            continue;
+        }
+        // command 已是当前安装：图标仍按 2026-10-19 逻辑刷新（存在但值旧才写）
+        let icon_key = format!(r"HKCU\Software\Classes\{progid}\DefaultIcon");
+        if let Some(icon_out) = run_reg_captures(&["query", icon_key.as_str(), "/ve"]) {
+            if !String::from_utf8_lossy(&icon_out.stdout).contains(&ico_str) {
+                let _ = reg_set_default(&icon_key, &icon);
             }
         }
+    }
+}
+
+/// 注册表 open command 值里取 exe 路径：`"C:\a b\modu.exe" "%1"` → `C:\a b\modu.exe`
+/// （带引号取首对引号内；无引号取首个空白前段）；空/畸形返回 None。
+fn exe_from_open_command(cmd: &str) -> Option<&str> {
+    let t = cmd.trim();
+    if let Some(stripped) = t.strip_prefix('"') {
+        return stripped.find('"').map(|end| &stripped[..end]);
+    }
+    t.split_whitespace().next()
+}
+
+/// 既有 open command 是否已指向**当前安装**：键无值 / 目标不同（死链、旧安装
+/// 残留）都算需要重写。比较走小写全串（Windows 路径大小写不敏感，含非 ASCII）。
+fn open_command_matches_install(existing: Option<&str>, current_exe: &str) -> bool {
+    match existing.and_then(exe_from_open_command) {
+        Some(exe) => exe.to_lowercase() == current_exe.to_lowercase(),
+        None => false,
     }
 }
 

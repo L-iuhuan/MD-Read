@@ -354,10 +354,12 @@ pub fn run() {
                     }
                 });
             }
-            // 图标轮（2026-10-19）：老安装的 .md 关联图标自愈刷新——后台线程跑
+            // 图标轮（2026-10-19）→ 关联轮（2026-11-04）：.md 关联启动自愈——
+            // 重装/换安装器后 ProgID open command 指向已卸载的旧位置（死链）时
+            // 静默重写为当前安装，用户不必再去系统设置重选默认应用。后台线程跑
             // （reg.exe 子进程要过安全软件安检，不得堵启动关键路径，且已带
             // CREATE_NO_WINDOW 不闪控制台黑窗）
-            std::thread::spawn(fs::refresh_registered_icons);
+            std::thread::spawn(fs::heal_file_association);
             let pending = md_paths(&std::env::args().collect::<Vec<String>>());
             app.manage(PendingFiles(Mutex::new(pending.clone())));
             // R-01：受信清单（持久化）。argv/文件关联进来的路径**在 Rust 侧登记**——
