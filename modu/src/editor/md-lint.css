@@ -140,3 +140,13 @@
 #st-lint[data-severity="error"] { color: var(--danger-text); }
 #st-lint[data-severity="warning"] { color: var(--warn-text); }
 #st-lint[data-severity="info"] { color: var(--text-muted); }
+
+/* ---- 跳转高亮（2026-11-04 用户需求：位置相近的报错分不清是哪一个）----
+   点击问题面板条目 → 目标范围挂 accent 软底 + 外圈 2px（在 CM 选区底色之上仍可辨）。
+   生命周期 = 光标停在该诊断上（选区/文档一变即摘，摘挂逻辑在 md-lint.ts lintJumpFlashField）；
+   常驻不闪烁：对照相邻两条报错时需要它留着。色与面板选中条同一「选中」语言（accent 系）。 */
+#editor-pane .md-lint-flash {
+  background: var(--accent-tint);
+  border-radius: var(--radius-1);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent-tint) 75%, var(--accent-solid) 25%);
+}

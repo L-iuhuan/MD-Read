@@ -30,9 +30,11 @@ const LIST_RE = /^(\s*)(?:[-*+]|\d+\.)\s+/;
 const HEAD_RE = /^(#{1,6})\s/;
 /** 裸 $…$ 内容里的「疑似数学」字符：拉丁字母 / \ / ^ / _（金额＝数字千分位货币符，禁报） */
 const MATH_CHARS_RE = /[A-Za-z\\^_]/;
-/** 引用定义行 [label]: url（链接规则豁免） */
-const LINK_DEF_RE = /^\s*\[[^\]]+\]:/;
+/** 引用定义行 [label]: url（两用：豁免定义行本身 + 收集标签供 shortcut 引用链接豁免） */
+const LINK_DEF_RE = /^\s*\[([^\]]+)\]:/;
 const LINK_RE = /\[([^\]]*)\]/g;
+/** 括号内容像地址/本地文件（强意图信号）：scheme://、www.、#锚点、/ 或 ./ ../ 相对路径、常见文件扩展名结尾 */
+const URLISH_RE = /:\/\/|^www\.|^[#/]|^\.{1,2}\/|\.(md|markdown|html?|png|jpe?g|gif|svg|webp|pdf|zip|txt)\s*$/i;
 
 /** 围栏状态机：inside[i]＝该行在围栏块内（含围栏行本身）；open＝未闭合围栏（EOF 报它） */
 function fenceState(lines: readonly string[]): { inside: boolean[]; open: { line: number; col: number; len: number } | null } {
@@ -163,21 +165,40 @@ const collectBold: Collect = (lines, inside, out) => {
   }
 };
 
-/** ⑤ 链接残缺：[文本] 后缺 (地址)（后随 [ 的引用链接与脚注 ^ 豁免） */
+/** ⑤ 链接残缺（2026-11-04 用户裁决收窄）：纯字面 [标签] 不报（[壳]/[STAGE n/total] 是
+ *  合法写作，markdown-it 按字面渲染不丢内容）；有 [label]: 定义 = 合法 shortcut 引用链接
+ *  不报；仅强意图信号报——] 与 ( 之间有空格（CommonMark 不许，渲染成字面文本）或紧跟
+ *  全角（（不构成链接语法），且括号内容像地址（宁漏报不误报，与 ⑥ 同哲学） */
 const collectLinks: Collect = (lines, inside, out) => {
+  const defined = new Set<string>(); // 全文引用定义标签（围栏内不算）：命中即合法 shortcut 引用
+  for (let i = 0; i < lines.length; i++) {
+    const def = !inside[i] ? LINK_DEF_RE.exec(lines[i]) : null;
+    if (def !== null) defined.add(def[1].trim().toLowerCase());
+  }
   for (let i = 0; i < lines.length; i++) {
     if (inside[i] || LINK_DEF_RE.test(lines[i])) continue;
     const text = maskInlineCode(lines[i]);
     LINK_RE.lastIndex = 0;
     let m = LINK_RE.exec(text);
     while (m !== null) {
-      const after = text[m.index + m[0].length];
-      if (after === "[") {
-        const closeRef = text.indexOf("]", m.index + m[0].length); // 引用链接 [文本][id]：跳过 id 段
-        if (closeRef >= 0) LINK_RE.lastIndex = closeRef + 1;
-      } else if (after !== "(" && !m[1].startsWith("^")) {
-        out.push({ line: i + 1, colStart: m.index, len: m[0].length, severity: "error",
-          message: "链接残缺：[文本] 后缺少 (地址)" });
+      let cursor = m.index + m[0].length;
+      let label = m[1];
+      if (text[cursor] === "[") { // 引用形态 [文本][id]：以 id 段为标签，跳过 id 段再判括号
+        const closeRef = text.indexOf("]", cursor);
+        if (closeRef < 0) break;
+        label = text.slice(cursor + 1, closeRef);
+        cursor = closeRef + 1;
+        LINK_RE.lastIndex = cursor;
+      }
+      if (label !== "" && !label.startsWith("^") && !defined.has(label.trim().toLowerCase())) {
+        const rest = text.slice(cursor);
+        const spaced = /^[ \t]+\(([^()]*)\)/.exec(rest); // [x]␣(…)：内联链接不许 ] 与 ( 有空格
+        const fullwidth = /^ ?（([^（）]*)）/.exec(rest); // [x]（…）：全角括号不构成链接语法
+        const hit = spaced ?? fullwidth;
+        if (hit !== null && URLISH_RE.test(hit[1].trim())) {
+          out.push({ line: i + 1, colStart: m.index, len: cursor - m.index, severity: "error",
+            message: "链接残缺：] 与 ( 之间有空格或用了全角括号，渲染为普通文本" });
+        }
       }
       m = LINK_RE.exec(text);
     }

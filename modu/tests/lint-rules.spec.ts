@@ -63,22 +63,37 @@ describe("④ 加粗 ** 未配对（error，行内计数奇数报该行）", () 
   });
 });
 
-describe("⑤ 链接残缺（error，[文本] 后缺 (地址)）", () => {
-  it("触发：[文本] 后无 (地址)", () => {
-    const issues = lintLines(["参见[文本]的说明"]);
+describe("⑤ 链接残缺（error，2026-11-04 收窄：纯字面 [标签] 不报，只报强意图信号）", () => {
+  it("触发：[文本] (地址)——] 与 ( 之间有空格，CommonMark 渲染为普通文本", () => {
+    const issues = lintLines(["参见[文本] (https://example.com) 的说明"]);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({ line: 1, severity: "error" });
-    expect(issues[0]?.message).toContain("链接");
+    expect(issues[0]?.message).toContain("空格");
   });
-  it("不触发：行内链接 / 引用链接 / 脚注 / 引用定义行", () => {
+  it("触发：全角括号 [文本]（地址）——不构成链接语法，渲染为普通文本", () => {
+    const issues = lintLines(["参见[文本]（https://example.com）的说明"]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message).toContain("全角");
+  });
+  it("不触发：纯字面方括号（[壳]/[前端]/[STAGE n/total] 等标签写法，2026-11-04 用户裁决）", () => {
+    expect(lintLines(["> 标注：[壳] tinyjs 后端 ｜ [前端] 页面层 ｜ [Py] Python 侧改动"])).toHaveLength(0);
+    expect(lintLines(["stdout 的 [STAGE n/total] 协议驱动进度条"])).toHaveLength(0);
+    expect(lintLines(["参见[文本]的说明"])).toHaveLength(0); // 旧触发例：现为字面方括号，不报
+  });
+  it("不触发：行内 / 引用 / 脚注 / 定义行 / 有定义的 shortcut 引用链接", () => {
     expect(
       lintLines([
         "[文本](https://example.com)",
         "[参考文献][ref]",
         "[^1] 脚注标记",
         "[label]: https://example.com",
+        "",
+        "参见[文本]的说明", // [文本] 已有定义 ⇒ 合法 shortcut 引用链接
       ]),
     ).toHaveLength(0);
+  });
+  it("不触发：括号内容不像地址（普通括注 prose 不杀，宁漏报不误报）", () => {
+    expect(lintLines(["见[附录] (详细说明) 与 [备注]（约 3 页）"])).toHaveLength(0);
   });
 });
 
