@@ -667,6 +667,7 @@ pub fn heal_file_association() {
         format!("\"{exe_str}\",0")
     };
     let open_cmd = format!("\"{exe_str}\" \"%1\"");
+    let mut changed = false;
     for (ext, progid) in MD_ASSOC {
         let cmd_key = format!(r"HKCU\Software\Classes\{progid}\shell\open\command");
         // progid 键查不到 = 用户从未注册过 ⇒ 不新建（零副作用）
@@ -684,6 +685,7 @@ pub fn heal_file_association() {
                 progid,
                 "",
             );
+            changed = true;
             continue;
         }
         // command 已是当前安装：图标仍按 2026-10-19 逻辑刷新（存在但值旧才写）
@@ -691,9 +693,30 @@ pub fn heal_file_association() {
         if let Some(icon_out) = run_reg_captures(&["query", icon_key.as_str(), "/ve"]) {
             if !String::from_utf8_lossy(&icon_out.stdout).contains(&ico_str) {
                 let _ = reg_set_default(&icon_key, &icon);
+                changed = true;
             }
         }
     }
+    if changed {
+        notify_assoc_changed();
+    }
+}
+
+/// 通知 Shell「文件关联已变化」（SHCNE_ASSOCCHANGED）：Explorer 立即重读关联与
+/// 图标，免去重启资源管理器 / 手动清图标缓存（2026-11-04 用户实测：安装路径
+/// 迁移后图标缓存陈旧，桌面与 .md 文件图标停在旧版本——广播一次即恢复）。
+/// 沿 window_icon.rs 的手写 extern 模式，不引 windows-sys。
+#[link(name = "shell32")]
+extern "system" {
+    fn SHChangeNotify(wEventId: i32, uFlags: u32, dwItem1: isize, dwItem2: isize);
+}
+
+/// SHCNE_ASSOCCHANGED（关联变化）+ SHCNF_FLUSH（立即广播、不等合并）
+const SHCNE_ASSOCCHANGED: i32 = 0x0800_0000;
+const SHCNF_FLUSH: u32 = 0x1000;
+
+fn notify_assoc_changed() {
+    unsafe { SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_FLUSH, 0, 0) };
 }
 
 /// 注册表 open command 值里取 exe 路径：`"C:\a b\modu.exe" "%1"` → `C:\a b\modu.exe`
